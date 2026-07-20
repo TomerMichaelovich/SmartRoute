@@ -4,11 +4,40 @@ import type { ZodType } from "zod";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 
+const RENAME_RETRY_ATTEMPTS = 5;
+const RENAME_RETRY_DELAY_MS = 50;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Windows (especially under OneDrive/antivirus-synced folders, common for a
+ * Desktop-hosted project) can transiently hold a brief lock on a file being
+ * renamed over, failing the rename with EPERM/EBUSY even though nothing in
+ * this process still has it open. A short retry-with-backoff clears that
+ * without weakening the atomicity guarantee - each attempt is still a single
+ * rename, just retried until the OS releases the lock.
+ */
+async function renameWithRetry(tmpPath: string, filePath: string): Promise<void> {
+  for (let attempt = 1; attempt <= RENAME_RETRY_ATTEMPTS; attempt++) {
+    try {
+      await fs.rename(tmpPath, filePath);
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      const isTransient = code === "EPERM" || code === "EBUSY";
+      if (!isTransient || attempt === RENAME_RETRY_ATTEMPTS) throw err;
+      await sleep(RENAME_RETRY_DELAY_MS * attempt);
+    }
+  }
+}
+
 async function writeFileAtomic(filePath: string, contents: string): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   await fs.writeFile(tmpPath, contents, "utf-8");
-  await fs.rename(tmpPath, filePath);
+  await renameWithRetry(tmpPath, filePath);
 }
 
 async function readFileOrNull(filePath: string): Promise<string | null> {
