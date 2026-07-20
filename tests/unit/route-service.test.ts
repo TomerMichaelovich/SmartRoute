@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import { demoEdges, demoNodes, demoProducts } from "@/tests/fixtures/demo-store.fixture";
 import { buildGraph } from "@/src/application/routing/graph-builder";
 import { dijkstra } from "@/src/application/routing/dijkstra";
-import { buildRoute } from "@/src/application/routing/route-service";
-import { computeBacktrackCount, computeTotalDistance } from "@/src/application/routing/route-metrics";
+import { buildRoute, computeNaiveDistance } from "@/src/application/routing/route-service";
+import {
+  computeBacktrackCount,
+  computeTotalDistance,
+  estimateTimeSavedSeconds,
+} from "@/src/application/routing/route-metrics";
 import type { ShoppingListItem } from "@/src/domain/entities/shopping-list";
 import type { ClassificationResult } from "@/src/domain/entities/classification-result";
 
@@ -61,6 +65,16 @@ describe("route-metrics", () => {
   it("counts revisited nodes as backtracking", () => {
     expect(computeBacktrackCount(["a", "b", "c", "b", "d"])).toBe(1);
     expect(computeBacktrackCount(["a", "b", "c"])).toBe(0);
+  });
+});
+
+describe("estimateTimeSavedSeconds", () => {
+  it("converts a distance saving into seconds at the assumed walking pace", () => {
+    expect(estimateTimeSavedSeconds(121, 112)).toBeCloseTo(7.5, 5);
+  });
+
+  it("never returns a negative saving when the naive order was actually shorter", () => {
+    expect(estimateTimeSavedSeconds(100, 120)).toBe(0);
   });
 });
 
@@ -154,5 +168,42 @@ describe("buildRoute", () => {
     expect(route.pathNodeIds).toEqual([]);
     expect(route.totalDistanceMeters).toBe(0);
     expect(route.unresolvedItemIds).toEqual(["item-x"]);
+  });
+});
+
+describe("computeNaiveDistance", () => {
+  it("is at least the optimized distance for the same mixed list (sanity bound)", () => {
+    const items = [
+      itemFor("item-0", "עגבניות"),
+      itemFor("item-1", "חלב 3% תנובה 1 ליטר"),
+      itemFor("item-2", "קוקה קולה 1.5 ליטר"),
+      itemFor("item-3", "שמפו"),
+    ];
+
+    const naive = computeNaiveDistance({
+      storeId: "store-ramat-gan-1",
+      items,
+      products: demoProducts,
+      nodes: demoNodes,
+      edges: demoEdges,
+    });
+
+    // Ground truth from running the real implementation (see route-service.ts) -
+    // the as-typed order (produce, dairy, beverages, personal-care) walks
+    // further than the optimized order the 2-opt pass finds (112m).
+    expect(naive).toBe(121);
+    expect(naive).toBeGreaterThanOrEqual(112);
+  });
+
+  it("returns 0 when no items resolve to a location", () => {
+    const unresolved: ShoppingListItem = { id: "item-x", rawText: "משהו שלא קיים" };
+    const naive = computeNaiveDistance({
+      storeId: "store-ramat-gan-1",
+      items: [unresolved],
+      products: demoProducts,
+      nodes: demoNodes,
+      edges: demoEdges,
+    });
+    expect(naive).toBe(0);
   });
 });

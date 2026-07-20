@@ -25,3 +25,13 @@ export function computeBacktrackCount(pathNodeIds: string[]): number {
   }
   return backtrackCount;
 }
+
+/** Typical indoor walking pace with a cart, used only to estimate time saved for the Summary screen. */
+const WALKING_SPEED_METERS_PER_SECOND = 1.2;
+
+export function estimateTimeSavedSeconds(
+  naiveDistanceMeters: number,
+  optimizedDistanceMeters: number,
+): number {
+  return Math.max(0, naiveDistanceMeters - optimizedDistanceMeters) / WALKING_SPEED_METERS_PER_SECOND;
+}

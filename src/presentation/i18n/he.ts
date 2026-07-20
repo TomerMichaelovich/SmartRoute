@@ -58,4 +58,24 @@ export const he = {
   promotions: {
     sponsored: "ממומן",
   },
+  summary: {
+    title: "סיכום הקנייה",
+    subtitle: "כל הכבוד! סיימתם לקנות",
+    duration: "משך הקנייה",
+    timeSaved: "זמן משוער שנחסך",
+    distance: "מרחק הליכה",
+    backtracks: "חזרות אחורה במסלול",
+    satisfactionQuestion: "איך הייתה חוויית הקנייה?",
+    satisfactionThanks: "תודה על המשוב!",
+    startNewRoute: "קנייה חדשה",
+    minutesShort(n: number): string {
+      return `${n} דק׳`;
+    },
+    secondsShort(n: number): string {
+      return `${n} שנ׳`;
+    },
+    metersShort(n: number): string {
+      return `${n} מ׳`;
+    },
+  },
 } as const;
