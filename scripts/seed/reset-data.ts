@@ -3,23 +3,28 @@ import path from "path";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 
-const COLLECTION_FILES = [
+const ARRAY_COLLECTION_FILES = [
   "stores.json",
   "nodes.json",
   "edges.json",
   "products.json",
   "promotions.json",
-  "classification-cache.json",
   "shopping-lists.json",
   "routes.json",
 ];
+
+// Keyed object store (normalizedText -> ClassificationResult), not an array.
+const OBJECT_COLLECTION_FILES = ["classification-cache.json"];
 
 const LINES_FILES = ["analytics-events.jsonl"];
 
 export async function resetData(): Promise<void> {
   await fs.mkdir(DATA_DIR, { recursive: true });
   await Promise.all(
-    COLLECTION_FILES.map((file) => fs.writeFile(path.join(DATA_DIR, file), "[]", "utf-8")),
+    ARRAY_COLLECTION_FILES.map((file) => fs.writeFile(path.join(DATA_DIR, file), "[]", "utf-8")),
+  );
+  await Promise.all(
+    OBJECT_COLLECTION_FILES.map((file) => fs.writeFile(path.join(DATA_DIR, file), "{}", "utf-8")),
   );
   await Promise.all(
     LINES_FILES.map((file) => fs.writeFile(path.join(DATA_DIR, file), "", "utf-8")),
