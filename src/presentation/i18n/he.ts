@@ -43,4 +43,19 @@ export const he = {
         : `${n} פריטים לא זוהו ולא ייכללו במסלול`;
     },
   },
+  route: {
+    progress(checked: number, total: number): string {
+      if (total === 0) return "אין פריטים למסלול הזה";
+      return `${checked} מתוך ${total} פריטים נאספו`;
+    },
+    unresolvedNotice(n: number): string {
+      return n === 1
+        ? "פריט אחד לא נכלל במסלול כי לא זוהה"
+        : `${n} פריטים לא נכללו במסלול כי לא זוהו`;
+    },
+    finishShopping: "סיימתי לקנות",
+  },
+  promotions: {
+    sponsored: "ממומן",
+  },
 } as const;
