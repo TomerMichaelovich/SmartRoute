@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useAnalytics } from "@/src/presentation/hooks/useAnalytics";
 import { he } from "@/src/presentation/i18n/he";
 
 const RATINGS = [
@@ -12,7 +13,13 @@ const RATINGS = [
 ] as const;
 
 export function SatisfactionRating({ routeId }: { routeId: string }) {
+  const { logEvent } = useAnalytics();
   const [selected, setSelected] = useState<number | null>(null);
+
+  function handleSelect(rating: number) {
+    setSelected(rating);
+    logEvent("satisfaction_rating", { rating }, { routeId });
+  }
 
   return (
     <div className="flex flex-col items-center gap-3 rounded-2xl bg-white p-4 shadow-sm">
@@ -25,9 +32,8 @@ export function SatisfactionRating({ routeId }: { routeId: string }) {
             <button
               key={rating.value}
               type="button"
-              onClick={() => setSelected(rating.value)}
+              onClick={() => handleSelect(rating.value)}
               aria-label={`${rating.value}/5`}
-              data-route-id={routeId}
               className="flex h-11 w-11 items-center justify-center rounded-full text-2xl transition-transform active:scale-90"
             >
               {rating.emoji}

@@ -18,6 +18,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           <Link href="/admin/promotions" className="hover:text-emerald-700">
             מבצעים
           </Link>
+          <Link href="/admin/analytics" className="hover:text-emerald-700">
+            אנליטיקס
+          </Link>
         </nav>
       </header>
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-5 py-6">

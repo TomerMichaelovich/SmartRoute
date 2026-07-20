@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import type { Product } from "@/src/domain/entities/product";
 import type { ShoppingListItem } from "@/src/domain/entities/shopping-list";
 import { Button } from "@/src/presentation/components/ui/Button";
+import { useAnalytics } from "@/src/presentation/hooks/useAnalytics";
 import { he } from "@/src/presentation/i18n/he";
 import { ClassificationReviewRow } from "./ClassificationReviewRow";
 
@@ -22,6 +23,7 @@ export function ReviewForm({
   products,
 }: ReviewFormProps) {
   const router = useRouter();
+  const { logEvent } = useAnalytics();
   const [items, setItems] = useState(initialItems);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +42,22 @@ export function ReviewForm({
   }, [products]);
 
   function handleChangeProduct(itemId: string, productId: string | null) {
+    // Log outside the updater: setState updaters must stay pure (React
+    // Strict Mode double-invokes them in dev specifically to catch side
+    // effects like this, which would otherwise double-log the event).
+    const currentItem = items.find((item) => item.id === itemId);
+    if (currentItem && productId !== (currentItem.classification?.matchedProductId ?? null)) {
+      logEvent(
+        "classification_corrected",
+        {
+          rawText: currentItem.rawText,
+          previousProductId: currentItem.classification?.matchedProductId ?? null,
+          newProductId: productId,
+        },
+        { storeId },
+      );
+    }
+
     setItems((prev) =>
       prev.map((item) => {
         if (item.id !== itemId) return item;

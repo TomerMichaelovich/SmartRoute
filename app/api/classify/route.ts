@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import type { ShoppingList, ShoppingListItem } from "@/src/domain/entities/shopping-list";
-import { classificationService, shoppingListRepository } from "@/src/infrastructure/container";
+import {
+  analyticsRepository,
+  classificationService,
+  shoppingListRepository,
+} from "@/src/infrastructure/container";
 
 const requestSchema = z.object({
   storeId: z.string().min(1),
   rawItems: z.array(z.string().min(1)).min(1),
+  // Optional: lets us attribute item_classified events to the shopper's session.
+  sessionId: z.string().min(1).optional(),
 });
 
 export async function POST(request: Request) {
@@ -14,7 +20,7 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.message }, { status: 400 });
   }
-  const { storeId, rawItems } = parsed.data;
+  const { storeId, rawItems, sessionId } = parsed.data;
 
   const classifications = await classificationService.classifyBatch(rawItems);
 
@@ -32,6 +38,24 @@ export async function POST(request: Request) {
   };
 
   await shoppingListRepository.create(shoppingList);
+
+  if (sessionId) {
+    await Promise.all(
+      items.map((item) =>
+        analyticsRepository.append({
+          id: crypto.randomUUID(),
+          type: "item_classified",
+          sessionId,
+          storeId,
+          payload: {
+            source: item.classification?.source,
+            confidence: item.classification?.confidence,
+          },
+          timestamp: new Date().toISOString(),
+        }),
+      ),
+    );
+  }
 
   return NextResponse.json(shoppingList, { status: 201 });
 }

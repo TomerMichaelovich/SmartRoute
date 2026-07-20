@@ -74,7 +74,7 @@ describe("selectRoutePromotions", () => {
       startDate: "2026-01-01T00:00:00.000Z",
       endDate: "2026-12-31T00:00:00.000Z",
     });
-    const result = selectRoutePromotions(route, [expired, notYetStarted, current], true, now);
+    const result = selectRoutePromotions(route, [expired, notYetStarted, current], true, { now });
     expect(result.map((p) => p.id)).toEqual(["current"]);
   });
 
@@ -87,5 +87,57 @@ describe("selectRoutePromotions", () => {
     ];
     const result = selectRoutePromotions(route, promos, true);
     expect(result).toHaveLength(2);
+  });
+
+  it("excludes a promotion once the session has hit its frequency cap", () => {
+    const route = baseRoute();
+    const promo = basePromo({ id: "capped", frequencyCapPerSession: 2 });
+    const priorEvents = [
+      {
+        id: "ev-1",
+        type: "promotion_impression" as const,
+        sessionId: "session-1",
+        payload: { promotionId: "capped" },
+        timestamp: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "ev-2",
+        type: "promotion_impression" as const,
+        sessionId: "session-1",
+        payload: { promotionId: "capped" },
+        timestamp: "2026-01-01T00:01:00.000Z",
+      },
+    ];
+
+    const result = selectRoutePromotions(route, [promo], true, {
+      session: { sessionId: "session-1", priorEvents },
+    });
+    expect(result).toEqual([]);
+  });
+
+  it("still shows a promotion to a different session under the same cap", () => {
+    const route = baseRoute();
+    const promo = basePromo({ id: "capped", frequencyCapPerSession: 2 });
+    const priorEvents = [
+      {
+        id: "ev-1",
+        type: "promotion_impression" as const,
+        sessionId: "session-1",
+        payload: { promotionId: "capped" },
+        timestamp: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "ev-2",
+        type: "promotion_impression" as const,
+        sessionId: "session-1",
+        payload: { promotionId: "capped" },
+        timestamp: "2026-01-01T00:01:00.000Z",
+      },
+    ];
+
+    const result = selectRoutePromotions(route, [promo], true, {
+      session: { sessionId: "session-2", priorEvents },
+    });
+    expect(result).toHaveLength(1);
   });
 });

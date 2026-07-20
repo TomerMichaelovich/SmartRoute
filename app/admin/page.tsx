@@ -63,6 +63,12 @@ export default async function AdminDashboardPage() {
         >
           ניהול מבצעים
         </Link>
+        <Link
+          href="/admin/analytics"
+          className="rounded-xl border border-neutral-200 bg-white p-4 font-medium text-neutral-900 hover:border-emerald-400"
+        >
+          אנליטיקס
+        </Link>
       </nav>
     </div>
   );

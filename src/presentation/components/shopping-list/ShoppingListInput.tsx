@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/src/presentation/components/ui/Button";
+import { useAnalytics } from "@/src/presentation/hooks/useAnalytics";
 import { he } from "@/src/presentation/i18n/he";
 
 interface ShoppingListInputProps {
@@ -11,6 +12,7 @@ interface ShoppingListInputProps {
 
 export function ShoppingListInput({ storeId }: ShoppingListInputProps) {
   const router = useRouter();
+  const { sessionId } = useAnalytics();
   const [text, setText] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +30,7 @@ export function ShoppingListInput({ storeId }: ShoppingListInputProps) {
       const res = await fetch("/api/classify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storeId, rawItems }),
+        body: JSON.stringify({ storeId, rawItems, sessionId: sessionId ?? undefined }),
       });
       if (!res.ok) throw new Error("classify failed");
       const shoppingList: { id: string } = await res.json();

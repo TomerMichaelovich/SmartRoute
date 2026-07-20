@@ -15,6 +15,7 @@ interface ChecklistProps {
   selectedStopOrder: number | null;
   onToggleItem: (itemId: string) => void;
   onSelectStop: (order: number) => void;
+  routeId: string;
 }
 
 export function Checklist({
@@ -23,6 +24,7 @@ export function Checklist({
   selectedStopOrder,
   onToggleItem,
   onSelectStop,
+  routeId,
 }: ChecklistProps) {
   return (
     <div className="flex flex-col gap-3">
@@ -61,7 +63,7 @@ export function Checklist({
             </div>
             {promotion && (
               <div className="ps-11">
-                <PromotionCard promotion={promotion} />
+                <PromotionCard promotion={promotion} routeId={routeId} />
               </div>
             )}
           </div>

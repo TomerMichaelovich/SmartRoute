@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { MapEdge } from "@/src/domain/entities/map-edge";
 import type { MapNode } from "@/src/domain/entities/map-node";
 import type { Route } from "@/src/domain/entities/route";
@@ -9,6 +9,7 @@ import { Checklist, type ChecklistStopView } from "@/src/presentation/components
 import { StoreMap } from "@/src/presentation/components/map/StoreMap";
 import { LinkButton } from "@/src/presentation/components/ui/LinkButton";
 import { ProgressBar } from "@/src/presentation/components/ui/ProgressBar";
+import { useAnalytics } from "@/src/presentation/hooks/useAnalytics";
 import { he } from "@/src/presentation/i18n/he";
 
 interface RouteViewProps {
@@ -24,16 +25,35 @@ function storageKey(routeId: string): string {
 }
 
 export function RouteView({ route, store, nodes, edges, stopViews }: RouteViewProps) {
+  const { sessionId, logEvent } = useAnalytics();
   const [checkedItemIds, setCheckedItemIds] = useState<Set<string>>(new Set());
   const [selectedStopOrder, setSelectedStopOrder] = useState<number | null>(
     stopViews[0]?.stop.order ?? null,
   );
   const [hydrated, setHydrated] = useState(false);
+  const finishedRef = useRef(false);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    logEvent("route_started", {}, { routeId: route.id, storeId: route.storeId });
+  }, [sessionId, logEvent, route.id, route.storeId]);
+
+  useEffect(() => {
+    function handleBeforeUnload() {
+      if (finishedRef.current) return;
+      logEvent("route_abandoned", {}, { routeId: route.id, storeId: route.storeId });
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [logEvent, route.id, route.storeId]);
 
   // Checked state survives a reload/app-switch mid-shop; each route gets its own key.
+  // localStorage isn't available during SSR, so this necessarily reads after
+  // mount rather than via a lazy useState initializer.
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(storageKey(route.id));
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (raw) setCheckedItemIds(new Set(JSON.parse(raw)));
     } catch {
       // localStorage unavailable or corrupted - fall back to empty state
@@ -72,10 +92,16 @@ export function RouteView({ route, store, nodes, edges, stopViews }: RouteViewPr
   }, [stopViews, checkedItemIds]);
 
   function toggleItem(itemId: string) {
+    // Compute the new checked state and log outside the updater: setState
+    // updaters must stay pure (React Strict Mode double-invokes them in dev
+    // specifically to catch side effects like this, which would otherwise
+    // double-log the event).
+    const nowChecked = !checkedItemIds.has(itemId);
+    logEvent("item_checked", { itemId, checked: nowChecked }, { routeId: route.id, storeId: route.storeId });
     setCheckedItemIds((prev) => {
       const next = new Set(prev);
-      if (next.has(itemId)) next.delete(itemId);
-      else next.add(itemId);
+      if (nowChecked) next.add(itemId);
+      else next.delete(itemId);
       return next;
     });
   }
@@ -106,6 +132,7 @@ export function RouteView({ route, store, nodes, edges, stopViews }: RouteViewPr
         selectedStopOrder={selectedStopOrder}
         onToggleItem={toggleItem}
         onSelectStop={setSelectedStopOrder}
+        routeId={route.id}
       />
 
       {route.unresolvedItemIds.length > 0 && (
@@ -118,6 +145,9 @@ export function RouteView({ route, store, nodes, edges, stopViews }: RouteViewPr
         href={`/summary/${route.id}`}
         fullWidth
         variant={allDone ? "primary" : "secondary"}
+        onClick={() => {
+          finishedRef.current = true;
+        }}
       >
         {he.route.finishShopping}
       </LinkButton>

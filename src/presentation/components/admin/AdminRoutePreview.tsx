@@ -132,6 +132,7 @@ export function AdminRoutePreview({
             selectedStopOrder={null}
             onToggleItem={toggleItem}
             onSelectStop={() => {}}
+            routeId={route.id}
           />
         </div>
       )}
