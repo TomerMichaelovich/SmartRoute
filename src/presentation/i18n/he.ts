@@ -17,4 +17,30 @@ export const he = {
     selectBranch: "בחרו סניף זה",
     noBranches: "אין כרגע סניפים זמינים",
   },
+  list: {
+    title: "רשימת קניות",
+    subtitle: "הדביקו או הקלידו את רשימת הקניות שלכם, פריט בכל שורה",
+    placeholder: "לדוגמה:\nחלב\nלחם\nעגבניות",
+    continueToReview: "המשך לבדיקת הפריטים",
+    itemCount(n: number): string {
+      if (n === 0) return "אין פריטים ברשימה";
+      if (n === 1) return "פריט אחד ברשימה";
+      if (n === 2) return "שני פריטים ברשימה";
+      return `${n} פריטים ברשימה`;
+    },
+  },
+  review: {
+    title: "בדיקת הפריטים",
+    subtitle: "בדקו שזיהינו נכון את הפריטים שלכם, ותקנו אם צריך",
+    notFound: "לא נמצא",
+    checkThis: "כדאי לבדוק",
+    chooseProduct: "בחרו מוצר",
+    noMatch: "— לא נבחר —",
+    continueToRoute: "המשך למסלול הקנייה",
+    unresolvedWarning(n: number): string {
+      return n === 1
+        ? "פריט אחד לא זוהה ולא ייכלל במסלול"
+        : `${n} פריטים לא זוהו ולא ייכללו במסלול`;
+    },
+  },
 } as const;
