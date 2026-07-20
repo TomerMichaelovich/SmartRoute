@@ -7,10 +7,29 @@ const SESSION_STORAGE_KEY = "smartroute:sessionId";
 export const SESSION_COOKIE_NAME = "smartroute_session";
 const SESSION_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
 
+/**
+ * crypto.randomUUID() only exists in secure contexts (https://, localhost,
+ * 127.0.0.1) - a plain-HTTP LAN address (e.g. testing on a phone via the
+ * "Network" URL next dev prints) is not one, so crypto.randomUUID is
+ * undefined there. Falls back to Math.random for that case; this id is
+ * only ever used to group anonymous analytics events, not for anything
+ * security-sensitive, so non-cryptographic randomness is fine.
+ */
+function generateId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 function readOrCreateSessionId(): string {
   let sessionId = window.localStorage.getItem(SESSION_STORAGE_KEY);
   if (!sessionId) {
-    sessionId = crypto.randomUUID();
+    sessionId = generateId();
     window.localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
   }
   // Mirrored into a cookie so Server Components (e.g. the Route Screen,
