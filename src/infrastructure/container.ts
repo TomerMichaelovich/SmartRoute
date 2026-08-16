@@ -8,6 +8,7 @@ import { JsonAnalyticsRepository } from "./repositories/json/json-analytics-repo
 import { JsonClassificationCacheRepository } from "./repositories/json/json-classification-cache-repository";
 import { JsonEdgeRepository } from "./repositories/json/json-edge-repository";
 import { JsonNodeRepository } from "./repositories/json/json-node-repository";
+import { JsonProductListingRepository } from "./repositories/json/json-product-listing-repository";
 import { JsonProductRepository } from "./repositories/json/json-product-repository";
 import { JsonPromotionRepository } from "./repositories/json/json-promotion-repository";
 import { JsonRouteRepository } from "./repositories/json/json-route-repository";
@@ -24,6 +25,7 @@ export const storeRepository = new JsonStoreRepository();
 export const nodeRepository = new JsonNodeRepository();
 export const edgeRepository = new JsonEdgeRepository();
 export const productRepository = new JsonProductRepository();
+export const productListingRepository = new JsonProductListingRepository();
 export const shoppingListRepository = new JsonShoppingListRepository();
 export const routeRepository = new JsonRouteRepository();
 export const promotionRepository = new JsonPromotionRepository();

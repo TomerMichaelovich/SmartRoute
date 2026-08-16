@@ -34,7 +34,7 @@ export default async function AdminPromotionsPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-neutral-900">מבצעים ({allPromotions.length})</h1>
+      <h1 className="text-lg font-semibold text-neutral-900">מבצעים ({allPromotions.length})</h1>
 
       <div className="flex flex-wrap gap-2">
         {[
@@ -122,7 +122,7 @@ export default async function AdminPromotionsPage({
         action={createPromotion}
         className="flex flex-col gap-2 rounded-xl border border-neutral-200 bg-white p-4"
       >
-        <h2 className="font-semibold text-neutral-900">מבצע חדש</h2>
+        <h2 className="text-base font-semibold text-neutral-900">מבצע חדש</h2>
         <input
           name="chainId"
           placeholder="מזהה רשת (chainId)"

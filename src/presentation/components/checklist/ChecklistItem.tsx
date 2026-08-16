@@ -1,11 +1,12 @@
 interface ChecklistItemProps {
   id: string;
   displayName: string;
+  imageUrl?: string;
   checked: boolean;
   onToggle: (id: string) => void;
 }
 
-export function ChecklistItem({ id, displayName, checked, onToggle }: ChecklistItemProps) {
+export function ChecklistItem({ id, displayName, imageUrl, checked, onToggle }: ChecklistItemProps) {
   return (
     <label className="flex items-center gap-3 py-2" onClick={(e) => e.stopPropagation()}>
       <input
@@ -14,6 +15,14 @@ export function ChecklistItem({ id, displayName, checked, onToggle }: ChecklistI
         onChange={() => onToggle(id)}
         className="h-5 w-5 shrink-0 rounded border-neutral-300 text-emerald-600 focus:ring-emerald-500"
       />
+      {imageUrl && (
+        // eslint-disable-next-line @next/next/no-img-element -- locally uploaded file, not a remote asset next/image can optimize
+        <img
+          src={imageUrl}
+          alt=""
+          className="h-10 w-10 shrink-0 rounded-lg border border-neutral-200 object-cover"
+        />
+      )}
       <span
         className={`text-base ${checked ? "text-neutral-400 line-through" : "text-neutral-900"}`}
       >

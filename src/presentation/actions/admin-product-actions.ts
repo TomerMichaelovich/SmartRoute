@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { normalizeHebrewText } from "@/src/application/classification/normalize-hebrew-text";
 import type { ProductCategory } from "@/src/domain/entities/product";
 import { productRepository } from "@/src/infrastructure/container";
+import { saveUploadedImage } from "@/src/infrastructure/image-upload";
 
 function parseAliases(raw: string): string[] {
   return raw
@@ -18,22 +19,23 @@ function computeNormalizedAliases(canonicalName: string, aliases: string[]): str
 
 export async function createProduct(formData: FormData): Promise<void> {
   const canonicalName = String(formData.get("canonicalName") ?? "").trim();
-  const chainId = String(formData.get("chainId") ?? "").trim();
   const category = String(formData.get("category") ?? "other") as ProductCategory;
   const department = String(formData.get("department") ?? "").trim();
   const aliases = parseAliases(String(formData.get("aliases") ?? ""));
-  const [storeId, nodeId] = String(formData.get("location") ?? "").split("::");
-  if (!canonicalName || !chainId || !storeId || !nodeId) return;
+  if (!canonicalName || !department) return;
+
+  const id = crypto.randomUUID();
+  const imageFile = formData.get("image");
+  const saved = imageFile instanceof File ? await saveUploadedImage("products", id, imageFile) : null;
 
   await productRepository.create({
-    id: crypto.randomUUID(),
-    chainId,
+    id,
     canonicalName,
     aliases,
     normalizedAliases: computeNormalizedAliases(canonicalName, aliases),
     category,
     department,
-    locations: [{ storeId, nodeId }],
+    imageUrl: saved?.url,
     isActive: true,
   });
 
@@ -48,6 +50,10 @@ export async function updateProduct(productId: string, formData: FormData): Prom
   const isActive = formData.get("isActive") === "on";
   if (!canonicalName || !department) return;
 
+  const imageFile = formData.get("image");
+  const saved =
+    imageFile instanceof File ? await saveUploadedImage("products", productId, imageFile) : null;
+
   await productRepository.update(productId, {
     canonicalName,
     category,
@@ -55,6 +61,11 @@ export async function updateProduct(productId: string, formData: FormData): Prom
     aliases,
     normalizedAliases: computeNormalizedAliases(canonicalName, aliases),
     isActive,
+    // Only touch imageUrl when a new file was actually uploaded - update()
+    // merges partials, so omitting the key here (rather than setting it to
+    // undefined) leaves an existing image alone when the admin just edits
+    // the other fields.
+    ...(saved ? { imageUrl: saved.url } : {}),
   });
 
   revalidatePath("/admin/products");

@@ -24,7 +24,7 @@ export default async function AdminAnalyticsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-neutral-900">אנליטיקס</h1>
+      <h1 className="text-lg font-semibold text-neutral-900">אנליטיקס</h1>
 
       <div className="flex flex-wrap gap-3">
         <div className="w-40">
@@ -42,7 +42,7 @@ export default async function AdminAnalyticsPage() {
       </div>
 
       <section className="flex flex-col gap-3">
-        <h2 className="font-semibold text-neutral-900">ביצועי מבצעים</h2>
+        <h2 className="text-base font-semibold text-neutral-900">ביצועי מבצעים</h2>
         <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white">
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 text-neutral-500">

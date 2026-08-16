@@ -10,6 +10,7 @@ function baseRoute(overrides: Partial<Route> = {}): Route {
     shoppingListId: "sl-1",
     stops: [],
     pathNodeIds: ["n-entrance", "n-dairy", "n-beverages", "n-checkout"],
+    checkoutPathNodeIds: [],
     totalDistanceMeters: 50,
     backtrackCount: 0,
     unresolvedItemIds: [],

@@ -8,12 +8,13 @@ import { he } from "@/src/presentation/i18n/he";
 
 interface ShoppingListInputProps {
   storeId: string;
+  initialText?: string;
 }
 
-export function ShoppingListInput({ storeId }: ShoppingListInputProps) {
+export function ShoppingListInput({ storeId, initialText = "" }: ShoppingListInputProps) {
   const router = useRouter();
   const { sessionId } = useAnalytics();
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

@@ -7,7 +7,7 @@ export default async function BranchesPage() {
   const stores = await storeRepository.findActive();
 
   return (
-    <main className="flex flex-1 flex-col gap-6 px-5 py-8">
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-5 py-8">
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-bold text-neutral-900">{he.branches.title}</h1>
         <p className="text-neutral-600">{he.branches.subtitle}</p>

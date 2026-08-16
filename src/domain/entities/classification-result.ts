@@ -16,4 +16,7 @@ export interface ClassificationResult {
   confidence: number;
   source: ClassificationSource;
   alternativeMatches?: ClassificationAlternative[];
+  /** Only meaningful when matchedProductId is set. undefined/true = carried at the requesting
+   * store; explicit false = a real catalog product, just not carried at this particular store. */
+  availableAtStore?: boolean;
 }

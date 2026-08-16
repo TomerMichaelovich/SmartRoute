@@ -18,6 +18,9 @@ function confidenceBadge(item: ShoppingListItem): { label: string; className: st
   if (!c || !c.matchedProductId || c.source === "unresolved") {
     return { label: he.review.notFound, className: "bg-red-50 text-red-700" };
   }
+  if (c.availableAtStore === false) {
+    return { label: he.review.outOfStock, className: "bg-red-50 text-red-700" };
+  }
   if (c.confidence < 0.85) {
     return { label: he.review.checkThis, className: "bg-amber-50 text-amber-700" };
   }

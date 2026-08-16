@@ -37,4 +37,8 @@ export class JsonStoreRepository implements IStoreRepository {
     if (!updated) throw new Error(`Store not found: ${id}`);
     return updated;
   }
+
+  async delete(id: string): Promise<void> {
+    await this.store.mutate((items) => items.filter((item) => item.id !== id));
+  }
 }

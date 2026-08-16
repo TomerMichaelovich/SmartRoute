@@ -1,10 +1,10 @@
 import type { MapEdge } from "@/src/domain/entities/map-edge";
 import type { MapNode } from "@/src/domain/entities/map-node";
-import type { Product } from "@/src/domain/entities/product";
+import type { ProductListing } from "@/src/domain/entities/product-listing";
 import type { Route, RouteStop } from "@/src/domain/entities/route";
 import type { ShoppingListItem } from "@/src/domain/entities/shopping-list";
 import { buildGraph } from "./graph-builder";
-import { dijkstra, reconstructPath, shortestPath, type DijkstraResult } from "./dijkstra";
+import { dijkstra, reconstructPath, type DijkstraResult } from "./dijkstra";
 import { nearestNeighborOrder } from "./nearest-neighbor-tsp";
 import { computeBacktrackCount, computeTotalDistance } from "./route-metrics";
 import { twoOptImprove } from "./two-opt";
@@ -14,9 +14,11 @@ export interface BuildRouteParams {
   storeId: string;
   shoppingListId: string;
   items: ShoppingListItem[];
-  products: Product[];
+  listings: ProductListing[];
   nodes: MapNode[];
   edges: MapEdge[];
+  mapWidth: number;
+  mapHeight: number;
 }
 
 /**
@@ -25,8 +27,8 @@ export interface BuildRouteParams {
  * entrance -> stops -> checkout via Dijkstra shortest paths between them.
  */
 export function buildRoute(params: BuildRouteParams): Route {
-  const { routeId, storeId, shoppingListId, items, products, nodes, edges } = params;
-  const graph = buildGraph(nodes, edges);
+  const { routeId, storeId, shoppingListId, items, listings, nodes, edges, mapWidth, mapHeight } = params;
+  const graph = buildGraph(nodes, edges, mapWidth, mapHeight);
 
   const entrance = nodes.find((n) => n.type === "entrance");
   const checkout = nodes.find((n) => n.type === "checkout");
@@ -34,21 +36,21 @@ export function buildRoute(params: BuildRouteParams): Route {
     throw new Error(`Store ${storeId} is missing an entrance or checkout node`);
   }
 
-  const productById = new Map(products.map((p) => [p.id, p]));
   const itemsByNode = new Map<string, string[]>();
   const unresolvedItemIds: string[] = [];
 
   for (const item of items) {
     const productId = item.classification?.matchedProductId;
-    const product = productId ? productById.get(productId) : undefined;
-    const location = product?.locations.find((loc) => loc.storeId === storeId);
-    if (!location) {
+    const listing = productId
+      ? listings.find((l) => l.productId === productId && l.storeId === storeId)
+      : undefined;
+    if (!listing) {
       unresolvedItemIds.push(item.id);
       continue;
     }
-    const existing = itemsByNode.get(location.nodeId) ?? [];
+    const existing = itemsByNode.get(listing.nodeId) ?? [];
     existing.push(item.id);
-    itemsByNode.set(location.nodeId, existing);
+    itemsByNode.set(listing.nodeId, existing);
   }
 
   const stopNodeIds = Array.from(itemsByNode.keys());
@@ -61,6 +63,7 @@ export function buildRoute(params: BuildRouteParams): Route {
       shoppingListId,
       stops: [],
       pathNodeIds: [],
+      checkoutPathNodeIds: [],
       totalDistanceMeters: 0,
       backtrackCount: 0,
       unresolvedItemIds,
@@ -84,12 +87,19 @@ export function buildRoute(params: BuildRouteParams): Route {
 
   const fullSequence = [entrance.id, ...optimizedOrder, checkout.id];
   const pathNodeIds: string[] = [];
+  // One segment per leg of fullSequence (entrance->stop1, stop1->stop2, ..., lastStop->checkout) -
+  // kept individually (not just concatenated into pathNodeIds) so each stop can carry only the
+  // leg leading up to it, letting the customer-facing map show "route to the next product" instead
+  // of the whole walked path at once.
+  const segments: string[][] = [];
   for (let i = 0; i < fullSequence.length - 1; i++) {
     const from = fullSequence[i];
     const to = fullSequence[i + 1];
     const segment = reconstructPath(dijkstraByNode.get(from)!.previous, to);
+    segments.push(segment);
     pathNodeIds.push(...(i === 0 ? segment : segment.slice(1)));
   }
+  const checkoutPathNodeIds = segments[segments.length - 1];
 
   const stops: RouteStop[] = optimizedOrder.map((nodeId, index) => {
     const mapNode = graph.nodes.get(nodeId)!;
@@ -99,6 +109,7 @@ export function buildRoute(params: BuildRouteParams): Route {
       itemIds: itemsByNode.get(nodeId) ?? [],
       label: mapNode.label,
       type: mapNode.type,
+      pathFromPrevious: segments[index],
     };
   });
 
@@ -108,57 +119,10 @@ export function buildRoute(params: BuildRouteParams): Route {
     shoppingListId,
     stops,
     pathNodeIds,
+    checkoutPathNodeIds,
     totalDistanceMeters: computeTotalDistance(graph, pathNodeIds),
     backtrackCount: computeBacktrackCount(pathNodeIds),
     unresolvedItemIds,
     createdAt,
   };
-}
-
-export interface NaiveDistanceParams {
-  storeId: string;
-  items: ShoppingListItem[];
-  products: Product[];
-  nodes: MapNode[];
-  edges: MapEdge[];
-}
-
-/**
- * Distance the shopper would have walked visiting stops in the order items
- * were typed, entrance -> checkout, with no optimization. Used only by the
- * Summary screen to show how much walking the optimized route saved -
- * reuses the same graph/shortest-path building blocks as buildRoute() with
- * a different (unoptimized) stop ordering.
- */
-export function computeNaiveDistance(params: NaiveDistanceParams): number {
-  const { storeId, items, products, nodes, edges } = params;
-  const graph = buildGraph(nodes, edges);
-
-  const entrance = nodes.find((n) => n.type === "entrance");
-  const checkout = nodes.find((n) => n.type === "checkout");
-  if (!entrance || !checkout) return 0;
-
-  const productById = new Map(products.map((p) => [p.id, p]));
-  const seen = new Set<string>();
-  const orderedStopNodeIds: string[] = [];
-
-  for (const item of items) {
-    const productId = item.classification?.matchedProductId;
-    const product = productId ? productById.get(productId) : undefined;
-    const location = product?.locations.find((loc) => loc.storeId === storeId);
-    if (!location || seen.has(location.nodeId)) continue;
-    seen.add(location.nodeId);
-    orderedStopNodeIds.push(location.nodeId);
-  }
-
-  if (orderedStopNodeIds.length === 0) return 0;
-
-  const fullSequence = [entrance.id, ...orderedStopNodeIds, checkout.id];
-  const pathNodeIds: string[] = [];
-  for (let i = 0; i < fullSequence.length - 1; i++) {
-    const { path } = shortestPath(graph, fullSequence[i], fullSequence[i + 1]);
-    pathNodeIds.push(...(i === 0 ? path : path.slice(1)));
-  }
-
-  return computeTotalDistance(graph, pathNodeIds);
 }

@@ -24,7 +24,7 @@ export default async function AdminDashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-neutral-900">לוח בקרה</h1>
+      <h1 className="text-lg font-semibold text-neutral-900">לוח בקרה</h1>
 
       <div className="flex flex-wrap gap-3">
         <div className="w-32">

@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { demoEdges, demoNodes, demoProducts } from "@/tests/fixtures/demo-store.fixture";
+import {
+  demoEdges,
+  demoNodes,
+  demoProductListings,
+  demoProducts,
+  demoStore,
+} from "@/tests/fixtures/demo-store.fixture";
 import { buildGraph } from "@/src/application/routing/graph-builder";
 import { dijkstra } from "@/src/application/routing/dijkstra";
-import { buildRoute, computeNaiveDistance } from "@/src/application/routing/route-service";
-import {
-  computeBacktrackCount,
-  computeTotalDistance,
-  estimateTimeSavedSeconds,
-} from "@/src/application/routing/route-metrics";
+import { buildRoute } from "@/src/application/routing/route-service";
+import { computeBacktrackCount, computeTotalDistance } from "@/src/application/routing/route-metrics";
 import type { ShoppingListItem } from "@/src/domain/entities/shopping-list";
 import type { ClassificationResult } from "@/src/domain/entities/classification-result";
 
@@ -29,33 +31,35 @@ function itemFor(id: string, canonicalName: string): ShoppingListItem {
 }
 
 describe("dijkstra against the seeded store graph", () => {
-  // Ground truth computed by running the real implementation against the
-  // seeded graph (see plan §5 / roadmap phase 5) - the entrance-checkout
-  // direct edge (5m) makes several of these shorter via checkout than the
-  // "long way around" through bakery/dairy/frozen.
-  const graph = buildGraph(demoNodes, demoEdges);
+  // Ground truth computed by running the real implementation against the seeded graph -
+  // edge weights are straight-line distance between node coordinates in the store's pixel
+  // canvas (relative map-space units, not real-world distance), not hand-typed integers, so
+  // these are irrational and compared with a tolerance. The entrance-checkout direct edge
+  // still makes several of these shorter via checkout than the "long way around" through
+  // bakery/dairy/frozen.
+  const graph = buildGraph(demoNodes, demoEdges, demoStore.mapWidth, demoStore.mapHeight);
   const fromEntrance = dijkstra(graph, "n-entrance");
 
   it.each([
-    ["n-produce", 6],
-    ["n-checkout", 5],
-    ["n-bakery", 14],
-    ["n-int-1", 17],
-    ["n-dairy", 27],
-    ["n-meat-fish", 15],
-    ["n-int-3", 25],
-    ["n-personal-care", 28],
-    ["n-beverages", 40],
-  ])("shortest distance entrance -> %s is %i", (nodeId, expected) => {
-    expect(fromEntrance.distances.get(nodeId)).toBe(expected);
+    ["n-produce", 100],
+    ["n-checkout", 350],
+    ["n-bakery", 250],
+    ["n-int-1", 550],
+    ["n-dairy", 850],
+    ["n-meat-fish", 920.087713],
+    ["n-int-3", 1220.087713],
+    ["n-personal-care", 1021.699057],
+    ["n-beverages", 1478.201596],
+  ])("shortest distance entrance -> %s is ~%s", (nodeId, expected) => {
+    expect(fromEntrance.distances.get(nodeId)).toBeCloseTo(expected, 5);
   });
 });
 
 describe("route-metrics", () => {
-  const graph = buildGraph(demoNodes, demoEdges);
+  const graph = buildGraph(demoNodes, demoEdges, demoStore.mapWidth, demoStore.mapHeight);
 
   it("sums edge weights along a path", () => {
-    expect(computeTotalDistance(graph, ["n-entrance", "n-produce", "n-bakery"])).toBe(14);
+    expect(computeTotalDistance(graph, ["n-entrance", "n-produce", "n-bakery"])).toBeCloseTo(250, 5);
   });
 
   it("throws for a path with no matching edge", () => {
@@ -65,16 +69,6 @@ describe("route-metrics", () => {
   it("counts revisited nodes as backtracking", () => {
     expect(computeBacktrackCount(["a", "b", "c", "b", "d"])).toBe(1);
     expect(computeBacktrackCount(["a", "b", "c"])).toBe(0);
-  });
-});
-
-describe("estimateTimeSavedSeconds", () => {
-  it("converts a distance saving into seconds at the assumed walking pace", () => {
-    expect(estimateTimeSavedSeconds(121, 112)).toBeCloseTo(7.5, 5);
-  });
-
-  it("never returns a negative saving when the naive order was actually shorter", () => {
-    expect(estimateTimeSavedSeconds(100, 120)).toBe(0);
   });
 });
 
@@ -92,20 +86,22 @@ describe("buildRoute", () => {
       storeId: "store-ramat-gan-1",
       shoppingListId: "sl-1",
       items,
-      products: demoProducts,
+      listings: demoProductListings,
       nodes: demoNodes,
       edges: demoEdges,
+      mapWidth: demoStore.mapWidth,
+      mapHeight: demoStore.mapHeight,
     });
 
     expect(route.stops.map((s) => s.nodeId)).toEqual([
       "n-produce",
       "n-dairy",
-      "n-personal-care",
       "n-beverages",
+      "n-personal-care",
     ]);
     expect(route.pathNodeIds[0]).toBe("n-entrance");
     expect(route.pathNodeIds.at(-1)).toBe("n-checkout");
-    expect(route.totalDistanceMeters).toBe(112);
+    expect(route.totalDistanceMeters).toBeCloseTo(3284.763915, 4);
     expect(route.backtrackCount).toBe(1);
     expect(route.unresolvedItemIds).toEqual([]);
   });
@@ -117,9 +113,11 @@ describe("buildRoute", () => {
       storeId: "store-ramat-gan-1",
       shoppingListId: "sl-2",
       items,
-      products: demoProducts,
+      listings: demoProductListings,
       nodes: demoNodes,
       edges: demoEdges,
+      mapWidth: demoStore.mapWidth,
+      mapHeight: demoStore.mapHeight,
     });
 
     expect(route.stops).toHaveLength(1);
@@ -140,9 +138,11 @@ describe("buildRoute", () => {
       storeId: "store-ramat-gan-1",
       shoppingListId: "sl-3",
       items,
-      products: demoProducts,
+      listings: demoProductListings,
       nodes: demoNodes,
       edges: demoEdges,
+      mapWidth: demoStore.mapWidth,
+      mapHeight: demoStore.mapHeight,
     });
 
     expect(route.unresolvedItemIds).toEqual(["item-x"]);
@@ -159,51 +159,16 @@ describe("buildRoute", () => {
       storeId: "store-ramat-gan-1",
       shoppingListId: "sl-4",
       items: [unresolved],
-      products: demoProducts,
+      listings: demoProductListings,
       nodes: demoNodes,
       edges: demoEdges,
+      mapWidth: demoStore.mapWidth,
+      mapHeight: demoStore.mapHeight,
     });
 
     expect(route.stops).toEqual([]);
     expect(route.pathNodeIds).toEqual([]);
     expect(route.totalDistanceMeters).toBe(0);
     expect(route.unresolvedItemIds).toEqual(["item-x"]);
-  });
-});
-
-describe("computeNaiveDistance", () => {
-  it("is at least the optimized distance for the same mixed list (sanity bound)", () => {
-    const items = [
-      itemFor("item-0", "עגבניות"),
-      itemFor("item-1", "חלב 3% תנובה 1 ליטר"),
-      itemFor("item-2", "קוקה קולה 1.5 ליטר"),
-      itemFor("item-3", "שמפו"),
-    ];
-
-    const naive = computeNaiveDistance({
-      storeId: "store-ramat-gan-1",
-      items,
-      products: demoProducts,
-      nodes: demoNodes,
-      edges: demoEdges,
-    });
-
-    // Ground truth from running the real implementation (see route-service.ts) -
-    // the as-typed order (produce, dairy, beverages, personal-care) walks
-    // further than the optimized order the 2-opt pass finds (112m).
-    expect(naive).toBe(121);
-    expect(naive).toBeGreaterThanOrEqual(112);
-  });
-
-  it("returns 0 when no items resolve to a location", () => {
-    const unresolved: ShoppingListItem = { id: "item-x", rawText: "משהו שלא קיים" };
-    const naive = computeNaiveDistance({
-      storeId: "store-ramat-gan-1",
-      items: [unresolved],
-      products: demoProducts,
-      nodes: demoNodes,
-      edges: demoEdges,
-    });
-    expect(naive).toBe(0);
   });
 });

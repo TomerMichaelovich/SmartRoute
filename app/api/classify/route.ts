@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { resolveAvailability } from "@/src/application/classification/resolve-availability";
 import type { ShoppingList, ShoppingListItem } from "@/src/domain/entities/shopping-list";
 import {
   analyticsRepository,
   classificationService,
+  productListingRepository,
   shoppingListRepository,
+  storeRepository,
 } from "@/src/infrastructure/container";
 
 const requestSchema = z.object({
@@ -22,7 +25,16 @@ export async function POST(request: Request) {
   }
   const { storeId, rawItems, sessionId } = parsed.data;
 
-  const classifications = await classificationService.classifyBatch(rawItems);
+  const store = await storeRepository.findById(storeId);
+  if (!store) {
+    return NextResponse.json({ error: `Store not found: ${storeId}` }, { status: 404 });
+  }
+
+  const [rawClassifications, listings] = await Promise.all([
+    classificationService.classifyBatch(rawItems),
+    productListingRepository.findByStore(storeId),
+  ]);
+  const classifications = rawClassifications.map((c) => resolveAvailability(c, storeId, listings));
 
   const items: ShoppingListItem[] = rawItems.map((rawText, i) => ({
     id: crypto.randomUUID(),

@@ -20,15 +20,7 @@ export const storeSchema = z.object({
   updatedAt: z.string(),
 });
 
-export const mapNodeTypeSchema = z.enum([
-  "entrance",
-  "checkout",
-  "aisle",
-  "department",
-  "intersection",
-  "waypoint",
-  "product_point",
-]);
+export const mapNodeTypeSchema = z.enum(["entrance", "checkout", "waypoint", "department"]);
 
 export const mapNodeSchema = z.object({
   id: z.string(),
@@ -37,6 +29,7 @@ export const mapNodeSchema = z.object({
   label: z.string(),
   position: geoPointSchema,
   zone: z.string().optional(),
+  iconKey: z.string().optional(),
 });
 
 export const mapEdgeSchema = z.object({
@@ -44,7 +37,6 @@ export const mapEdgeSchema = z.object({
   storeId: z.string(),
   fromNodeId: z.string(),
   toNodeId: z.string(),
-  distanceMeters: z.number(),
   bidirectional: z.boolean(),
 });
 
@@ -62,23 +54,22 @@ export const productCategorySchema = z.enum([
   "other",
 ]);
 
-export const productStoreLocationSchema = z.object({
-  storeId: z.string(),
-  nodeId: z.string(),
-  shelf: z.string().optional(),
-  zone: z.string().optional(),
-});
-
 export const productSchema = z.object({
   id: z.string(),
-  chainId: z.string(),
   canonicalName: z.string(),
   aliases: z.array(z.string()),
   normalizedAliases: z.array(z.string()),
   category: productCategorySchema,
   department: z.string(),
-  locations: z.array(productStoreLocationSchema),
+  imageUrl: z.string().optional(),
   isActive: z.boolean(),
+});
+
+export const productListingSchema = z.object({
+  id: z.string(),
+  productId: z.string(),
+  storeId: z.string(),
+  nodeId: z.string(),
 });
 
 export const classificationSourceSchema = z.enum([
@@ -97,6 +88,7 @@ export const classificationResultSchema = z.object({
   alternativeMatches: z
     .array(z.object({ productId: z.string(), confidence: z.number() }))
     .optional(),
+  availableAtStore: z.boolean().optional(),
 });
 
 export const shoppingListItemSchema = z.object({
@@ -119,6 +111,7 @@ export const routeStopSchema = z.object({
   itemIds: z.array(z.string()),
   label: z.string(),
   type: mapNodeTypeSchema,
+  pathFromPrevious: z.array(z.string()),
 });
 
 export const routeSchema = z.object({
@@ -127,6 +120,7 @@ export const routeSchema = z.object({
   shoppingListId: z.string(),
   stops: z.array(routeStopSchema),
   pathNodeIds: z.array(z.string()),
+  checkoutPathNodeIds: z.array(z.string()),
   totalDistanceMeters: z.number(),
   backtrackCount: z.number(),
   unresolvedItemIds: z.array(z.string()),

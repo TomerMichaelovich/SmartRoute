@@ -3,6 +3,5 @@ export interface MapEdge {
   storeId: string;
   fromNodeId: string;
   toNodeId: string;
-  distanceMeters: number;
   bidirectional: boolean;
 }

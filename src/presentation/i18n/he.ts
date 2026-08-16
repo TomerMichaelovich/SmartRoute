@@ -28,15 +28,38 @@ export const he = {
       if (n === 2) return "שני פריטים ברשימה";
       return `${n} פריטים ברשימה`;
     },
+    chooseMethod: {
+      title: "איך תעלו את רשימת הקניות?",
+      subtitle: "בחרו את הדרך הנוחה לכם",
+      manualTitle: "רשימה ידנית",
+      manualDescription: "הקלידו או הדביקו את הרשימה",
+      photoTitle: "צילום רשימה",
+      photoDescription: "צלמו או העלו תמונה של הרשימה",
+    },
+    photo: {
+      title: "צילום רשימת קניות",
+      subtitle: "צלמו את הרשימה או העלו תמונה קיימת, ואנחנו ננסה לזהות את הפריטים",
+      pickImage: "בחרו תמונה",
+      retake: "בחרו תמונה אחרת",
+      recognizeButton: "זהו טקסט מהתמונה",
+      recognizing: "מזהים טקסט בתמונה...",
+      recognizeError: "לא הצלחנו לזהות טקסט בתמונה. נסו תמונה ברורה יותר או עברו לרשימה ידנית.",
+      reviewHint: "בדקו ותקנו את הפריטים שזיהינו לפני שממשיכים",
+    },
   },
   review: {
     title: "בדיקת הפריטים",
     subtitle: "בדקו שזיהינו נכון את הפריטים שלכם, ותקנו אם צריך",
     notFound: "לא נמצא",
+    outOfStock: "לא במלאי בסניף זה",
     checkThis: "כדאי לבדוק",
     chooseProduct: "בחרו מוצר",
     noMatch: "— לא נבחר —",
     continueToRoute: "המשך למסלול הקנייה",
+    missingEntranceOrCheckout:
+      "לא ניתן לבנות מסלול: לסניף הזה חסרה נקודת כניסה ו/או קופה במפה. פנו למנהל הסניף להשלמת ההגדרה.",
+    disconnectedGraph:
+      "לא ניתן לבנות מסלול: חסרים קשרים (קשתות) במפת הסניף בין חלק מהנקודות. פנו למנהל הסניף להשלמת ההגדרה.",
     unresolvedWarning(n: number): string {
       return n === 1
         ? "פריט אחד לא זוהה ולא ייכלל במסלול"
@@ -49,9 +72,11 @@ export const he = {
       return `${checked} מתוך ${total} פריטים נאספו`;
     },
     unresolvedNotice(n: number): string {
+      // Covers two different reasons (not identified, or identified but out of stock at
+      // this store) - kept generic since the count alone can't distinguish which applied.
       return n === 1
-        ? "פריט אחד לא נכלל במסלול כי לא זוהה"
-        : `${n} פריטים לא נכללו במסלול כי לא זוהו`;
+        ? "פריט אחד לא נכלל במסלול"
+        : `${n} פריטים לא נכללו במסלול`;
     },
     finishShopping: "סיימתי לקנות",
   },
@@ -62,7 +87,6 @@ export const he = {
     title: "סיכום הקנייה",
     subtitle: "כל הכבוד! סיימתם לקנות",
     duration: "משך הקנייה",
-    timeSaved: "זמן משוער שנחסך",
     distance: "מרחק הליכה",
     backtracks: "חזרות אחורה במסלול",
     satisfactionQuestion: "איך הייתה חוויית הקנייה?",
@@ -73,9 +97,6 @@ export const he = {
     },
     secondsShort(n: number): string {
       return `${n} שנ׳`;
-    },
-    metersShort(n: number): string {
-      return `${n} מ׳`;
     },
   },
 } as const;

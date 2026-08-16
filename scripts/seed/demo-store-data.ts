@@ -2,6 +2,7 @@ import { normalizeHebrewText } from "@/src/application/classification/normalize-
 import type { MapEdge } from "@/src/domain/entities/map-edge";
 import type { MapNode } from "@/src/domain/entities/map-node";
 import type { Product, ProductCategory } from "@/src/domain/entities/product";
+import type { ProductListing } from "@/src/domain/entities/product-listing";
 import type { Promotion } from "@/src/domain/entities/promotion";
 import type { Store } from "@/src/domain/entities/store";
 
@@ -40,11 +41,11 @@ export const demoNodes: MapNode[] = [
   node("n-entrance", "entrance", "כניסה", 0.05, 0.9),
   node("n-produce", "department", "ירקות ופירות", 0.15, 0.9, "produce"),
   node("n-bakery", "department", "מאפייה", 0.3, 0.9, "bakery"),
-  node("n-int-1", "intersection", "צומת 1", 0.3, 0.6),
+  node("n-int-1", "waypoint", "צומת 1", 0.3, 0.6),
   node("n-dairy", "department", "מוצרי חלב", 0.3, 0.3, "dairy"),
-  node("n-int-2", "intersection", "צומת 2", 0.3, 0.1),
+  node("n-int-2", "waypoint", "צומת 2", 0.3, 0.1),
   node("n-frozen", "department", "קפואים", 0.5, 0.1, "frozen"),
-  node("n-int-3", "intersection", "צומת 3", 0.5, 0.6),
+  node("n-int-3", "waypoint", "צומת 3", 0.5, 0.6),
   node("n-meat-fish", "department", "בשר ודגים", 0.5, 0.9, "meat_fish"),
   node("n-pantry", "department", "מזון יבש ושימורים", 0.65, 0.55, "pantry"),
   node("n-beverages", "department", "משקאות", 0.75, 0.55, "beverages"),
@@ -55,39 +56,39 @@ export const demoNodes: MapNode[] = [
 ];
 
 let edgeCounter = 0;
-function edge(fromNodeId: string, toNodeId: string, distanceMeters: number): MapEdge {
+function edge(fromNodeId: string, toNodeId: string): MapEdge {
   edgeCounter += 1;
   return {
     id: `e-${edgeCounter}`,
     storeId: STORE_ID,
     fromNodeId,
     toNodeId,
-    distanceMeters,
     bidirectional: true,
   };
 }
 
 export const demoEdges: MapEdge[] = [
-  edge("n-entrance", "n-produce", 6),
-  edge("n-produce", "n-bakery", 8),
-  edge("n-bakery", "n-int-1", 10),
-  edge("n-int-1", "n-dairy", 10),
-  edge("n-dairy", "n-int-2", 8),
-  edge("n-int-2", "n-frozen", 7),
-  edge("n-frozen", "n-int-3", 12),
-  edge("n-int-3", "n-meat-fish", 10),
-  edge("n-int-3", "n-pantry", 9),
-  edge("n-pantry", "n-beverages", 6),
-  edge("n-beverages", "n-snacks", 6),
-  edge("n-snacks", "n-household", 9),
-  edge("n-household", "n-personal-care", 7),
-  edge("n-personal-care", "n-int-1", 11),
-  edge("n-meat-fish", "n-checkout", 10),
-  edge("n-int-1", "n-checkout", 12),
-  edge("n-entrance", "n-checkout", 5),
+  edge("n-entrance", "n-produce"),
+  edge("n-produce", "n-bakery"),
+  edge("n-bakery", "n-int-1"),
+  edge("n-int-1", "n-dairy"),
+  edge("n-dairy", "n-int-2"),
+  edge("n-int-2", "n-frozen"),
+  edge("n-frozen", "n-int-3"),
+  edge("n-int-3", "n-meat-fish"),
+  edge("n-int-3", "n-pantry"),
+  edge("n-pantry", "n-beverages"),
+  edge("n-beverages", "n-snacks"),
+  edge("n-snacks", "n-household"),
+  edge("n-household", "n-personal-care"),
+  edge("n-personal-care", "n-int-1"),
+  edge("n-meat-fish", "n-checkout"),
+  edge("n-int-1", "n-checkout"),
+  edge("n-entrance", "n-checkout"),
 ];
 
 let productCounter = 0;
+const demoProductListingsBuilder: ProductListing[] = [];
 function product(params: {
   canonicalName: string;
   aliases?: string[];
@@ -96,19 +97,24 @@ function product(params: {
   nodeId: string;
 }): Product {
   productCounter += 1;
+  const id = `prod-${productCounter}`;
   const aliases = params.aliases ?? [];
   const normalizedAliases = Array.from(
     new Set([params.canonicalName, ...aliases].map(normalizeHebrewText)),
   );
+  demoProductListingsBuilder.push({
+    id: `listing-${productCounter}`,
+    productId: id,
+    storeId: STORE_ID,
+    nodeId: params.nodeId,
+  });
   return {
-    id: `prod-${productCounter}`,
-    chainId: CHAIN_ID,
+    id,
     canonicalName: params.canonicalName,
     aliases,
     normalizedAliases,
     category: params.category,
     department: params.department,
-    locations: [{ storeId: STORE_ID, nodeId: params.nodeId }],
     isActive: true,
   };
 }
@@ -477,6 +483,8 @@ export const demoProducts: Product[] = [
     nodeId: "n-personal-care",
   }),
 ];
+
+export const demoProductListings: ProductListing[] = demoProductListingsBuilder;
 
 export const demoPromotions: Promotion[] = [
   {

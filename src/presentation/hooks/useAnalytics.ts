@@ -51,16 +51,20 @@ interface LogEventExtra {
  * fired either from mount effects gated on sessionId, or from user
  * interactions that happen well after mount.
  */
-export function useAnalytics() {
+export function useAnalytics(disabled = false) {
   const [sessionId, setSessionId] = useState<string | null>(null);
 
   // localStorage/cookies aren't available during SSR, so the session id
   // necessarily gets read/created after mount rather than via a lazy
-  // useState initializer.
+  // useState initializer. When disabled (e.g. an admin preview rendering
+  // the real customer page), sessionId is left null forever, which makes
+  // logEvent's guard below a permanent no-op - the preview never creates
+  // a fake session or writes real analytics events.
   useEffect(() => {
+    if (disabled) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSessionId(readOrCreateSessionId());
-  }, []);
+  }, [disabled]);
 
   const logEvent = useCallback(
     (type: AnalyticsEventType, payload: Record<string, unknown> = {}, extra: LogEventExtra = {}) => {

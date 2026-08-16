@@ -24,10 +24,15 @@ export function nearestNeighborOrder(
         nearest = candidate;
       }
     }
-    // `remaining` is non-empty, so a nearest candidate always exists.
-    order.push(nearest!);
-    remaining.delete(nearest!);
-    current = nearest!;
+    if (nearest === null) {
+      // Every remaining stop is unreachable from `current` - a gap in the store's node
+      // graph (missing edges), not a transient failure. Without this guard the loop
+      // never shrinks `remaining` and spins until the array push overflows.
+      throw new Error(`No path from ${current} to any of: ${Array.from(remaining).join(", ")}`);
+    }
+    order.push(nearest);
+    remaining.delete(nearest);
+    current = nearest;
   }
 
   return order;

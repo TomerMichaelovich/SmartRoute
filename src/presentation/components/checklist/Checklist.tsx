@@ -5,7 +5,7 @@ import { ChecklistItem } from "./ChecklistItem";
 
 export interface ChecklistStopView {
   stop: RouteStop;
-  items: Array<{ id: string; displayName: string }>;
+  items: Array<{ id: string; displayName: string; imageUrl?: string }>;
   promotion?: Promotion;
 }
 
@@ -56,6 +56,7 @@ export function Checklist({
                   key={item.id}
                   id={item.id}
                   displayName={item.displayName}
+                  imageUrl={item.imageUrl}
                   checked={checkedItemIds.has(item.id)}
                   onToggle={onToggleItem}
                 />

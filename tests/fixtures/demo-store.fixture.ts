@@ -3,6 +3,7 @@ export {
   STORE_ID,
   demoEdges,
   demoNodes,
+  demoProductListings,
   demoProducts,
   demoPromotions,
   demoStore,

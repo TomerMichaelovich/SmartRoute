@@ -4,8 +4,9 @@ import { buildRoute } from "@/src/application/routing/route-service";
 import {
   edgeRepository,
   nodeRepository,
-  productRepository,
+  productListingRepository,
   routeRepository,
+  storeRepository,
 } from "@/src/infrastructure/container";
 import { shoppingListItemSchema } from "@/src/infrastructure/repositories/json/schemas";
 
@@ -26,25 +27,45 @@ export async function POST(request: Request) {
   }
   const { storeId, shoppingListId, items } = parsed.data;
 
-  const [nodes, edges, products] = await Promise.all([
+  const [store, nodes, edges, listings] = await Promise.all([
+    storeRepository.findById(storeId),
     nodeRepository.findByStore(storeId),
     edgeRepository.findByStore(storeId),
-    productRepository.findAllActive(),
+    productListingRepository.findByStore(storeId),
   ]);
 
-  if (nodes.length === 0) {
+  if (!store || nodes.length === 0) {
     return NextResponse.json({ error: `Store not found: ${storeId}` }, { status: 404 });
   }
 
-  const route = buildRoute({
-    routeId: crypto.randomUUID(),
-    storeId,
-    shoppingListId,
-    items,
-    products,
-    nodes,
-    edges,
-  });
+  let route;
+  try {
+    route = buildRoute({
+      routeId: crypto.randomUUID(),
+      storeId,
+      shoppingListId,
+      items,
+      listings,
+      nodes,
+      edges,
+      mapWidth: store.mapWidth,
+      mapHeight: store.mapHeight,
+    });
+  } catch (err) {
+    // buildRoute() throws when the store's node graph has no entrance and/or checkout - a data
+    // gap in the admin-authored map, not an unexpected failure. Surface it as a distinguishable
+    // 400 so the client can explain it instead of showing a generic "something went wrong".
+    const message = err instanceof Error ? err.message : "";
+    if (message.includes("missing an entrance or checkout")) {
+      return NextResponse.json({ code: "missing_entrance_or_checkout" }, { status: 400 });
+    }
+    // nearestNeighborOrder() throws when a stop is unreachable from the current position -
+    // a gap in the admin-authored edge graph (missing connections), not an unexpected failure.
+    if (message.startsWith("No path from")) {
+      return NextResponse.json({ code: "disconnected_graph" }, { status: 400 });
+    }
+    throw err;
+  }
 
   await routeRepository.create(route);
 

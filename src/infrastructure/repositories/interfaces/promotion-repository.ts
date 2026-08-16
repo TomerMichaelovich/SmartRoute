@@ -5,4 +5,5 @@ export interface IPromotionRepository {
   findById(id: string): Promise<Promotion | null>;
   create(promotion: Promotion): Promise<Promotion>;
   update(id: string, patch: Partial<Promotion>): Promise<Promotion>;
+  delete(id: string): Promise<void>;
 }

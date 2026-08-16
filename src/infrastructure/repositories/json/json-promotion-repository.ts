@@ -32,4 +32,8 @@ export class JsonPromotionRepository implements IPromotionRepository {
     if (!updated) throw new Error(`Promotion not found: ${id}`);
     return updated;
   }
+
+  async delete(id: string): Promise<void> {
+    await this.store.mutate((items) => items.filter((item) => item.id !== id));
+  }
 }

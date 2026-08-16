@@ -46,3 +46,13 @@ next-env.d.ts
 /data/*.jsonl
 /data/*.tmp
 !/data/.gitkeep
+
+# store map photos uploaded via the admin panel
+/public/uploads/
+
+# stray runtime data file / scratch assets, not project source
+/.json
+/ICON/
+/שיווק/
+/PROJECT_FILES.md
+/STORE_LAYOUT_EDITOR_PLAN.md

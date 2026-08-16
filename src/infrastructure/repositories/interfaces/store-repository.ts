@@ -6,4 +6,5 @@ export interface IStoreRepository {
   findById(id: string): Promise<Store | null>;
   create(store: Store): Promise<Store>;
   update(id: string, patch: Partial<Store>): Promise<Store>;
+  delete(id: string): Promise<void>;
 }

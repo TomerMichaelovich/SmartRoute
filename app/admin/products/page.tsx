@@ -1,10 +1,7 @@
 import type { ProductCategory } from "@/src/domain/entities/product";
-import {
-  nodeRepository,
-  productRepository,
-  storeRepository,
-} from "@/src/infrastructure/container";
+import { productRepository } from "@/src/infrastructure/container";
 import { createProduct, updateProduct } from "@/src/presentation/actions/admin-product-actions";
+import { PRODUCT_CATEGORY_LABELS } from "@/src/presentation/product-category-labels";
 
 const CATEGORIES: ProductCategory[] = [
   "produce",
@@ -26,25 +23,19 @@ export default async function AdminProductsPage({
   searchParams: Promise<{ department?: string }>;
 }) {
   const { department } = await searchParams;
-  const [allProducts, stores] = await Promise.all([
-    productRepository.findAll(),
-    storeRepository.findAll(),
-  ]);
+  const allProducts = await productRepository.findAll();
   const products = department ? allProducts.filter((p) => p.department === department) : allProducts;
   const departments = Array.from(new Set(allProducts.map((p) => p.department))).sort();
 
-  const nodesByStore = await Promise.all(stores.map((s) => nodeRepository.findByStore(s.id)));
-  const locationOptions = stores.flatMap((store, i) =>
-    nodesByStore[i]
-      .filter((n) => n.type === "department" || n.type === "aisle" || n.type === "product_point")
-      .map((n) => ({ value: `${store.id}::${n.id}`, label: `${store.name} — ${n.label}` })),
-  );
-
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-neutral-900">מוצרים ({allProducts.length})</h1>
+      <h1 className="text-lg font-semibold text-neutral-900">
+        מוצרים ({products.length}
+        {products.length !== allProducts.length ? ` מתוך ${allProducts.length}` : ""})
+      </h1>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-neutral-500">מחלקה:</span>
         <a
           href="/admin/products"
           className={`rounded-full px-3 py-1 text-sm ${
@@ -66,11 +57,81 @@ export default async function AdminProductsPage({
         ))}
       </div>
 
+      <form
+        action={createProduct}
+        className="flex flex-col gap-2 rounded-xl border border-neutral-200 bg-white p-4"
+      >
+        <h2 className="text-base font-semibold text-neutral-900">מוצר חדש</h2>
+        <p className="text-xs text-neutral-500">
+          יוצר רק את הגדרת המוצר במאגר הראשי. כדי לשייך אותו לסניף ולמיקום ספציפי, עברו לעורך
+          הפריסה של הסניף ובחרו/הוסיפו אותו מתוך הצומת הרצוי.
+        </p>
+        <input
+          name="canonicalName"
+          placeholder="שם המוצר"
+          required
+          className="rounded-lg border border-neutral-300 p-2"
+        />
+        <select
+          name="department"
+          required
+          defaultValue=""
+          className="rounded-lg border border-neutral-300 p-2"
+        >
+          <option value="" disabled>
+            בחרו מחלקה
+          </option>
+          {!departments.includes("כללי") && <option value="כללי">כללי</option>}
+          {departments.map((d) => (
+            <option key={d} value={d}>
+              {d}
+            </option>
+          ))}
+        </select>
+        <select name="category" defaultValue="other" className="rounded-lg border border-neutral-300 p-2">
+          {CATEGORIES.map((c) => (
+            <option key={c} value={c}>
+              {PRODUCT_CATEGORY_LABELS[c]}
+            </option>
+          ))}
+        </select>
+        <input
+          name="aliases"
+          placeholder="כינויים, מופרדים בפסיק"
+          className="rounded-lg border border-neutral-300 p-2"
+        />
+        <label className="flex flex-col gap-1 text-sm text-neutral-700">
+          תמונת מוצר (אופציונלי)
+          <input
+            type="file"
+            name="image"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="text-xs text-neutral-600 file:me-2 file:rounded-full file:border-0 file:bg-neutral-100 file:px-2 file:py-1 file:text-xs"
+          />
+        </label>
+        <button
+          type="submit"
+          className="self-start rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white"
+        >
+          צור מוצר
+        </button>
+      </form>
+
       <div className="flex flex-col gap-2">
         {products.map((product) => (
           <details key={product.id} className="rounded-xl border border-neutral-200 bg-white p-4">
             <summary className="flex cursor-pointer items-center justify-between font-medium text-neutral-900">
-              <span>
+              <span className="flex items-center gap-2">
+                {product.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- locally uploaded file, not a remote asset next/image can optimize
+                  <img
+                    src={product.imageUrl}
+                    alt=""
+                    className="h-8 w-8 shrink-0 rounded-lg border border-neutral-200 object-cover"
+                  />
+                ) : (
+                  <span className="h-8 w-8 shrink-0 rounded-lg border border-dashed border-neutral-200" />
+                )}
                 {product.canonicalName}
                 {!product.isActive && <span className="ms-2 text-xs text-red-500">(לא פעיל)</span>}
               </span>
@@ -97,7 +158,7 @@ export default async function AdminProductsPage({
               >
                 {CATEGORIES.map((c) => (
                   <option key={c} value={c}>
-                    {c}
+                    {PRODUCT_CATEGORY_LABELS[c]}
                   </option>
                 ))}
               </select>
@@ -107,6 +168,15 @@ export default async function AdminProductsPage({
                 placeholder="כינויים, מופרדים בפסיק"
                 className="rounded-lg border border-neutral-300 p-2"
               />
+              <label className="flex flex-col gap-1 text-sm text-neutral-700">
+                תמונת מוצר{product.imageUrl ? " (החלפה)" : " (אופציונלי)"}
+                <input
+                  type="file"
+                  name="image"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  className="text-xs text-neutral-600 file:me-2 file:rounded-full file:border-0 file:bg-neutral-100 file:px-2 file:py-1 file:text-xs"
+                />
+              </label>
               <label className="flex items-center gap-2 text-sm text-neutral-700">
                 <input type="checkbox" name="isActive" defaultChecked={product.isActive} /> פעיל
               </label>
@@ -120,57 +190,6 @@ export default async function AdminProductsPage({
           </details>
         ))}
       </div>
-
-      <form
-        action={createProduct}
-        className="flex flex-col gap-2 rounded-xl border border-neutral-200 bg-white p-4"
-      >
-        <h2 className="font-semibold text-neutral-900">מוצר חדש</h2>
-        <input
-          name="chainId"
-          placeholder="מזהה רשת (chainId)"
-          required
-          className="rounded-lg border border-neutral-300 p-2"
-        />
-        <input
-          name="canonicalName"
-          placeholder="שם המוצר"
-          required
-          className="rounded-lg border border-neutral-300 p-2"
-        />
-        <input
-          name="department"
-          placeholder="מחלקה"
-          required
-          className="rounded-lg border border-neutral-300 p-2"
-        />
-        <select name="category" defaultValue="other" className="rounded-lg border border-neutral-300 p-2">
-          {CATEGORIES.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
-        <select name="location" required className="rounded-lg border border-neutral-300 p-2">
-          <option value="">מיקום בחנות...</option>
-          {locationOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-        <input
-          name="aliases"
-          placeholder="כינויים, מופרדים בפסיק"
-          className="rounded-lg border border-neutral-300 p-2"
-        />
-        <button
-          type="submit"
-          className="self-start rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white"
-        >
-          צור מוצר
-        </button>
-      </form>
     </div>
   );
 }

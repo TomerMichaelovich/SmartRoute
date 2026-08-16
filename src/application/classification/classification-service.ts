@@ -9,9 +9,13 @@ const BATCH_CONCURRENCY = 5;
 
 /**
  * Orchestrates the 4-layer classification pipeline: dictionary -> normalization
- * -> fuzzy -> LLM fallback, in the order the layers are supplied. Every
- * outcome (including "unresolved") is cached by normalized text so a given
- * unknown string is only ever run through the pipeline once, globally.
+ * -> fuzzy -> LLM fallback, in the order the layers are supplied, against the
+ * whole shared master product catalog - matching text to a product is a global
+ * question with one right answer, not a per-store one, so every outcome
+ * (including "unresolved") is cached by normalized text alone and only ever
+ * computed once, app-wide. Whether the matched product is actually carried by
+ * the requesting store is a separate, per-request concern - see
+ * resolveAvailability().
  */
 export class ClassificationService {
   constructor(

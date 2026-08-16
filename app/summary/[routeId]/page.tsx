@@ -1,13 +1,5 @@
 import { notFound } from "next/navigation";
-import { estimateTimeSavedSeconds } from "@/src/application/routing/route-metrics";
-import { computeNaiveDistance } from "@/src/application/routing/route-service";
-import {
-  edgeRepository,
-  nodeRepository,
-  productRepository,
-  routeRepository,
-  shoppingListRepository,
-} from "@/src/infrastructure/container";
+import { routeRepository } from "@/src/infrastructure/container";
 import { SatisfactionRating } from "@/src/presentation/components/summary/SatisfactionRating";
 import { StatTile } from "@/src/presentation/components/summary/StatTile";
 import { SummaryAnalytics } from "@/src/presentation/components/summary/SummaryAnalytics";
@@ -39,26 +31,10 @@ export default async function SummaryPage({
   const route = await routeRepository.findById(routeId);
   if (!route) notFound();
 
-  const [nodes, edges, shoppingList, products] = await Promise.all([
-    nodeRepository.findByStore(route.storeId),
-    edgeRepository.findByStore(route.storeId),
-    shoppingListRepository.findById(route.shoppingListId),
-    productRepository.findAllActive(),
-  ]);
-  if (!shoppingList) notFound();
-
-  const naiveDistance = computeNaiveDistance({
-    storeId: route.storeId,
-    items: shoppingList.items,
-    products,
-    nodes,
-    edges,
-  });
-  const timeSavedSeconds = estimateTimeSavedSeconds(naiveDistance, route.totalDistanceMeters);
   const durationSeconds = computeDurationSeconds(route.createdAt);
 
   return (
-    <main className="flex flex-1 flex-col gap-5 px-5 py-8">
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 px-5 py-8">
       <SummaryAnalytics
         routeId={route.id}
         storeId={route.storeId}
@@ -71,25 +47,15 @@ export default async function SummaryPage({
         <p className="text-neutral-600">{he.summary.subtitle}</p>
       </header>
 
-      <div className="flex flex-col gap-3">
-        <div className="flex gap-3">
-          <div className="flex-1">
-            <StatTile label={he.summary.duration} value={formatDuration(durationSeconds)} />
-          </div>
-          <div className="flex-1">
-            <StatTile label={he.summary.timeSaved} value={formatDuration(timeSavedSeconds)} />
-          </div>
+      <div className="flex gap-3">
+        <div className="flex-1">
+          <StatTile label={he.summary.duration} value={formatDuration(durationSeconds)} />
         </div>
-        <div className="flex gap-3">
-          <div className="flex-1">
-            <StatTile
-              label={he.summary.distance}
-              value={he.summary.metersShort(Math.round(route.totalDistanceMeters))}
-            />
-          </div>
-          <div className="flex-1">
-            <StatTile label={he.summary.backtracks} value={route.backtrackCount} />
-          </div>
+        <div className="flex-1">
+          <StatTile label={he.summary.distance} value={Math.round(route.totalDistanceMeters)} />
+        </div>
+        <div className="flex-1">
+          <StatTile label={he.summary.backtracks} value={route.backtrackCount} />
         </div>
       </div>
 

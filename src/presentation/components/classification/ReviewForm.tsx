@@ -91,7 +91,18 @@ export function ReviewForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ storeId, shoppingListId, items }),
       });
-      if (!res.ok) throw new Error("route build failed");
+      if (!res.ok) {
+        const body: { code?: string } | null = await res.json().catch(() => null);
+        setError(
+          body?.code === "missing_entrance_or_checkout"
+            ? he.review.missingEntranceOrCheckout
+            : body?.code === "disconnected_graph"
+              ? he.review.disconnectedGraph
+              : he.common.error,
+        );
+        setIsSubmitting(false);
+        return;
+      }
       const route: { id: string } = await res.json();
       router.push(`/route/${route.id}`);
     } catch {

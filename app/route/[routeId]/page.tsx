@@ -3,7 +3,6 @@ import { notFound } from "next/navigation";
 import { selectRoutePromotions } from "@/src/application/promotions/promotion-service";
 import {
   analyticsRepository,
-  edgeRepository,
   nodeRepository,
   productRepository,
   promotionRepository,
@@ -17,17 +16,19 @@ import { SESSION_COOKIE_NAME } from "@/src/presentation/hooks/useAnalytics";
 
 export default async function RoutePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ routeId: string }>;
+  searchParams: Promise<{ preview?: string }>;
 }) {
   const { routeId } = await params;
+  const { preview } = await searchParams;
   const route = await routeRepository.findById(routeId);
   if (!route) notFound();
 
-  const [store, nodes, edges, shoppingList, products, promotions, cookieStore] = await Promise.all([
+  const [store, nodes, shoppingList, products, promotions, cookieStore] = await Promise.all([
     storeRepository.findById(route.storeId),
     nodeRepository.findByStore(route.storeId),
-    edgeRepository.findByStore(route.storeId),
     shoppingListRepository.findById(route.shoppingListId),
     productRepository.findAllActive(),
     promotionRepository.findAll(),
@@ -57,10 +58,24 @@ export default async function RoutePage({
       return {
         id: itemId,
         displayName: product?.canonicalName ?? item?.rawText ?? itemId,
+        imageUrl: product?.imageUrl,
       };
     }),
     promotion: promotionByNodeId.get(stop.nodeId),
   }));
 
-  return <RouteView route={route} store={store} nodes={nodes} edges={edges} stopViews={stopViews} />;
+  const mapImageUrl = store.mapImageUrl
+    ? `${store.mapImageUrl}?v=${encodeURIComponent(store.updatedAt)}`
+    : "";
+
+  return (
+    <RouteView
+      route={route}
+      store={store}
+      mapImageUrl={mapImageUrl}
+      nodes={nodes}
+      stopViews={stopViews}
+      previewMode={preview === "1"}
+    />
+  );
 }

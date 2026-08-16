@@ -1,27 +1,34 @@
 import Link from "next/link";
 import { storeRepository } from "@/src/infrastructure/container";
-import { createStore } from "@/src/presentation/actions/admin-store-actions";
+import { createStore, deleteStore } from "@/src/presentation/actions/admin-store-actions";
+import { DeleteStoreButton } from "@/src/presentation/components/admin/DeleteStoreButton";
 
 export default async function AdminStoresPage() {
   const stores = await storeRepository.findAll();
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-neutral-900">סניפים</h1>
+      <h1 className="text-lg font-semibold text-neutral-900">סניפים</h1>
 
       <div className="flex flex-col gap-2">
         {stores.map((store) => (
-          <Link
+          <div
             key={store.id}
-            href={`/admin/stores/${store.id}`}
-            className="rounded-xl border border-neutral-200 bg-white p-4 hover:border-emerald-400"
+            className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 bg-white p-4 hover:border-emerald-400"
           >
-            <div className="font-semibold text-neutral-900">
-              {store.name}
-              {!store.isActive && <span className="ms-2 text-xs text-red-500">(לא פעיל)</span>}
-            </div>
-            <div className="text-sm text-neutral-500">{store.address}</div>
-          </Link>
+            <Link href={`/admin/stores/${store.id}`} className="min-w-0 flex-1">
+              <div className="text-base font-semibold text-neutral-900">
+                {store.name}
+                {!store.isActive && <span className="ms-2 text-xs text-red-500">(לא פעיל)</span>}
+              </div>
+              <div className="text-sm text-neutral-500">{store.address}</div>
+            </Link>
+            <DeleteStoreButton
+              storeName={store.name}
+              deleteStore={deleteStore.bind(null, store.id)}
+              className="shrink-0 text-sm"
+            />
+          </div>
         ))}
       </div>
 
@@ -29,7 +36,7 @@ export default async function AdminStoresPage() {
         action={createStore}
         className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4"
       >
-        <h2 className="font-semibold text-neutral-900">סניף חדש</h2>
+        <h2 className="text-base font-semibold text-neutral-900">סניף חדש</h2>
         <input
           name="name"
           placeholder="שם הסניף"

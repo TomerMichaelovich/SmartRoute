@@ -7,6 +7,12 @@ const nextConfig: NextConfig = {
   // which breaks hydration entirely (page loads but nothing is interactive).
   // Update this if your machine's LAN IP changes.
   allowedDevOrigins: ["10.0.0.3"],
+  // Default Server Action body limit (1MB) is too small for an uploaded store photo.
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "10mb",
+    },
+  },
 };
 
 export default nextConfig;

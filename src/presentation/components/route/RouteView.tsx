@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { MapEdge } from "@/src/domain/entities/map-edge";
 import type { MapNode } from "@/src/domain/entities/map-node";
 import type { Route } from "@/src/domain/entities/route";
 import type { Store } from "@/src/domain/entities/store";
@@ -15,17 +14,18 @@ import { he } from "@/src/presentation/i18n/he";
 interface RouteViewProps {
   route: Route;
   store: Store;
+  mapImageUrl: string;
   nodes: MapNode[];
-  edges: MapEdge[];
   stopViews: ChecklistStopView[];
+  previewMode?: boolean;
 }
 
 function storageKey(routeId: string): string {
   return `smartroute:route:${routeId}:checked`;
 }
 
-export function RouteView({ route, store, nodes, edges, stopViews }: RouteViewProps) {
-  const { sessionId, logEvent } = useAnalytics();
+export function RouteView({ route, store, mapImageUrl, nodes, stopViews, previewMode = false }: RouteViewProps) {
+  const { sessionId, logEvent } = useAnalytics(previewMode);
   const [checkedItemIds, setCheckedItemIds] = useState<Set<string>>(new Set());
   const [selectedStopOrder, setSelectedStopOrder] = useState<number | null>(
     stopViews[0]?.stop.order ?? null,
@@ -91,6 +91,15 @@ export function RouteView({ route, store, nodes, edges, stopViews }: RouteViewPr
     return set;
   }, [stopViews, checkedItemIds]);
 
+  // Only the leg to the next not-yet-fully-checked stop is drawn, so the shopper always sees
+  // "how do I get to my next item" rather than the entire remaining route at once. Once every
+  // stop is checked off, the leg to checkout is shown instead.
+  const nextStop = useMemo(
+    () => stopViews.find(({ stop }) => !checkedStopOrders.has(stop.order))?.stop,
+    [stopViews, checkedStopOrders],
+  );
+  const displayPathNodeIds = nextStop ? nextStop.pathFromPrevious : route.checkoutPathNodeIds;
+
   function toggleItem(itemId: string) {
     // Compute the new checked state and log outside the updater: setState
     // updaters must stay pure (React Strict Mode double-invokes them in dev
@@ -107,50 +116,54 @@ export function RouteView({ route, store, nodes, edges, stopViews }: RouteViewPr
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-4 px-4 py-6">
-      <header className="flex flex-col gap-2 px-1">
-        <h1 className="text-xl font-bold text-neutral-900">{store.name}</h1>
-        <ProgressBar value={progress} />
-        <p className="text-sm text-neutral-500">{he.route.progress(checkedCount, totalItems)}</p>
-      </header>
+    <div className="mx-auto flex h-dvh w-full max-w-md flex-col">
+      <div className="flex shrink-0 flex-col gap-4 px-4 pb-4 pt-6">
+        <header className="flex flex-col gap-2 px-1">
+          <h1 className="text-xl font-bold text-neutral-900">{store.name}</h1>
+          <ProgressBar value={progress} />
+          <p className="text-sm text-neutral-500">{he.route.progress(checkedCount, totalItems)}</p>
+        </header>
 
-      <StoreMap
-        mapWidth={store.mapWidth}
-        mapHeight={store.mapHeight}
-        nodes={nodes}
-        edges={edges}
-        pathNodeIds={route.pathNodeIds}
-        stops={route.stops}
-        checkedStopOrders={checkedStopOrders}
-        selectedStopOrder={selectedStopOrder}
-        onSelectStop={setSelectedStopOrder}
-      />
+        <StoreMap
+          mapWidth={store.mapWidth}
+          mapHeight={store.mapHeight}
+          mapImageUrl={mapImageUrl}
+          nodes={nodes}
+          pathNodeIds={displayPathNodeIds}
+          stops={route.stops}
+          checkedStopOrders={checkedStopOrders}
+          selectedStopOrder={selectedStopOrder}
+          onSelectStop={setSelectedStopOrder}
+        />
+      </div>
 
-      <Checklist
-        stopViews={stopViews}
-        checkedItemIds={checkedItemIds}
-        selectedStopOrder={selectedStopOrder}
-        onToggleItem={toggleItem}
-        onSelectStop={setSelectedStopOrder}
-        routeId={route.id}
-      />
+      <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 pb-6">
+        <Checklist
+          stopViews={stopViews}
+          checkedItemIds={checkedItemIds}
+          selectedStopOrder={selectedStopOrder}
+          onToggleItem={toggleItem}
+          onSelectStop={setSelectedStopOrder}
+          routeId={route.id}
+        />
 
-      {route.unresolvedItemIds.length > 0 && (
-        <p className="text-sm text-amber-700">
-          {he.route.unresolvedNotice(route.unresolvedItemIds.length)}
-        </p>
-      )}
+        {route.unresolvedItemIds.length > 0 && (
+          <p className="text-sm text-amber-700">
+            {he.route.unresolvedNotice(route.unresolvedItemIds.length)}
+          </p>
+        )}
 
-      <LinkButton
-        href={`/summary/${route.id}`}
-        fullWidth
-        variant={allDone ? "primary" : "secondary"}
-        onClick={() => {
-          finishedRef.current = true;
-        }}
-      >
-        {he.route.finishShopping}
-      </LinkButton>
+        <LinkButton
+          href={`/summary/${route.id}`}
+          fullWidth
+          variant={allDone ? "primary" : "secondary"}
+          onClick={() => {
+            finishedRef.current = true;
+          }}
+        >
+          {he.route.finishShopping}
+        </LinkButton>
+      </div>
     </div>
   );
 }

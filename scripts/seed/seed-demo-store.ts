@@ -1,11 +1,13 @@
 import { JsonEdgeRepository } from "@/src/infrastructure/repositories/json/json-edge-repository";
 import { JsonNodeRepository } from "@/src/infrastructure/repositories/json/json-node-repository";
+import { JsonProductListingRepository } from "@/src/infrastructure/repositories/json/json-product-listing-repository";
 import { JsonProductRepository } from "@/src/infrastructure/repositories/json/json-product-repository";
 import { JsonPromotionRepository } from "@/src/infrastructure/repositories/json/json-promotion-repository";
 import { JsonStoreRepository } from "@/src/infrastructure/repositories/json/json-store-repository";
 import {
   demoEdges,
   demoNodes,
+  demoProductListings,
   demoProducts,
   demoPromotions,
   demoStore,
@@ -54,16 +56,18 @@ async function main() {
   const nodeRepo = new JsonNodeRepository();
   const edgeRepo = new JsonEdgeRepository();
   const productRepo = new JsonProductRepository();
+  const productListingRepo = new JsonProductListingRepository();
   const promotionRepo = new JsonPromotionRepository();
 
   await storeRepo.create(demoStore);
   for (const n of demoNodes) await nodeRepo.create(n);
   for (const e of demoEdges) await edgeRepo.create(e);
   for (const p of demoProducts) await productRepo.create(p);
+  for (const l of demoProductListings) await productListingRepo.create(l);
   for (const promo of demoPromotions) await promotionRepo.create(promo);
 
   console.log(
-    `Seeded 1 store, ${demoNodes.length} nodes, ${demoEdges.length} edges, ${demoProducts.length} products, ${demoPromotions.length} promotions.`,
+    `Seeded 1 store, ${demoNodes.length} nodes, ${demoEdges.length} edges, ${demoProducts.length} products, ${demoProductListings.length} listings, ${demoPromotions.length} promotions.`,
   );
 }
 
