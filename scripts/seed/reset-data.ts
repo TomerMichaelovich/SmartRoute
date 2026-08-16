@@ -1,41 +1,40 @@
-import { promises as fs } from "fs";
-import path from "path";
+import "../env";
+import { db } from "@/src/infrastructure/db/client";
+import {
+  analyticsEvents,
+  classificationCache,
+  mapEdges,
+  mapNodes,
+  productListings,
+  products,
+  promotions,
+  routes,
+  shoppingLists,
+  stores,
+} from "@/src/infrastructure/db/schema";
 
-const DATA_DIR = path.join(process.cwd(), "data");
-
-const ARRAY_COLLECTION_FILES = [
-  "stores.json",
-  "nodes.json",
-  "edges.json",
-  "shapes.json",
-  "products.json",
-  "product-listings.json",
-  "promotions.json",
-  "shopping-lists.json",
-  "routes.json",
+const TABLES = [
+  routes,
+  shoppingLists,
+  productListings,
+  promotions,
+  mapEdges,
+  mapNodes,
+  products,
+  stores,
+  classificationCache,
+  analyticsEvents,
 ];
 
-// Keyed object store (normalizedText -> ClassificationResult), not an array.
-const OBJECT_COLLECTION_FILES = ["classification-cache.json"];
-
-const LINES_FILES = ["analytics-events.jsonl"];
-
 export async function resetData(): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await Promise.all(
-    ARRAY_COLLECTION_FILES.map((file) => fs.writeFile(path.join(DATA_DIR, file), "[]", "utf-8")),
-  );
-  await Promise.all(
-    OBJECT_COLLECTION_FILES.map((file) => fs.writeFile(path.join(DATA_DIR, file), "{}", "utf-8")),
-  );
-  await Promise.all(
-    LINES_FILES.map((file) => fs.writeFile(path.join(DATA_DIR, file), "", "utf-8")),
-  );
+  for (const table of TABLES) {
+    await db.delete(table);
+  }
 }
 
 async function main() {
   await resetData();
-  console.log("Data directory reset to empty collections.");
+  console.log("Postgres tables reset to empty.");
 }
 
 if (require.main === module) {

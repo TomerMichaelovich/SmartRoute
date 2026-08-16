@@ -4,33 +4,33 @@ import { fuzzyMatchLayer } from "@/src/application/classification/layers/fuzzy-m
 import { createLlmFallbackLayer } from "@/src/application/classification/layers/llm-fallback-layer";
 import { normalizationLayer } from "@/src/application/classification/layers/normalization-layer";
 import { AnthropicClassifier } from "./llm/anthropic-classifier";
-import { JsonAnalyticsRepository } from "./repositories/json/json-analytics-repository";
-import { JsonClassificationCacheRepository } from "./repositories/json/json-classification-cache-repository";
-import { JsonEdgeRepository } from "./repositories/json/json-edge-repository";
-import { JsonNodeRepository } from "./repositories/json/json-node-repository";
-import { JsonProductListingRepository } from "./repositories/json/json-product-listing-repository";
-import { JsonProductRepository } from "./repositories/json/json-product-repository";
-import { JsonPromotionRepository } from "./repositories/json/json-promotion-repository";
-import { JsonRouteRepository } from "./repositories/json/json-route-repository";
-import { JsonShoppingListRepository } from "./repositories/json/json-shopping-list-repository";
-import { JsonStoreRepository } from "./repositories/json/json-store-repository";
+import { PgAnalyticsRepository } from "./repositories/postgres/pg-analytics-repository";
+import { PgClassificationCacheRepository } from "./repositories/postgres/pg-classification-cache-repository";
+import { PgEdgeRepository } from "./repositories/postgres/pg-edge-repository";
+import { PgNodeRepository } from "./repositories/postgres/pg-node-repository";
+import { PgProductListingRepository } from "./repositories/postgres/pg-product-listing-repository";
+import { PgProductRepository } from "./repositories/postgres/pg-product-repository";
+import { PgPromotionRepository } from "./repositories/postgres/pg-promotion-repository";
+import { PgRouteRepository } from "./repositories/postgres/pg-route-repository";
+import { PgShoppingListRepository } from "./repositories/postgres/pg-shopping-list-repository";
+import { PgStoreRepository } from "./repositories/postgres/pg-store-repository";
 
 /**
  * Composition root: the single place infrastructure implementations are
- * wired to the interfaces the application layer depends on. Migrating off
- * local JSON files (e.g. to SQLite/Supabase) means swapping the repository
- * instances constructed here - no application/presentation code changes.
+ * wired to the interfaces the application layer depends on. Swapping
+ * persistence backends means swapping the repository instances constructed
+ * here - no application/presentation code changes.
  */
-export const storeRepository = new JsonStoreRepository();
-export const nodeRepository = new JsonNodeRepository();
-export const edgeRepository = new JsonEdgeRepository();
-export const productRepository = new JsonProductRepository();
-export const productListingRepository = new JsonProductListingRepository();
-export const shoppingListRepository = new JsonShoppingListRepository();
-export const routeRepository = new JsonRouteRepository();
-export const promotionRepository = new JsonPromotionRepository();
-export const classificationCacheRepository = new JsonClassificationCacheRepository();
-export const analyticsRepository = new JsonAnalyticsRepository();
+export const storeRepository = new PgStoreRepository();
+export const nodeRepository = new PgNodeRepository();
+export const edgeRepository = new PgEdgeRepository();
+export const productRepository = new PgProductRepository();
+export const productListingRepository = new PgProductListingRepository();
+export const shoppingListRepository = new PgShoppingListRepository();
+export const routeRepository = new PgRouteRepository();
+export const promotionRepository = new PgPromotionRepository();
+export const classificationCacheRepository = new PgClassificationCacheRepository();
+export const analyticsRepository = new PgAnalyticsRepository();
 
 const llmClassifier = new AnthropicClassifier();
 

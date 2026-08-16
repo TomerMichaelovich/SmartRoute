@@ -8,7 +8,7 @@ import {
   routeRepository,
   storeRepository,
 } from "@/src/infrastructure/container";
-import { shoppingListItemSchema } from "@/src/infrastructure/repositories/json/schemas";
+import { shoppingListItemSchema } from "@/src/infrastructure/repositories/schemas";
 
 const requestSchema = z.object({
   storeId: z.string().min(1),

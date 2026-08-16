@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { analyticsRepository } from "@/src/infrastructure/container";
-import { analyticsEventTypeSchema } from "@/src/infrastructure/repositories/json/schemas";
+import { analyticsEventTypeSchema } from "@/src/infrastructure/repositories/schemas";
 
 const requestSchema = z.object({
   type: analyticsEventTypeSchema,

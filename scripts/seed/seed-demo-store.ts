@@ -1,9 +1,10 @@
-import { JsonEdgeRepository } from "@/src/infrastructure/repositories/json/json-edge-repository";
-import { JsonNodeRepository } from "@/src/infrastructure/repositories/json/json-node-repository";
-import { JsonProductListingRepository } from "@/src/infrastructure/repositories/json/json-product-listing-repository";
-import { JsonProductRepository } from "@/src/infrastructure/repositories/json/json-product-repository";
-import { JsonPromotionRepository } from "@/src/infrastructure/repositories/json/json-promotion-repository";
-import { JsonStoreRepository } from "@/src/infrastructure/repositories/json/json-store-repository";
+import "../env";
+import { PgEdgeRepository } from "@/src/infrastructure/repositories/postgres/pg-edge-repository";
+import { PgNodeRepository } from "@/src/infrastructure/repositories/postgres/pg-node-repository";
+import { PgProductListingRepository } from "@/src/infrastructure/repositories/postgres/pg-product-listing-repository";
+import { PgProductRepository } from "@/src/infrastructure/repositories/postgres/pg-product-repository";
+import { PgPromotionRepository } from "@/src/infrastructure/repositories/postgres/pg-promotion-repository";
+import { PgStoreRepository } from "@/src/infrastructure/repositories/postgres/pg-store-repository";
 import {
   demoEdges,
   demoNodes,
@@ -52,12 +53,12 @@ async function main() {
   assertGraphConnected();
   await resetData();
 
-  const storeRepo = new JsonStoreRepository();
-  const nodeRepo = new JsonNodeRepository();
-  const edgeRepo = new JsonEdgeRepository();
-  const productRepo = new JsonProductRepository();
-  const productListingRepo = new JsonProductListingRepository();
-  const promotionRepo = new JsonPromotionRepository();
+  const storeRepo = new PgStoreRepository();
+  const nodeRepo = new PgNodeRepository();
+  const edgeRepo = new PgEdgeRepository();
+  const productRepo = new PgProductRepository();
+  const productListingRepo = new PgProductListingRepository();
+  const promotionRepo = new PgPromotionRepository();
 
   await storeRepo.create(demoStore);
   for (const n of demoNodes) await nodeRepo.create(n);
