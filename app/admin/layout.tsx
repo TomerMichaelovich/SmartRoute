@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { logout } from "@/src/presentation/actions/admin-auth-actions";
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
@@ -9,7 +10,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           <Link href="/admin" className="font-bold text-neutral-900">
             SmartRoute · ניהול
           </Link>
-          <nav className="flex gap-4 text-xs font-medium text-neutral-600">
+          <nav className="flex items-center gap-4 text-xs font-medium text-neutral-600">
             <Link href="/admin/stores" className="hover:text-emerald-700">
               סניפים
             </Link>
@@ -22,6 +23,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             <Link href="/admin/analytics" className="hover:text-emerald-700">
               אנליטיקס
             </Link>
+            <form action={logout}>
+              <button type="submit" className="hover:text-red-600">
+                יציאה
+              </button>
+            </form>
           </nav>
         </div>
       </header>
