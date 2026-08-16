@@ -1,7 +1,6 @@
 "use server";
 
-import { promises as fs } from "fs";
-import path from "path";
+import { del } from "@vercel/blob";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { MapNodeType } from "@/src/domain/entities/map-node";
@@ -98,8 +97,8 @@ export async function deleteStore(storeId: string): Promise<void> {
     ...orphanedPromotions.map((p) => promotionRepository.delete(p.id)),
   ]);
 
-  if (store.mapImageUrl?.startsWith("/uploads/stores/")) {
-    await fs.unlink(path.join(process.cwd(), "public", store.mapImageUrl)).catch(() => {});
+  if (store.mapImageUrl) {
+    await del(store.mapImageUrl).catch(() => {});
   }
 
   await storeRepository.delete(storeId);

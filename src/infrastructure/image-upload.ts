@@ -1,5 +1,4 @@
-import { promises as fs } from "fs";
-import path from "path";
+import { put } from "@vercel/blob";
 
 const ALLOWED_IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp", "gif", "svg"]);
 
@@ -10,8 +9,8 @@ export interface SavedImage {
 }
 
 /**
- * Saves an uploaded image under public/uploads/{subdir}/{entityId}.{ext}, keyed
- * only by entity id so a re-upload overwrites the previous file rather than
+ * Saves an uploaded image to Vercel Blob under {subdir}/{entityId}.{ext}, keyed
+ * only by entity id so a re-upload overwrites the previous blob rather than
  * accumulating orphans. Returns null on a missing/empty file or a disallowed
  * extension - callers treat that as "no change" rather than an error.
  */
@@ -26,9 +25,11 @@ export async function saveUploadedImage(
   if (!ALLOWED_IMAGE_EXTENSIONS.has(ext)) return null;
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  const dir = path.join(process.cwd(), "public", "uploads", subdir);
-  await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(path.join(dir, `${entityId}.${ext}`), buffer);
+  const blob = await put(`${subdir}/${entityId}.${ext}`, buffer, {
+    access: "public",
+    addRandomSuffix: false,
+    allowOverwrite: true,
+  });
 
-  return { url: `/uploads/${subdir}/${entityId}.${ext}`, buffer, ext };
+  return { url: blob.url, buffer, ext };
 }

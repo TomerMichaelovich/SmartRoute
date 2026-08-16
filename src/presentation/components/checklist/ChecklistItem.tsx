@@ -16,7 +16,7 @@ export function ChecklistItem({ id, displayName, imageUrl, checked, onToggle }: 
         className="h-5 w-5 shrink-0 rounded border-neutral-300 text-emerald-600 focus:ring-emerald-500"
       />
       {imageUrl && (
-        // eslint-disable-next-line @next/next/no-img-element -- locally uploaded file, not a remote asset next/image can optimize
+        // eslint-disable-next-line @next/next/no-img-element -- Blob-hosted upload of unknown/variable size, not worth next/image's optimization setup
         <img
           src={imageUrl}
           alt=""

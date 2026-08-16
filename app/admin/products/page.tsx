@@ -123,7 +123,7 @@ export default async function AdminProductsPage({
             <summary className="flex cursor-pointer items-center justify-between font-medium text-neutral-900">
               <span className="flex items-center gap-2">
                 {product.imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- locally uploaded file, not a remote asset next/image can optimize
+                  // eslint-disable-next-line @next/next/no-img-element -- Blob-hosted upload of unknown/variable size, not worth next/image's optimization setup
                   <img
                     src={product.imageUrl}
                     alt=""
