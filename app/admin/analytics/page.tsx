@@ -1,6 +1,7 @@
 import {
   getAverageShoppingDurationSeconds,
   getClassificationAccuracy,
+  getNotFoundRate,
   getPromotionStats,
   getReturningSessionCount,
 } from "@/src/application/analytics/analytics-service";
@@ -14,6 +15,7 @@ export default async function AdminAnalyticsPage() {
   ]);
 
   const accuracy = getClassificationAccuracy(events);
+  const notFoundRate = getNotFoundRate(events);
   const avgDuration = getAverageShoppingDurationSeconds(events);
   const promotionStats = getPromotionStats(events);
   const returningSessions = getReturningSessionCount(events);
@@ -29,6 +31,9 @@ export default async function AdminAnalyticsPage() {
       <div className="flex flex-wrap gap-3">
         <div className="w-40">
           <StatTile label="דיוק סיווג" value={`${Math.round(accuracy * 100)}%`} />
+        </div>
+        <div className="w-40">
+          <StatTile label="פריטים שלא נמצאו בפועל" value={`${Math.round(notFoundRate * 100)}%`} />
         </div>
         <div className="w-40">
           <StatTile label="משך קנייה ממוצע" value={`${Math.round(avgDuration)} שנ׳`} />

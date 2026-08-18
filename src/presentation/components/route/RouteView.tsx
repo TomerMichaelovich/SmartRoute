@@ -27,6 +27,7 @@ function storageKey(routeId: string): string {
 export function RouteView({ route, store, mapImageUrl, nodes, stopViews, previewMode = false }: RouteViewProps) {
   const { sessionId, logEvent } = useAnalytics(previewMode);
   const [checkedItemIds, setCheckedItemIds] = useState<Set<string>>(new Set());
+  const [notFoundItemIds, setNotFoundItemIds] = useState<Set<string>>(new Set());
   const [selectedStopOrder, setSelectedStopOrder] = useState<number | null>(
     stopViews[0]?.stop.order ?? null,
   );
@@ -126,6 +127,17 @@ export function RouteView({ route, store, mapImageUrl, nodes, stopViews, preview
     });
   }
 
+  function toggleNotFound(itemId: string) {
+    const nowNotFound = !notFoundItemIds.has(itemId);
+    logEvent("item_not_found", { itemId, notFound: nowNotFound }, { routeId: route.id, storeId: route.storeId });
+    setNotFoundItemIds((prev) => {
+      const next = new Set(prev);
+      if (nowNotFound) next.add(itemId);
+      else next.delete(itemId);
+      return next;
+    });
+  }
+
   return (
     <div className="mx-auto flex h-dvh w-full max-w-md flex-col">
       <div className="flex shrink-0 flex-col gap-4 px-4 pb-4 pt-6">
@@ -152,8 +164,10 @@ export function RouteView({ route, store, mapImageUrl, nodes, stopViews, preview
         <Checklist
           stopViews={stopViews}
           checkedItemIds={checkedItemIds}
+          notFoundItemIds={notFoundItemIds}
           selectedStopOrder={selectedStopOrder}
           onToggleItem={toggleItem}
+          onNotFoundItem={toggleNotFound}
           onSelectStop={setSelectedStopOrder}
           routeId={route.id}
         />

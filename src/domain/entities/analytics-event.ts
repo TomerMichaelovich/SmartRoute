@@ -4,6 +4,7 @@ export type AnalyticsEventType =
   | "route_abandoned"
   | "item_classified"
   | "item_checked"
+  | "item_not_found"
   | "classification_corrected"
   | "promotion_impression"
   | "promotion_click"

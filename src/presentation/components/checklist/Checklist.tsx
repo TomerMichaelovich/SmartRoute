@@ -12,8 +12,10 @@ export interface ChecklistStopView {
 interface ChecklistProps {
   stopViews: ChecklistStopView[];
   checkedItemIds: Set<string>;
+  notFoundItemIds: Set<string>;
   selectedStopOrder: number | null;
   onToggleItem: (itemId: string) => void;
+  onNotFoundItem: (itemId: string) => void;
   onSelectStop: (order: number) => void;
   routeId: string;
 }
@@ -21,8 +23,10 @@ interface ChecklistProps {
 export function Checklist({
   stopViews,
   checkedItemIds,
+  notFoundItemIds,
   selectedStopOrder,
   onToggleItem,
+  onNotFoundItem,
   onSelectStop,
   routeId,
 }: ChecklistProps) {
@@ -58,7 +62,9 @@ export function Checklist({
                   displayName={item.displayName}
                   imageUrl={item.imageUrl}
                   checked={checkedItemIds.has(item.id)}
+                  notFound={notFoundItemIds.has(item.id)}
                   onToggle={onToggleItem}
+                  onNotFound={onNotFoundItem}
                 />
               ))}
             </div>

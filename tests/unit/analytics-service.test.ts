@@ -3,6 +3,7 @@ import {
   countImpressionsForSession,
   getAverageShoppingDurationSeconds,
   getClassificationAccuracy,
+  getNotFoundRate,
   getPromotionStats,
   getReturningSessionCount,
 } from "@/src/application/analytics/analytics-service";
@@ -75,6 +76,23 @@ describe("getReturningSessionCount", () => {
       event({ type: "route_started", sessionId: "s2", timestamp: "2026-01-01T15:00:00.000Z" }),
     ];
     expect(getReturningSessionCount(events)).toBe(1);
+  });
+});
+
+describe("getNotFoundRate", () => {
+  it("returns 0 when there are no item actions", () => {
+    expect(getNotFoundRate([])).toBe(0);
+  });
+
+  it("counts each item once, by its most recent action", () => {
+    const events = [
+      event({ type: "item_checked", timestamp: "2026-01-01T00:00:00.000Z", payload: { itemId: "a", checked: true } }),
+      event({ type: "item_not_found", timestamp: "2026-01-01T00:01:00.000Z", payload: { itemId: "b", notFound: true } }),
+      // "c" is reported not-found, then found after all - the later action wins.
+      event({ type: "item_not_found", timestamp: "2026-01-01T00:02:00.000Z", payload: { itemId: "c", notFound: true } }),
+      event({ type: "item_checked", timestamp: "2026-01-01T00:03:00.000Z", payload: { itemId: "c", checked: true } }),
+    ];
+    expect(getNotFoundRate(events)).toBe(1 / 3);
   });
 });
 

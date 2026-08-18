@@ -81,6 +81,8 @@ export const he = {
         : `${n} פריטים לא נכללו במסלול`;
     },
     finishShopping: "סיימתי לקנות",
+    notFoundButton: "לא מצאתי",
+    notFoundMarked: "דיווחתם שלא נמצא",
   },
   promotions: {
     sponsored: "ממומן",

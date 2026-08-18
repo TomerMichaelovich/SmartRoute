@@ -69,6 +69,25 @@ export function getReturningSessionCount(events: AnalyticsEvent[]): number {
   return Array.from(daysBySession.values()).filter((days) => days.size > 1).length;
 }
 
+/**
+ * Physical findability: of the item-level actions a shopper takes while walking
+ * the route (checked off, or reported not-found), what fraction end up reported
+ * not-found? Distinct from classification accuracy - this catches cases where the
+ * text-to-product match was correct but the map/shelf location was wrong.
+ */
+export function getNotFoundRate(events: AnalyticsEvent[]): number {
+  const latestByItem = new Map<string, boolean>();
+  for (const event of events) {
+    if (event.type !== "item_checked" && event.type !== "item_not_found") continue;
+    const itemId = event.payload.itemId;
+    if (typeof itemId !== "string") continue;
+    latestByItem.set(itemId, event.type === "item_not_found" && event.payload.notFound === true);
+  }
+  if (latestByItem.size === 0) return 0;
+  const notFoundCount = Array.from(latestByItem.values()).filter(Boolean).length;
+  return notFoundCount / latestByItem.size;
+}
+
 export function countImpressionsForSession(
   events: AnalyticsEvent[],
   sessionId: string,
