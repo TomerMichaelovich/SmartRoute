@@ -41,6 +41,8 @@ export function ReviewForm({
     }));
   }, [products]);
 
+  const productById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+
   function handleChangeProduct(itemId: string, productId: string | null) {
     // Log outside the updater: setState updaters must stay pure (React
     // Strict Mode double-invokes them in dev specifically to catch side
@@ -119,6 +121,7 @@ export function ReviewForm({
             key={item.id}
             item={item}
             productsByDepartment={productsByDepartment}
+            productById={productById}
             onChangeProduct={handleChangeProduct}
           />
         ))}

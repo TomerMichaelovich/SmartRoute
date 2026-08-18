@@ -3,9 +3,11 @@ import type { Product } from "@/src/domain/entities/product";
 import type { IClassificationCacheRepository } from "@/src/infrastructure/repositories/interfaces/classification-cache-repository";
 import type { IProductRepository } from "@/src/infrastructure/repositories/interfaces/product-repository";
 import type { ClassificationLayer } from "./classification-layer.interface";
+import { scoreCandidates } from "./layers/fuzzy-match-layer";
 import { normalizeHebrewText } from "./normalize-hebrew-text";
 
 const BATCH_CONCURRENCY = 5;
+const MAX_UNRESOLVED_SUGGESTIONS = 3;
 
 /**
  * Orchestrates the 4-layer classification pipeline: dictionary -> normalization
@@ -69,6 +71,15 @@ export class ClassificationService {
         };
       }
     }
-    return { rawText, confidence: 0, source: "unresolved" };
+    // No layer cleared its accept threshold - still surface the closest catalog
+    // candidates (regardless of threshold) so Classification Review can offer them
+    // as quick suggestions instead of forcing the shopper to search the full catalog.
+    const suggestions = scoreCandidates(normalized, products).slice(0, MAX_UNRESOLVED_SUGGESTIONS);
+    return {
+      rawText,
+      confidence: 0,
+      source: "unresolved",
+      alternativeMatches: suggestions.length > 0 ? suggestions : undefined,
+    };
   }
 }

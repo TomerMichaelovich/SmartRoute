@@ -54,6 +54,8 @@ export const he = {
     outOfStock: "לא במלאי בסניף זה",
     checkThis: "כדאי לבדוק",
     chooseProduct: "בחרו מוצר",
+    suggestionsLabel: "האם התכוונתם ל...",
+    showFullList: "בחירה מרשימה מלאה",
     noMatch: "— לא נבחר —",
     continueToRoute: "המשך למסלול הקנייה",
     missingEntranceOrCheckout:
