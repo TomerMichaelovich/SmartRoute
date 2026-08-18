@@ -110,6 +110,9 @@ export function buildRoute(params: BuildRouteParams): Route {
       label: mapNode.label,
       type: mapNode.type,
       pathFromPrevious: segments[index],
+      // Lets the UI route to checkout from whichever stop the shopper actually
+      // finishes at last, rather than only from the stop that's last in TSP order.
+      pathToCheckout: reconstructPath(dijkstraByNode.get(nodeId)!.previous, checkout.id),
     };
   });
 

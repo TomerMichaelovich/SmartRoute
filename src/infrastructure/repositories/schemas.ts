@@ -112,6 +112,7 @@ export const routeStopSchema = z.object({
   label: z.string(),
   type: mapNodeTypeSchema,
   pathFromPrevious: z.array(z.string()),
+  pathToCheckout: z.array(z.string()),
 });
 
 export const routeSchema = z.object({

@@ -8,6 +8,8 @@ export interface RouteStop {
   type: MapNodeType;
   /** Walked path node ids from the previous stop (or entrance, for the first stop) to this one. */
   pathFromPrevious: string[];
+  /** Walked path node ids from this stop directly to checkout. */
+  pathToCheckout: string[];
 }
 
 export interface Route {

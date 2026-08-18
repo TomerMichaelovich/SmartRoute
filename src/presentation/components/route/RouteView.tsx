@@ -98,7 +98,18 @@ export function RouteView({ route, store, mapImageUrl, nodes, stopViews, preview
     () => stopViews.find(({ stop }) => !checkedStopOrders.has(stop.order))?.stop,
     [stopViews, checkedStopOrders],
   );
-  const displayPathNodeIds = nextStop ? nextStop.pathFromPrevious : route.checkoutPathNodeIds;
+  // Shoppers rarely follow the planned stop order exactly - they'll grab a nearby item out of
+  // turn. So once everything is checked, route to checkout from wherever the shopper actually
+  // finished (the stop holding the most recently checked item), not from whichever stop happens
+  // to be last in the planned order.
+  const lastCheckedStop = useMemo(() => {
+    const lastCheckedItemId = Array.from(checkedItemIds).at(-1);
+    if (!lastCheckedItemId) return undefined;
+    return stopViews.find(({ items }) => items.some((item) => item.id === lastCheckedItemId))?.stop;
+  }, [stopViews, checkedItemIds]);
+  const displayPathNodeIds = nextStop
+    ? nextStop.pathFromPrevious
+    : (lastCheckedStop?.pathToCheckout ?? route.checkoutPathNodeIds);
 
   function toggleItem(itemId: string) {
     // Compute the new checked state and log outside the updater: setState
