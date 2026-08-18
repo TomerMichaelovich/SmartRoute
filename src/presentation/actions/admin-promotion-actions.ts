@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { promotionRepository } from "@/src/infrastructure/container";
+import { promotionRepository, storeRepository } from "@/src/infrastructure/container";
 
 function toIsoOrUndefined(raw: string): string | undefined {
   const trimmed = raw.trim();
@@ -9,18 +9,20 @@ function toIsoOrUndefined(raw: string): string | undefined {
 }
 
 export async function createPromotion(formData: FormData): Promise<void> {
-  const chainId = String(formData.get("chainId") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   const frequencyCapPerSession = Number(formData.get("frequencyCapPerSession") ?? 3);
   const [storeId, attachedNodeId] = String(formData.get("location") ?? "").split("::");
   const startDate = toIsoOrUndefined(String(formData.get("startDate") ?? ""));
   const endDate = toIsoOrUndefined(String(formData.get("endDate") ?? ""));
-  if (!chainId || !title || !storeId || !attachedNodeId) return;
+  if (!title || !storeId || !attachedNodeId) return;
+
+  const store = await storeRepository.findById(storeId);
+  if (!store) return;
 
   await promotionRepository.create({
     id: crypto.randomUUID(),
-    chainId,
+    chainId: store.chainId,
     storeId,
     title,
     description,

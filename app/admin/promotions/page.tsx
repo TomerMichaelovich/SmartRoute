@@ -29,7 +29,9 @@ export default async function AdminPromotionsPage({
   const nodesByStore = await Promise.all(stores.map((s) => nodeRepository.findByStore(s.id)));
   const nodeLabelById = new Map(nodesByStore.flat().map((n) => [n.id, n.label]));
   const locationOptions = stores.flatMap((store, i) =>
-    nodesByStore[i].map((n) => ({ value: `${store.id}::${n.id}`, label: `${store.name} — ${n.label}` })),
+    nodesByStore[i]
+      .filter((n) => n.type === "department")
+      .map((n) => ({ value: `${store.id}::${n.id}`, label: `${store.name} — ${n.label}` })),
   );
 
   return (
@@ -124,12 +126,6 @@ export default async function AdminPromotionsPage({
       >
         <h2 className="text-base font-semibold text-neutral-900">מבצע חדש</h2>
         <input
-          name="chainId"
-          placeholder="מזהה רשת (chainId)"
-          required
-          className="rounded-lg border border-neutral-300 p-2"
-        />
-        <input
           name="title"
           placeholder="כותרת"
           required
@@ -141,25 +137,31 @@ export default async function AdminPromotionsPage({
           rows={2}
           className="rounded-lg border border-neutral-300 p-2"
         />
-        <select name="location" required className="rounded-lg border border-neutral-300 p-2">
-          <option value="">צומת מצורף...</option>
-          {locationOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+        <label className="flex flex-col gap-1 text-sm text-neutral-600">
+          חנות וצומת מצורף (הרשת נקבעת אוטומטית לפי החנות שנבחרה)
+          <select name="location" required className="rounded-lg border border-neutral-300 p-2 text-neutral-900">
+            <option value="">בחרו חנות וצומת...</option>
+            {locationOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <div className="flex gap-2">
           <input name="startDate" type="date" className="w-1/2 rounded-lg border border-neutral-300 p-2" />
           <input name="endDate" type="date" className="w-1/2 rounded-lg border border-neutral-300 p-2" />
         </div>
-        <input
-          name="frequencyCapPerSession"
-          type="number"
-          min="1"
-          defaultValue={3}
-          className="rounded-lg border border-neutral-300 p-2"
-        />
+        <label className="flex flex-col gap-1 text-sm text-neutral-600">
+          מספר הפעמים המקסימלי שהמבצע יוצג לאותו מבקר בביקור אחד
+          <input
+            name="frequencyCapPerSession"
+            type="number"
+            min="1"
+            defaultValue={3}
+            className="rounded-lg border border-neutral-300 p-2 text-neutral-900"
+          />
+        </label>
         <button
           type="submit"
           className="self-start rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white"
