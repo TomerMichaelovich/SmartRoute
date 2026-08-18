@@ -136,6 +136,11 @@ export function RouteView({ route, store, mapImageUrl, nodes, stopViews, preview
       else next.delete(itemId);
       return next;
     });
+    // Reporting an item as not-found still has to move the shopper along the route, so it
+    // counts as checked for progress/next-stop purposes - the report itself (logged above)
+    // is what's kept for analytics, not a separate item_checked event, so getNotFoundRate's
+    // "latest action wins" reading of the two event types isn't clobbered by this.
+    if (nowNotFound) setCheckedItemIds((prev) => new Set(prev).add(itemId));
   }
 
   return (
