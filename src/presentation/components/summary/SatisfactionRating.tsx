@@ -25,7 +25,7 @@ export function SatisfactionRating({ routeId }: { routeId: string }) {
     <div className="flex flex-col items-center gap-3 rounded-2xl bg-white p-4 shadow-sm">
       <p className="font-medium text-neutral-900">{he.summary.satisfactionQuestion}</p>
       {selected ? (
-        <p className="text-sm text-emerald-700">{he.summary.satisfactionThanks}</p>
+        <p className="text-sm text-cyan-700">{he.summary.satisfactionThanks}</p>
       ) : (
         <div className="flex gap-2">
           {RATINGS.map((rating) => (

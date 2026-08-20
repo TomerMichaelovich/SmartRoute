@@ -323,7 +323,7 @@ export function StoreLayoutEditor({
               required
               className="w-40 text-xs text-neutral-600 file:me-2 file:rounded-full file:border-0 file:bg-neutral-100 file:px-2 file:py-1 file:text-xs"
             />
-            <button type="submit" className="text-sm font-medium text-emerald-700 hover:underline">
+            <button type="submit" className="text-sm font-medium text-cyan-700 hover:underline">
               {mapImageUrl ? "החלף תמונה" : "העלה תמונת מפה"}
             </button>
           </form>
@@ -512,7 +512,7 @@ export function StoreLayoutEditor({
                 <div className="flex gap-2">
                   <button
                     type="submit"
-                    className="flex-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white"
+                    className="flex-1 rounded-lg bg-cyan-600 px-3 py-1.5 text-sm font-semibold text-white"
                   >
                     הוסף צומת
                   </button>
@@ -559,7 +559,7 @@ export function StoreLayoutEditor({
             />
             <button
               type="submit"
-              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white"
+              className="rounded-lg bg-cyan-600 px-3 py-1.5 text-sm font-semibold text-white"
             >
               שמור שם
             </button>

@@ -8,7 +8,7 @@ const heebo = Heebo({
 });
 
 export const metadata: Metadata = {
-  title: "SmartRoute",
+  title: "NAVIO",
   description: "קניות חכמות: תכננו את המסלול, חסכו זמן וקנו רק מה שתכננתם",
 };
 

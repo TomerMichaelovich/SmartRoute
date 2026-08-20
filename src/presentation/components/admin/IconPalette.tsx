@@ -63,7 +63,7 @@ export function IconPalette<T extends DraggableIcon>({
               onPointerDown={(e) => handlePointerDown(e, icon)}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
-              className="flex shrink-0 touch-none flex-col items-center gap-1 rounded-xl p-1.5 text-center active:bg-emerald-50"
+              className="flex shrink-0 touch-none flex-col items-center gap-1 rounded-xl p-1.5 text-center active:bg-cyan-50"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={icon.src} alt={icon.labelHe} className={thumbnailClassName} draggable={false} />

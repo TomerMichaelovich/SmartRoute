@@ -8,19 +8,19 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       <header className="border-b border-neutral-200 bg-white">
         <div className="mx-auto flex w-full max-w-2xl items-center justify-between px-5 py-3">
           <Link href="/admin" className="font-bold text-neutral-900">
-            SmartRoute · ניהול
+            NAVIO · ניהול
           </Link>
           <nav className="flex items-center gap-4 text-xs font-medium text-neutral-600">
-            <Link href="/admin/stores" className="hover:text-emerald-700">
+            <Link href="/admin/stores" className="hover:text-cyan-700">
               סניפים
             </Link>
-            <Link href="/admin/products" className="hover:text-emerald-700">
+            <Link href="/admin/products" className="hover:text-cyan-700">
               מוצרים
             </Link>
-            <Link href="/admin/promotions" className="hover:text-emerald-700">
+            <Link href="/admin/promotions" className="hover:text-cyan-700">
               מבצעים
             </Link>
-            <Link href="/admin/analytics" className="hover:text-emerald-700">
+            <Link href="/admin/analytics" className="hover:text-cyan-700">
               אנליטיקס
             </Link>
             <form action={logout}>

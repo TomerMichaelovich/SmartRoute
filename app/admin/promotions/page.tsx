@@ -49,7 +49,7 @@ export default async function AdminPromotionsPage({
             href={option.value ? `/admin/promotions?status=${option.value}` : "/admin/promotions"}
             className={`rounded-full px-3 py-1 text-sm ${
               status === option.value || (!status && !option.value)
-                ? "bg-emerald-600 text-white"
+                ? "bg-cyan-600 text-white"
                 : "bg-white text-neutral-600"
             }`}
           >
@@ -111,7 +111,7 @@ export default async function AdminPromotionsPage({
               </label>
               <button
                 type="submit"
-                className="self-start rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white"
+                className="self-start rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white"
               >
                 שמור
               </button>
@@ -164,7 +164,7 @@ export default async function AdminPromotionsPage({
         </label>
         <button
           type="submit"
-          className="self-start rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white"
+          className="self-start rounded-lg bg-cyan-600 px-4 py-2 font-semibold text-white"
         >
           צור מבצע
         </button>

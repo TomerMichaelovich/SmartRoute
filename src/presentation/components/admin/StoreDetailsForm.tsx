@@ -38,7 +38,7 @@ export function StoreDetailsForm({ store, updateStore }: StoreDetailsFormProps) 
         <input type="checkbox" name="promotionsEnabled" defaultChecked={store.promotionsEnabled} />
         הצגת מבצעים במסלול
       </label>
-      <button type="submit" className="self-start rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white">
+      <button type="submit" className="self-start rounded-lg bg-cyan-600 px-4 py-2 font-semibold text-white">
         שמור
       </button>
 

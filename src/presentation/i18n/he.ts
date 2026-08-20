@@ -1,6 +1,6 @@
 export const he = {
   common: {
-    appName: "SmartRoute",
+    appName: "NAVIO",
     back: "חזרה",
     continue: "המשך",
     loading: "טוען...",

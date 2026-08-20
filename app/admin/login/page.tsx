@@ -22,7 +22,7 @@ export default async function AdminLoginPage({
         {error && <p className="text-sm text-red-600">סיסמה שגויה</p>}
         <button
           type="submit"
-          className="rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white"
+          className="rounded-lg bg-cyan-600 px-4 py-2 font-semibold text-white"
         >
           כניסה
         </button>

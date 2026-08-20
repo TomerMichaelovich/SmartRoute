@@ -26,7 +26,7 @@ export function ChecklistItem({
           type="checkbox"
           checked={checked}
           onChange={() => onToggle(id)}
-          className="h-5 w-5 shrink-0 rounded border-neutral-300 text-emerald-600 focus:ring-emerald-500"
+          className="h-5 w-5 shrink-0 rounded border-neutral-300 text-cyan-600 focus:ring-cyan-500"
         />
         {imageUrl && (
           // eslint-disable-next-line @next/next/no-img-element -- Blob-hosted upload of unknown/variable size, not worth next/image's optimization setup

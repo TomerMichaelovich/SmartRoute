@@ -38,15 +38,15 @@ export default async function ChooseListMethodPage({
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-bold text-neutral-900">{he.list.chooseMethod.title}</h1>
         <p className="text-neutral-600">{he.list.chooseMethod.subtitle}</p>
-        <p className="text-sm font-medium text-emerald-700">{store.name}</p>
+        <p className="text-sm font-medium text-cyan-700">{store.name}</p>
       </header>
 
       <div className="grid grid-cols-2 gap-4">
         <Link
           href={`/list/${storeId}/manual`}
-          className="flex aspect-square flex-col items-center justify-center gap-3 rounded-2xl border border-neutral-200 bg-white p-4 text-center shadow-sm transition-colors active:bg-emerald-50"
+          className="flex aspect-square flex-col items-center justify-center gap-3 rounded-2xl border border-neutral-200 bg-white p-4 text-center shadow-sm transition-colors active:bg-cyan-50"
         >
-          <span className="text-emerald-600">
+          <span className="text-cyan-600">
             <ManualIcon />
           </span>
           <span className="text-base font-semibold text-neutral-900">
@@ -57,9 +57,9 @@ export default async function ChooseListMethodPage({
 
         <Link
           href={`/list/${storeId}/photo`}
-          className="flex aspect-square flex-col items-center justify-center gap-3 rounded-2xl border border-neutral-200 bg-white p-4 text-center shadow-sm transition-colors active:bg-emerald-50"
+          className="flex aspect-square flex-col items-center justify-center gap-3 rounded-2xl border border-neutral-200 bg-white p-4 text-center shadow-sm transition-colors active:bg-cyan-50"
         >
-          <span className="text-emerald-600">
+          <span className="text-cyan-600">
             <PhotoIcon />
           </span>
           <span className="text-base font-semibold text-neutral-900">

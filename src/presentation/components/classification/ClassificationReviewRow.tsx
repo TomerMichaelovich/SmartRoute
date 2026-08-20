@@ -72,7 +72,7 @@ export function ClassificationReviewRow({
                   onClick={() => onChangeProduct(item.id, alt.productId)}
                   className={`rounded-full border px-3 py-1.5 text-sm font-medium ${
                     isSelected
-                      ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                      ? "border-cyan-500 bg-cyan-50 text-cyan-700"
                       : "border-neutral-200 bg-neutral-50 text-neutral-900"
                   }`}
                 >

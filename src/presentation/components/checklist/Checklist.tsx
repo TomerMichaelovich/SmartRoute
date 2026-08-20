@@ -41,13 +41,13 @@ export function Checklist({
             key={stop.nodeId}
             onClick={() => onSelectStop(stop.order)}
             className={`flex flex-col gap-2 rounded-2xl border p-4 shadow-sm transition-colors ${
-              isSelected ? "border-emerald-400 bg-emerald-50" : "border-transparent bg-white"
+              isSelected ? "border-cyan-400 bg-cyan-50" : "border-transparent bg-white"
             }`}
           >
             <div className="flex items-center gap-3">
               <span
                 className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white ${
-                  allChecked ? "bg-neutral-400" : "bg-emerald-600"
+                  allChecked ? "bg-neutral-400" : "bg-cyan-600"
                 }`}
               >
                 {stop.order}

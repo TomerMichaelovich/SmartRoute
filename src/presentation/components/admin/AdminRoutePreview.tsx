@@ -87,7 +87,7 @@ export function AdminRoutePreview({ storeId }: AdminRoutePreviewProps) {
               href={`/route/${route.id}?preview=1`}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-sm font-medium text-emerald-700 underline"
+              className="text-sm font-medium text-cyan-700 underline"
             >
               פתח בטאב חדש
             </a>

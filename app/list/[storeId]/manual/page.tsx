@@ -17,7 +17,7 @@ export default async function ManualShoppingListPage({
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-bold text-neutral-900">{he.list.title}</h1>
         <p className="text-neutral-600">{he.list.subtitle}</p>
-        <p className="text-sm font-medium text-emerald-700">{store.name}</p>
+        <p className="text-sm font-medium text-cyan-700">{store.name}</p>
       </header>
       <ShoppingListInput storeId={store.id} />
     </main>

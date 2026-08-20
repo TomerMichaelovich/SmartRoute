@@ -47,25 +47,25 @@ export default async function AdminDashboardPage() {
       <nav className="flex flex-col gap-2">
         <Link
           href="/admin/stores"
-          className="rounded-xl border border-neutral-200 bg-white p-4 font-medium text-neutral-900 hover:border-emerald-400"
+          className="rounded-xl border border-neutral-200 bg-white p-4 font-medium text-neutral-900 hover:border-cyan-400"
         >
           ניהול סניפים, צמתים וקשתות
         </Link>
         <Link
           href="/admin/products"
-          className="rounded-xl border border-neutral-200 bg-white p-4 font-medium text-neutral-900 hover:border-emerald-400"
+          className="rounded-xl border border-neutral-200 bg-white p-4 font-medium text-neutral-900 hover:border-cyan-400"
         >
           ניהול מוצרים וכינויים
         </Link>
         <Link
           href="/admin/promotions"
-          className="rounded-xl border border-neutral-200 bg-white p-4 font-medium text-neutral-900 hover:border-emerald-400"
+          className="rounded-xl border border-neutral-200 bg-white p-4 font-medium text-neutral-900 hover:border-cyan-400"
         >
           ניהול מבצעים
         </Link>
         <Link
           href="/admin/analytics"
-          className="rounded-xl border border-neutral-200 bg-white p-4 font-medium text-neutral-900 hover:border-emerald-400"
+          className="rounded-xl border border-neutral-200 bg-white p-4 font-medium text-neutral-900 hover:border-cyan-400"
         >
           אנליטיקס
         </Link>

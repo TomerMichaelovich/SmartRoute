@@ -14,7 +14,7 @@ export default async function AdminStoresPage() {
         {stores.map((store) => (
           <div
             key={store.id}
-            className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 bg-white p-4 hover:border-emerald-400"
+            className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 bg-white p-4 hover:border-cyan-400"
           >
             <Link href={`/admin/stores/${store.id}`} className="min-w-0 flex-1">
               <div className="text-base font-semibold text-neutral-900">
@@ -71,7 +71,7 @@ export default async function AdminStoresPage() {
         </div>
         <button
           type="submit"
-          className="self-start rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white"
+          className="self-start rounded-lg bg-cyan-600 px-4 py-2 font-semibold text-white"
         >
           צור סניף
         </button>

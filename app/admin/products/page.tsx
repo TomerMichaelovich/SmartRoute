@@ -39,7 +39,7 @@ export default async function AdminProductsPage({
         <a
           href="/admin/products"
           className={`rounded-full px-3 py-1 text-sm ${
-            !department ? "bg-emerald-600 text-white" : "bg-white text-neutral-600"
+            !department ? "bg-cyan-600 text-white" : "bg-white text-neutral-600"
           }`}
         >
           הכל
@@ -49,7 +49,7 @@ export default async function AdminProductsPage({
             key={d}
             href={`/admin/products?department=${encodeURIComponent(d)}`}
             className={`rounded-full px-3 py-1 text-sm ${
-              department === d ? "bg-emerald-600 text-white" : "bg-white text-neutral-600"
+              department === d ? "bg-cyan-600 text-white" : "bg-white text-neutral-600"
             }`}
           >
             {d}
@@ -111,7 +111,7 @@ export default async function AdminProductsPage({
         </label>
         <button
           type="submit"
-          className="self-start rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white"
+          className="self-start rounded-lg bg-cyan-600 px-4 py-2 font-semibold text-white"
         >
           צור מוצר
         </button>
@@ -182,7 +182,7 @@ export default async function AdminProductsPage({
               </label>
               <button
                 type="submit"
-                className="self-start rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white"
+                className="self-start rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white"
               >
                 שמור
               </button>

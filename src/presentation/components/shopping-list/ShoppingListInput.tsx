@@ -50,7 +50,7 @@ export function ShoppingListInput({ storeId, initialText = "" }: ShoppingListInp
         placeholder={he.list.placeholder}
         rows={10}
         dir="rtl"
-        className="w-full flex-1 resize-none rounded-2xl border border-neutral-200 bg-white p-4 text-base leading-7 focus:border-emerald-500 focus:outline-none"
+        className="w-full flex-1 resize-none rounded-2xl border border-neutral-200 bg-white p-4 text-base leading-7 focus:border-cyan-500 focus:outline-none"
       />
       <p className="text-sm text-neutral-500">{he.list.itemCount(rawItems.length)}</p>
       {error && <p className="text-sm text-red-600">{error}</p>}

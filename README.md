@@ -1,4 +1,4 @@
-# SmartRoute
+# NAVIO
 
 Mobile-first, Hebrew/RTL web app that turns a pasted shopping list into an optimized walking route through a supermarket: store map, numbered stops, a route-ordered checklist, and light-touch contextual promotions. Lean MVP for a single demo branch — architecture is built to extend to many chains/branches later without a rewrite.
 
