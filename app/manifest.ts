@@ -7,7 +7,7 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "קניות חכמות: תכננו את המסלול, חסכו זמן וקנו רק מה שתכננתם",
     start_url: "/",
     display: "standalone",
-    background_color: "#011e50",
+    background_color: "#ffffff",
     theme_color: "#011e50",
     icons: [
       {
