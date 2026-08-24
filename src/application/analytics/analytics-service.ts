@@ -88,6 +88,16 @@ export function getNotFoundRate(events: AnalyticsEvent[]): number {
   return notFoundCount / latestByItem.size;
 }
 
+/** Average of submitted post-trip satisfaction ratings (1-5), or 0 if none. */
+export function getAverageSatisfactionRating(events: AnalyticsEvent[]): number {
+  const ratings = events
+    .filter((e) => e.type === "satisfaction_rating")
+    .map((e) => e.payload.rating)
+    .filter((r): r is number => typeof r === "number");
+  if (ratings.length === 0) return 0;
+  return ratings.reduce((sum, r) => sum + r, 0) / ratings.length;
+}
+
 export function countImpressionsForSession(
   events: AnalyticsEvent[],
   sessionId: string,

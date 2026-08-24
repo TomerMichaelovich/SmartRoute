@@ -1,4 +1,5 @@
 import {
+  getAverageSatisfactionRating,
   getAverageShoppingDurationSeconds,
   getClassificationAccuracy,
   getNotFoundRate,
@@ -17,6 +18,7 @@ export default async function AdminAnalyticsPage() {
   const accuracy = getClassificationAccuracy(events);
   const notFoundRate = getNotFoundRate(events);
   const avgDuration = getAverageShoppingDurationSeconds(events);
+  const avgSatisfaction = getAverageSatisfactionRating(events);
   const promotionStats = getPromotionStats(events);
   const returningSessions = getReturningSessionCount(events);
   const promotionTitleById = new Map(promotions.map((p) => [p.id, p.title]));
@@ -43,6 +45,12 @@ export default async function AdminAnalyticsPage() {
         </div>
         <div className="w-40">
           <StatTile label="משתמשים חוזרים" value={returningSessions} />
+        </div>
+        <div className="w-40">
+          <StatTile
+            label="שביעות רצון ממוצעת"
+            value={avgSatisfaction > 0 ? `${avgSatisfaction.toFixed(1)}/5` : "—"}
+          />
         </div>
       </div>
 
