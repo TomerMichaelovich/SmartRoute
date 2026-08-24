@@ -59,7 +59,7 @@ export default async function SummaryPage({
         </div>
       </div>
 
-      <SatisfactionRating routeId={route.id} />
+      <SatisfactionRating routeId={route.id} storeId={route.storeId} />
 
       <LinkButton href="/branches" fullWidth>
         {he.summary.startNewRoute}

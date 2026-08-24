@@ -1,4 +1,4 @@
-import { asc } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import type { AnalyticsEvent } from "@/src/domain/entities/analytics-event";
 import { db } from "../../db/client";
 import { analyticsEvents } from "../../db/schema";
@@ -21,5 +21,9 @@ export class PgAnalyticsRepository implements IAnalyticsRepository {
   async readAll(): Promise<AnalyticsEvent[]> {
     const rows = await db.select().from(analyticsEvents).orderBy(asc(analyticsEvents.timestamp));
     return rows.map(toDomain);
+  }
+
+  async deleteByStoreId(storeId: string): Promise<void> {
+    await db.delete(analyticsEvents).where(eq(analyticsEvents.storeId, storeId));
   }
 }

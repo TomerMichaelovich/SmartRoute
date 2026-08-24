@@ -12,13 +12,13 @@ const RATINGS = [
   { value: 5, emoji: "😄" },
 ] as const;
 
-export function SatisfactionRating({ routeId }: { routeId: string }) {
+export function SatisfactionRating({ routeId, storeId }: { routeId: string; storeId: string }) {
   const { logEvent } = useAnalytics();
   const [selected, setSelected] = useState<number | null>(null);
 
   function handleSelect(rating: number) {
     setSelected(rating);
-    logEvent("satisfaction_rating", { rating }, { routeId });
+    logEvent("satisfaction_rating", { rating }, { routeId, storeId });
   }
 
   return (
