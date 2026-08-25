@@ -61,6 +61,7 @@ export async function updateStore(storeId: string, formData: FormData): Promise<
   });
 
   revalidatePath(`/admin/stores/${storeId}`);
+  revalidatePath("/admin/stores");
 }
 
 /**
