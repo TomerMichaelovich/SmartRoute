@@ -2,9 +2,11 @@ import Link from "next/link";
 import { storeRepository } from "@/src/infrastructure/container";
 import { createStore, deleteStore } from "@/src/presentation/actions/admin-store-actions";
 import { DeleteStoreButton } from "@/src/presentation/components/admin/DeleteStoreButton";
+import { NewStoreForm } from "@/src/presentation/components/admin/NewStoreForm";
 
 export default async function AdminStoresPage() {
   const stores = await storeRepository.findAll();
+  const existingChainIds = Array.from(new Set(stores.map((store) => store.chainId))).sort();
 
   return (
     <div className="flex flex-col gap-6">
@@ -32,50 +34,7 @@ export default async function AdminStoresPage() {
         ))}
       </div>
 
-      <form
-        action={createStore}
-        className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4"
-      >
-        <h2 className="text-base font-semibold text-neutral-900">סניף חדש</h2>
-        <input
-          name="name"
-          placeholder="שם הסניף"
-          required
-          className="rounded-lg border border-neutral-300 p-2"
-        />
-        <input
-          name="chainId"
-          placeholder="מזהה רשת (chainId)"
-          required
-          className="rounded-lg border border-neutral-300 p-2"
-        />
-        <input
-          name="address"
-          placeholder="כתובת"
-          className="rounded-lg border border-neutral-300 p-2"
-        />
-        <input name="city" placeholder="עיר" className="rounded-lg border border-neutral-300 p-2" />
-        <div className="flex gap-2">
-          <input
-            name="mapWidth"
-            type="number"
-            defaultValue={1000}
-            className="w-1/2 rounded-lg border border-neutral-300 p-2"
-          />
-          <input
-            name="mapHeight"
-            type="number"
-            defaultValue={1000}
-            className="w-1/2 rounded-lg border border-neutral-300 p-2"
-          />
-        </div>
-        <button
-          type="submit"
-          className="self-start rounded-lg bg-cyan-600 px-4 py-2 font-semibold text-white"
-        >
-          צור סניף
-        </button>
-      </form>
+      <NewStoreForm existingChainIds={existingChainIds} createStore={createStore} />
     </div>
   );
 }
