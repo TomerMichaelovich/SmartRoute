@@ -6,6 +6,7 @@ import {
   nodeRepository,
   productListingRepository,
   routeRepository,
+  shoppingListRepository,
   storeRepository,
 } from "@/src/infrastructure/container";
 import { shoppingListItemSchema } from "@/src/infrastructure/repositories/schemas";
@@ -32,6 +33,11 @@ export async function POST(request: Request) {
     nodeRepository.findByStore(storeId),
     edgeRepository.findByStore(storeId),
     productListingRepository.findByStore(storeId),
+    // Persist Classification Review corrections so the shopping list stays in sync -
+    // the route page reads item display names from stored shopping-list items, not
+    // from this request body, so without this the checklist would keep showing the
+    // pre-correction product name.
+    shoppingListRepository.updateItems(shoppingListId, items),
   ]);
 
   if (!store || nodes.length === 0) {

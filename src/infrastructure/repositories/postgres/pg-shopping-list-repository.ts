@@ -15,4 +15,8 @@ export class PgShoppingListRepository implements IShoppingListRepository {
     await db.insert(shoppingLists).values(list);
     return list;
   }
+
+  async updateItems(id: string, items: ShoppingList["items"]): Promise<void> {
+    await db.update(shoppingLists).set({ items }).where(eq(shoppingLists.id, id));
+  }
 }
