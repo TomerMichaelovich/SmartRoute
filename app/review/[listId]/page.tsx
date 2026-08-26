@@ -5,6 +5,7 @@ import {
   shoppingListRepository,
 } from "@/src/infrastructure/container";
 import { ReviewForm } from "@/src/presentation/components/classification/ReviewForm";
+import { ShareListButton } from "@/src/presentation/components/my-list/ShareListButton";
 import { he } from "@/src/presentation/i18n/he";
 
 export default async function ReviewPage({
@@ -31,6 +32,7 @@ export default async function ReviewPage({
         <h1 className="text-2xl font-bold text-neutral-900">{he.review.title}</h1>
         <p className="text-neutral-600">{he.review.subtitle}</p>
       </header>
+      {shoppingList.shareCode && <ShareListButton shareCode={shoppingList.shareCode} />}
       <ReviewForm
         storeId={shoppingList.storeId}
         shoppingListId={shoppingList.id}

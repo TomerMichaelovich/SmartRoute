@@ -102,7 +102,9 @@ export const shoppingListSchema = z.object({
   id: z.string(),
   storeId: z.string(),
   items: z.array(shoppingListItemSchema),
+  shareCode: z.string().nullable(),
   createdAt: z.string(),
+  updatedAt: z.string(),
 });
 
 export const routeStopSchema = z.object({

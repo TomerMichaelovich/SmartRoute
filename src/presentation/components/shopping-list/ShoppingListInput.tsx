@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button } from "@/src/presentation/components/ui/Button";
 import { useAnalytics } from "@/src/presentation/hooks/useAnalytics";
 import { he } from "@/src/presentation/i18n/he";
+import { setMyListCode } from "@/src/presentation/lib/my-list-storage";
 
 interface ShoppingListInputProps {
   storeId: string;
@@ -34,7 +35,8 @@ export function ShoppingListInput({ storeId, initialText = "" }: ShoppingListInp
         body: JSON.stringify({ storeId, rawItems, sessionId: sessionId ?? undefined }),
       });
       if (!res.ok) throw new Error("classify failed");
-      const shoppingList: { id: string } = await res.json();
+      const shoppingList: { id: string; shareCode: string } = await res.json();
+      setMyListCode(shoppingList.shareCode);
       router.push(`/review/${shoppingList.id}`);
     } catch {
       setError(he.common.error);

@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { HomeListWidget } from "@/src/presentation/components/home/HomeListWidget";
 import { LinkButton } from "@/src/presentation/components/ui/LinkButton";
 import { he } from "@/src/presentation/i18n/he";
 import navioLogo from "@/public/navio-logo.png";
@@ -11,6 +12,7 @@ export default function HomePage() {
         <Image src={navioLogo} alt={`${he.common.appName} – ${he.home.tagline}`} className="w-64 max-w-full" priority />
         <p className="max-w-xs text-neutral-600">{he.home.heroSubtitle}</p>
       </div>
+      <HomeListWidget />
       <LinkButton href="/branches" fullWidth className="max-w-xs">
         {he.home.startShopping}
       </LinkButton>

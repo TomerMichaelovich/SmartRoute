@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     // the route page reads item display names from stored shopping-list items, not
     // from this request body, so without this the checklist would keep showing the
     // pre-correction product name.
-    shoppingListRepository.updateItems(shoppingListId, items),
+    shoppingListRepository.updateItems(shoppingListId, items, new Date().toISOString()),
   ]);
 
   if (!store || nodes.length === 0) {

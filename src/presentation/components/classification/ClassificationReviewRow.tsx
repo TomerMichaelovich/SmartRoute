@@ -13,6 +13,7 @@ interface ClassificationReviewRowProps {
   productsByDepartment: ProductGroup[];
   productById: Map<string, Product>;
   onChangeProduct: (itemId: string, productId: string | null) => void;
+  onRemove?: (itemId: string) => void;
 }
 
 function confidenceBadge(item: ShoppingListItem): { label: string; className: string } | null {
@@ -34,6 +35,7 @@ export function ClassificationReviewRow({
   productsByDepartment,
   productById,
   onChangeProduct,
+  onRemove,
 }: ClassificationReviewRowProps) {
   const badge = confidenceBadge(item);
   const selectedProductId = item.classification?.matchedProductId ?? "";
@@ -49,13 +51,25 @@ export function ClassificationReviewRow({
     <div className="flex flex-col gap-2 rounded-2xl bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between gap-2">
         <span className="font-medium text-neutral-900">{item.rawText}</span>
-        {badge && (
-          <span
-            className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}
-          >
-            {badge.label}
-          </span>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {badge && (
+            <span
+              className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}
+            >
+              {badge.label}
+            </span>
+          )}
+          {onRemove && (
+            <button
+              type="button"
+              onClick={() => onRemove(item.id)}
+              aria-label={he.myList.editor.removeItem}
+              className="text-neutral-400"
+            >
+              ✕
+            </button>
+          )}
+        </div>
       </div>
 
       {suggestions.length > 0 && (

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { resolveAvailability } from "@/src/application/classification/resolve-availability";
+import { generateShareCode } from "@/src/application/shopping-list/generate-share-code";
 import type { ShoppingList, ShoppingListItem } from "@/src/domain/entities/shopping-list";
 import {
   analyticsRepository,
@@ -42,11 +43,19 @@ export async function POST(request: Request) {
     classification: classifications[i],
   }));
 
+  let shareCode = generateShareCode();
+  while (await shoppingListRepository.findByShareCode(shareCode)) {
+    shareCode = generateShareCode();
+  }
+
+  const now = new Date().toISOString();
   const shoppingList: ShoppingList = {
     id: crypto.randomUUID(),
     storeId,
     items,
-    createdAt: new Date().toISOString(),
+    shareCode,
+    createdAt: now,
+    updatedAt: now,
   };
 
   await shoppingListRepository.create(shoppingList);

@@ -7,6 +7,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import type { ClassificationResult } from "@/src/domain/entities/classification-result";
 import type { RouteStop } from "@/src/domain/entities/route";
@@ -84,9 +85,16 @@ export const shoppingLists = pgTable(
     id: text("id").primaryKey(),
     storeId: text("store_id").notNull(),
     items: jsonb("items").notNull().$type<ShoppingListItem[]>(),
+    // Nullable: rows created before this feature simply have none and are only
+    // ever looked up by id, never by code.
+    shareCode: text("share_code"),
     createdAt: timestamp("created_at", { mode: "string" }).notNull(),
+    updatedAt: timestamp("updated_at", { mode: "string" }).notNull().defaultNow(),
   },
-  (table) => [index("shopping_lists_store_id_idx").on(table.storeId)],
+  (table) => [
+    index("shopping_lists_store_id_idx").on(table.storeId),
+    uniqueIndex("shopping_lists_share_code_idx").on(table.shareCode),
+  ],
 );
 
 export const routes = pgTable(

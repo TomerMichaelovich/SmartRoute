@@ -11,6 +11,44 @@ export const he = {
     tagline: "קונים חכם. הולכים פחות. קונים מה שתכננתם.",
     startShopping: "התחילו לקנות",
   },
+  myList: {
+    widgetTitle: "הרשימה שלי",
+    openList: "פתחו את הרשימה",
+    haveCode: "יש לכם קוד שיתוף?",
+    codePlaceholder: "הקלידו קוד",
+    openByCode: "פתחו",
+    codeNotFound: "לא מצאנו רשימה עם הקוד הזה",
+    itemCount(n: number): string {
+      if (n === 0) return "אין פריטים ברשימה";
+      if (n === 1) return "פריט אחד";
+      if (n === 2) return "שני פריטים";
+      return `${n} פריטים`;
+    },
+    share: {
+      button: "שתפו עם בני הבית",
+      copied: "הקישור הועתק!",
+      codeLabel(code: string): string {
+        return `קוד לשיתוף: ${code}`;
+      },
+    },
+    editor: {
+      title: "הרשימה שלי",
+      subtitle: "אפשר לערוך את הרשימה בכל שלב, גם כמה ימים לפני שיוצאים לקניות",
+      addItemsPlaceholder: "הוסיפו פריטים, אחד בכל שורה",
+      addItems: "הוסיפו לרשימה",
+      removeItem: "הסירו פריט",
+      save: "שמרו שינויים",
+      saved: "נשמר",
+      staleTitle: "הרשימה עודכנה בינתיים על ידי מישהו אחר",
+      loadLatest: "טענו את הגרסה העדכנית",
+      saveAnyway: "שמרו בכל זאת",
+    },
+    notFound: {
+      title: "קוד לא תקין",
+      subtitle: "הקישור שגוי או שהרשימה כבר לא קיימת",
+      backHome: "חזרה למסך הבית",
+    },
+  },
   branches: {
     title: "בחרו סניף",
     subtitle: "לאיזה סניף אתם הולכים היום?",

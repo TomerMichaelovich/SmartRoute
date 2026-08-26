@@ -11,12 +11,20 @@ export class PgShoppingListRepository implements IShoppingListRepository {
     return row ? shoppingListSchema.parse(row) : null;
   }
 
+  async findByShareCode(shareCode: string): Promise<ShoppingList | null> {
+    const [row] = await db
+      .select()
+      .from(shoppingLists)
+      .where(eq(shoppingLists.shareCode, shareCode));
+    return row ? shoppingListSchema.parse(row) : null;
+  }
+
   async create(list: ShoppingList): Promise<ShoppingList> {
     await db.insert(shoppingLists).values(list);
     return list;
   }
 
-  async updateItems(id: string, items: ShoppingList["items"]): Promise<void> {
-    await db.update(shoppingLists).set({ items }).where(eq(shoppingLists.id, id));
+  async updateItems(id: string, items: ShoppingList["items"], updatedAt: string): Promise<void> {
+    await db.update(shoppingLists).set({ items, updatedAt }).where(eq(shoppingLists.id, id));
   }
 }
