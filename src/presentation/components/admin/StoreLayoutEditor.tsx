@@ -45,8 +45,13 @@ const NODE_COLORS: Record<MapNodeType, string> = {
 
 function nodeRadius(type: MapNodeType): number {
   if (type === "waypoint") return 8;
-  if (type === "entrance" || type === "checkout") return 24;
-  return 18;
+  if (type === "entrance" || type === "checkout") return 28;
+  return 21;
+}
+
+/** x/y/width/height/rx for a rounded-square icon container of "radius" r centered at cx/cy. */
+function squareAttrs(cx: number, cy: number, r: number) {
+  return { x: cx - r, y: cy - r, width: r * 2, height: r * 2, rx: r * 0.28 };
 }
 
 const DRAG_THRESHOLD_PX = 6;
@@ -411,6 +416,7 @@ export function StoreLayoutEditor({
               const radius = nodeRadius(node.type);
               const isSelected = selectedNodeIds.has(node.id);
               const icon = findProductIcon(node.iconKey);
+              const isWaypoint = node.type === "waypoint";
 
               return (
                 <g
@@ -421,15 +427,17 @@ export function StoreLayoutEditor({
                   onPointerUp={(e) => void handleNodePointerUp(e, node)}
                   onClick={(e) => handleNodeClick(e, node)}
                 >
-                  {isSelected && (
+                  {isSelected && (isWaypoint ? (
                     <circle cx={x} cy={y} r={radius + 6} fill="none" stroke="#059669" strokeWidth={3} />
-                  )}
+                  ) : (
+                    <rect {...squareAttrs(x, y, radius + 6)} fill="none" stroke="#059669" strokeWidth={3} />
+                  ))}
                   {icon ? (
                     <>
                       <clipPath id={`node-clip-${node.id}`}>
-                        <circle cx={x} cy={y} r={radius} />
+                        <rect {...squareAttrs(x, y, radius)} />
                       </clipPath>
-                      <circle cx={x} cy={y} r={radius} fill="#f3f4f6" />
+                      <rect {...squareAttrs(x, y, radius)} fill="#f3f4f6" />
                       <image
                         href={icon.src}
                         x={x - radius}
@@ -439,10 +447,12 @@ export function StoreLayoutEditor({
                         clipPath={`url(#node-clip-${node.id})`}
                         preserveAspectRatio="xMidYMid slice"
                       />
-                      <circle cx={x} cy={y} r={radius} fill="none" stroke="#ffffff" strokeWidth={2} />
+                      <rect {...squareAttrs(x, y, radius)} fill="none" stroke="#ffffff" strokeWidth={2} />
                     </>
-                  ) : (
+                  ) : isWaypoint ? (
                     <circle cx={x} cy={y} r={radius} fill={NODE_COLORS[node.type]} />
+                  ) : (
+                    <rect {...squareAttrs(x, y, radius)} fill={NODE_COLORS[node.type]} />
                   )}
                   <MultilineSvgText
                     text={node.label}

@@ -9,6 +9,11 @@ import { MultilineSvgText } from "./MultilineSvgText";
  * -12..11 unit box with toes at -Y, so rotating it by a placement's rotationDeg points the
  * toes along the walking direction. `size` is the glyph's approximate rendered height in px.
  */
+/** x/y/width/height/rx for a rounded-square icon container of "radius" r centered at cx/cy. */
+function squareAttrs(cx: number, cy: number, r: number) {
+  return { x: cx - r, y: cy - r, width: r * 2, height: r * 2, rx: r * 0.28 };
+}
+
 function Footprint({ x, y, rotationDeg, size }: FootstepPlacement & { size: number }) {
   const scale = size / 24;
   return (
@@ -62,8 +67,8 @@ export function StoreMap({
   // tuning to keep icons/text a consistent, legible size on screen regardless of the
   // photo's actual pixel dimensions.
   const scale = mapWidth / 1000;
-  const stopRadius = 28 * scale;
-  const minorNodeRadius = 15 * scale;
+  const stopRadius = 32 * scale;
+  const minorNodeRadius = 17 * scale;
   const badgeRadius = 15 * scale;
   const labelFontSize = 18 * scale;
   const minorLabelFontSize = 14 * scale;
@@ -123,9 +128,9 @@ export function StoreMap({
               {icon ? (
                 <>
                   <clipPath id={`node-clip-${node.id}`}>
-                    <circle cx={cx} cy={cy} r={stopRadius} />
+                    <rect {...squareAttrs(cx, cy, stopRadius)} />
                   </clipPath>
-                  <circle cx={cx} cy={cy} r={stopRadius} fill="#ffffff" />
+                  <rect {...squareAttrs(cx, cy, stopRadius)} fill="#ffffff" />
                   <image
                     href={icon.src}
                     x={cx - stopRadius}
@@ -135,10 +140,15 @@ export function StoreMap({
                     clipPath={`url(#node-clip-${node.id})`}
                     preserveAspectRatio="xMidYMid slice"
                   />
-                  <circle cx={cx} cy={cy} r={stopRadius} fill="none" stroke={ringColor} strokeWidth={4 * scale} />
+                  <rect
+                    {...squareAttrs(cx, cy, stopRadius)}
+                    fill="none"
+                    stroke={ringColor}
+                    strokeWidth={4 * scale}
+                  />
                 </>
               ) : (
-                <circle cx={cx} cy={cy} r={stopRadius} fill={ringColor} />
+                <rect {...squareAttrs(cx, cy, stopRadius)} fill={ringColor} />
               )}
               <MultilineSvgText
                 text={node.label}
@@ -165,9 +175,9 @@ export function StoreMap({
               {icon ? (
                 <>
                   <clipPath id={`node-clip-${node.id}`}>
-                    <circle cx={cx} cy={cy} r={minorNodeRadius} />
+                    <rect {...squareAttrs(cx, cy, minorNodeRadius)} />
                   </clipPath>
-                  <circle cx={cx} cy={cy} r={minorNodeRadius} fill="#f3f4f6" />
+                  <rect {...squareAttrs(cx, cy, minorNodeRadius)} fill="#f3f4f6" />
                   <image
                     href={icon.src}
                     x={cx - minorNodeRadius}
@@ -178,20 +188,16 @@ export function StoreMap({
                     preserveAspectRatio="xMidYMid slice"
                     opacity={0.6}
                   />
-                  <circle
-                    cx={cx}
-                    cy={cy}
-                    r={minorNodeRadius}
+                  <rect
+                    {...squareAttrs(cx, cy, minorNodeRadius)}
                     fill="none"
                     stroke="#d1d5db"
                     strokeWidth={2 * scale}
                   />
                 </>
               ) : (
-                <circle
-                  cx={cx}
-                  cy={cy}
-                  r={minorNodeRadius}
+                <rect
+                  {...squareAttrs(cx, cy, minorNodeRadius)}
                   fill="#f3f4f6"
                   stroke="#d1d5db"
                   strokeWidth={2 * scale}
@@ -227,14 +233,19 @@ export function StoreMap({
             className={onSelectStop ? "cursor-pointer" : undefined}
           >
             {isSelected && (
-              <circle cx={cx} cy={cy} r={stopRadius + 8 * scale} fill="none" stroke="#059669" strokeWidth={4 * scale} />
+              <rect
+                {...squareAttrs(cx, cy, stopRadius + 8 * scale)}
+                fill="none"
+                stroke="#059669"
+                strokeWidth={4 * scale}
+              />
             )}
             {icon ? (
               <>
                 <clipPath id={`node-clip-${node.id}`}>
-                  <circle cx={cx} cy={cy} r={stopRadius} />
+                  <rect {...squareAttrs(cx, cy, stopRadius)} />
                 </clipPath>
-                <circle cx={cx} cy={cy} r={stopRadius} fill="#ffffff" />
+                <rect {...squareAttrs(cx, cy, stopRadius)} fill="#ffffff" />
                 <image
                   href={icon.src}
                   x={cx - stopRadius}
@@ -245,7 +256,7 @@ export function StoreMap({
                   preserveAspectRatio="xMidYMid slice"
                   opacity={isChecked ? 0.5 : 1}
                 />
-                <circle cx={cx} cy={cy} r={stopRadius} fill="none" stroke={ringColor} strokeWidth={4 * scale} />
+                <rect {...squareAttrs(cx, cy, stopRadius)} fill="none" stroke={ringColor} strokeWidth={4 * scale} />
                 <circle cx={badgeX} cy={badgeY} r={badgeRadius} fill={ringColor} stroke="white" strokeWidth={2 * scale} />
                 <text
                   x={badgeX}
@@ -261,7 +272,7 @@ export function StoreMap({
               </>
             ) : (
               <>
-                <circle cx={cx} cy={cy} r={stopRadius} fill={ringColor} />
+                <rect {...squareAttrs(cx, cy, stopRadius)} fill={ringColor} />
                 <text
                   x={cx}
                   y={cy}
