@@ -79,6 +79,23 @@ describe("selectRoutePromotions", () => {
     expect(result.map((p) => p.id)).toEqual(["current"]);
   });
 
+  it("keeps a promotion visible for the entire endDate calendar day, not just its first instant", () => {
+    // endDate is a date picker value - stored as midnight UTC of that day.
+    // "runs through 15/9" must mean visible all day on the 15th.
+    const route = baseRoute();
+    const promo = basePromo({ endDate: "2026-09-15T00:00:00.000Z" });
+
+    expect(selectRoutePromotions(route, [promo], true, { now: new Date("2026-09-15T00:00:00.001Z") })).toHaveLength(1);
+    expect(selectRoutePromotions(route, [promo], true, { now: new Date("2026-09-15T12:00:00.000Z") })).toHaveLength(1);
+    expect(selectRoutePromotions(route, [promo], true, { now: new Date("2026-09-15T23:59:59.999Z") })).toHaveLength(1);
+  });
+
+  it("stops showing a promotion once the day after its endDate begins", () => {
+    const route = baseRoute();
+    const promo = basePromo({ endDate: "2026-09-15T00:00:00.000Z" });
+    expect(selectRoutePromotions(route, [promo], true, { now: new Date("2026-09-16T00:00:00.000Z") })).toEqual([]);
+  });
+
   it("caps the number of promotions shown per route", () => {
     const route = baseRoute();
     const promos = [

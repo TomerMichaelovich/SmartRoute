@@ -33,7 +33,16 @@ export function selectRoutePromotions(
     if (!promo.isActive) return false;
     if (promo.storeId && promo.storeId !== route.storeId) return false;
     if (promo.startDate && new Date(promo.startDate) > now) return false;
-    if (promo.endDate && new Date(promo.endDate) < now) return false;
+    // endDate is stored as midnight UTC of the chosen calendar day (a date
+    // picker only carries a day, not a time) - "ends 20/9" has to mean
+    // "still runs all through the 20th", i.e. up to (but not including)
+    // midnight UTC of the *next* day. Comparing against the start of endDate
+    // itself would make the promotion vanish at the very first instant of
+    // the day the admin meant to keep it running.
+    if (promo.endDate) {
+      const endOfDay = new Date(promo.endDate).getTime() + 24 * 60 * 60 * 1000;
+      if (now.getTime() >= endOfDay) return false;
+    }
     if (!pathNodeIds.has(promo.attachedNodeId)) return false;
 
     if (options.session) {

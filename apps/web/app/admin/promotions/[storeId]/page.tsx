@@ -139,6 +139,33 @@ export default async function AdminStorePromotionsPage({
                   rows={2}
                   className="rounded-lg border border-neutral-300 p-2"
                 />
+                <label className="flex flex-col gap-1 text-sm text-neutral-600">
+                  צומת מצורף — היכן המבצע יקפוץ ללקוח
+                  <select
+                    name="attachedNodeId"
+                    required
+                    defaultValue={promo.attachedNodeId}
+                    className="rounded-lg border border-neutral-300 p-2 text-neutral-900"
+                  >
+                    {/* The promo's current node might belong to a different store
+                        (chain-wide promos) - keep it selectable even if it's not
+                        one of this store's own department nodes. */}
+                    {!departmentNodes.some((n) => n.id === promo.attachedNodeId) && (
+                      <option value={promo.attachedNodeId}>
+                        {nodeLabelById.get(promo.attachedNodeId) ?? promo.attachedNodeId}
+                      </option>
+                    )}
+                    {departmentNodes.map((node) => {
+                      const names = productNamesAtNode(node.id);
+                      return (
+                        <option key={node.id} value={node.id}>
+                          {node.label}
+                          {names.length > 0 ? ` (${names.slice(0, 3).join(", ")})` : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </label>
                 <div className="flex gap-2">
                   <input
                     name="startDate"

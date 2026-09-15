@@ -46,6 +46,7 @@ export async function updatePromotion(promotionId: string, formData: FormData): 
   const frequencyCapPerSession = Number(formData.get("frequencyCapPerSession") ?? 3);
   const startDate = toIsoOrUndefined(String(formData.get("startDate") ?? ""));
   const endDate = toIsoOrUndefined(String(formData.get("endDate") ?? ""));
+  const attachedNodeId = String(formData.get("attachedNodeId") ?? "").trim() || undefined;
   if (!title) return;
 
   await promotionRepository.update(promotionId, {
@@ -55,6 +56,7 @@ export async function updatePromotion(promotionId: string, formData: FormData): 
     frequencyCapPerSession,
     startDate,
     endDate,
+    attachedNodeId,
   });
 
   revalidatePath("/admin/promotions/[storeId]", "page");
