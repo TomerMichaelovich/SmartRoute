@@ -302,6 +302,8 @@ export const he = {
   },
   promotions: {
     sponsored: "ממומן",
+    takeIt: "לקחתי",
+    taken: "✓ נלקח",
   },
   summary: {
     title: "סיכום הקנייה",
