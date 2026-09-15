@@ -12,7 +12,8 @@ export async function createPromotion(formData: FormData): Promise<void> {
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   const frequencyCapPerSession = Number(formData.get("frequencyCapPerSession") ?? 3);
-  const [storeId, attachedNodeId] = String(formData.get("location") ?? "").split("::");
+  const storeId = String(formData.get("storeId") ?? "");
+  const attachedNodeId = String(formData.get("attachedNodeId") ?? "");
   const startDate = toIsoOrUndefined(String(formData.get("startDate") ?? ""));
   const endDate = toIsoOrUndefined(String(formData.get("endDate") ?? ""));
   if (!title || !storeId || !attachedNodeId) return;
@@ -34,6 +35,7 @@ export async function createPromotion(formData: FormData): Promise<void> {
     endDate,
   });
 
+  revalidatePath(`/admin/promotions/${storeId}`);
   revalidatePath("/admin/promotions");
 }
 
@@ -55,5 +57,6 @@ export async function updatePromotion(promotionId: string, formData: FormData): 
     endDate,
   });
 
+  revalidatePath("/admin/promotions/[storeId]", "page");
   revalidatePath("/admin/promotions");
 }
