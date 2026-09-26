@@ -6,8 +6,12 @@ import { Button } from "@/components/Button";
 import { HomeListWidget } from "@/components/HomeListWidget";
 import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
+import { useAuth } from "@/lib/auth-context";
 
 export default function HomeScreen() {
+  const { status, user } = useAuth();
+  const loggedIn = status === "authenticated" && Boolean(user);
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.page}>
@@ -21,13 +25,36 @@ export default function HomeScreen() {
           <Text style={styles.subtitle}>{he.home.heroSubtitle}</Text>
         </View>
 
-        <HomeListWidget />
+        <HomeListWidget loggedIn={loggedIn} />
 
-        <Link href="/branches" asChild>
-          <Button style={styles.startButton} fullWidth>
-            {he.home.startShopping}
-          </Button>
-        </Link>
+        <View style={styles.actions}>
+          {loggedIn ? (
+            <>
+              <Link href="/branches" asChild>
+                <Button fullWidth>{he.home.startShopping}</Button>
+              </Link>
+              <Link href="/account" asChild>
+                <Text style={styles.accountLink}>
+                  {he.home.loggedInAs(user!.displayName)} · {he.home.myAccount}
+                </Text>
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link href="/register" asChild>
+                <Button fullWidth>{he.home.register}</Button>
+              </Link>
+              <Link href="/login" asChild>
+                <Button variant="secondary" fullWidth>
+                  {he.home.login}
+                </Button>
+              </Link>
+              <Link href="/branches" asChild>
+                <Text style={styles.guestLink}>{he.home.continueAsGuest}</Text>
+              </Link>
+            </>
+          )}
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -66,7 +93,21 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.regular,
     fontSize: 16,
   },
-  startButton: {
+  actions: {
+    width: "100%",
     maxWidth: 320,
+    alignItems: "center",
+    gap: 12,
+  },
+  accountLink: {
+    fontSize: 14,
+    fontFamily: FONTS.regular,
+    color: COLORS.neutral500,
+  },
+  guestLink: {
+    fontSize: 14,
+    fontFamily: FONTS.regular,
+    color: COLORS.neutral500,
+    textDecorationLine: "underline",
   },
 });

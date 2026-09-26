@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "crypto";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { sessionRepository } from "@/src/infrastructure/container";
 import { SESSION_COOKIE } from "./constants";
 
@@ -12,11 +12,31 @@ function hashToken(rawToken: string): string {
 }
 
 /**
- * Creates a DB-backed session and sets the httpOnly cookie. The raw token is
- * only ever in the cookie; the DB stores its SHA-256 so a DB leak can't be
- * replayed as a login.
+ * The mobile app has no cookie jar worth trusting across app restarts, so it
+ * authenticates with a bearer token (stored in expo-secure-store) instead of
+ * the httpOnly cookie the browser gets. Route Handlers can read `headers()`
+ * same as `cookies()`, so a single Authorization check here covers both
+ * transports for every caller of getSessionUserId/destroySession.
  */
-export async function createSession(userId: string): Promise<void> {
+async function readRawToken(): Promise<string | undefined> {
+  const hdrs = await headers();
+  const authHeader = hdrs.get("authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    return authHeader.slice("Bearer ".length);
+  }
+  const store = await cookies();
+  return store.get(SESSION_COOKIE)?.value;
+}
+
+/**
+ * Creates a DB-backed session and sets the httpOnly cookie (for web callers;
+ * mobile callers ignore the cookie and use the returned raw token instead).
+ * The raw token is never itself persisted; the DB stores its SHA-256 so a DB
+ * leak can't be replayed as a login.
+ */
+export async function createSession(
+  userId: string,
+): Promise<{ token: string; expiresAt: Date }> {
   const rawToken = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
 
@@ -35,6 +55,8 @@ export async function createSession(userId: string): Promise<void> {
     expires: expiresAt,
     path: "/",
   });
+
+  return { token: rawToken, expiresAt };
 }
 
 /**
@@ -42,20 +64,19 @@ export async function createSession(userId: string): Promise<void> {
  * or null. Does not redirect - callers decide (see the DAL's requireUser()).
  */
 export async function getSessionUserId(): Promise<string | null> {
-  const store = await cookies();
-  const rawToken = store.get(SESSION_COOKIE)?.value;
+  const rawToken = await readRawToken();
   if (!rawToken) return null;
 
   const session = await sessionRepository.findValidByTokenHash(hashToken(rawToken));
   return session?.userId ?? null;
 }
 
-/** Deletes the current session from the DB and clears the cookie. */
+/** Deletes the current session from the DB and clears the cookie (if any). */
 export async function destroySession(): Promise<void> {
-  const store = await cookies();
-  const rawToken = store.get(SESSION_COOKIE)?.value;
+  const rawToken = await readRawToken();
   if (rawToken) {
     await sessionRepository.deleteByTokenHash(hashToken(rawToken));
   }
+  const store = await cookies();
   store.delete(SESSION_COOKIE);
 }

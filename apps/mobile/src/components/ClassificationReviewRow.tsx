@@ -17,6 +17,7 @@ interface ClassificationReviewRowProps {
   productsByDepartment: ProductGroup[];
   productById: Map<string, Product>;
   onChangeProduct: (itemId: string, productId: string | null) => void;
+  onRemove?: (itemId: string) => void;
 }
 
 function confidenceBadge(item: ShoppingListItem): { label: string; color: string; background: string } | null {
@@ -37,7 +38,13 @@ function confidenceBadge(item: ShoppingListItem): { label: string; color: string
 // chips below are what actually surfaces the fuzzy-match layer's alternativeMatches
 // (packages/core/application/classification/layers/fuzzy-match-layer.ts) to the shopper -
 // e.g. typing "ביר" suggests "בירה" here, exactly like on web.
-export function ClassificationReviewRow({ item, productsByDepartment, productById, onChangeProduct }: ClassificationReviewRowProps) {
+export function ClassificationReviewRow({
+  item,
+  productsByDepartment,
+  productById,
+  onChangeProduct,
+  onRemove,
+}: ClassificationReviewRowProps) {
   const badge = confidenceBadge(item);
   const selectedProductId = item.classification?.matchedProductId ?? "";
   const suggestions = (item.classification?.alternativeMatches ?? [])
@@ -52,11 +59,18 @@ export function ClassificationReviewRow({ item, productsByDepartment, productByI
     <View style={styles.card}>
       <View style={styles.header}>
         <Text style={styles.rawText}>{item.rawText}</Text>
-        {badge && (
-          <View style={[styles.badge, { backgroundColor: badge.background }]}>
-            <Text style={[styles.badgeText, { color: badge.color }]}>{badge.label}</Text>
-          </View>
-        )}
+        <View style={styles.headerEnd}>
+          {badge && (
+            <View style={[styles.badge, { backgroundColor: badge.background }]}>
+              <Text style={[styles.badgeText, { color: badge.color }]}>{badge.label}</Text>
+            </View>
+          )}
+          {onRemove && (
+            <Pressable onPress={() => onRemove(item.id)} hitSlop={8}>
+              <Text style={styles.removeText}>✕</Text>
+            </Pressable>
+          )}
+        </View>
       </View>
 
       {suggestions.length > 0 && (
@@ -123,6 +137,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: FONTS.medium,
     color: COLORS.neutral900,
+  },
+  headerEnd: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  removeText: {
+    fontSize: 16,
+    color: COLORS.neutral500,
   },
   badge: {
     borderRadius: 999,

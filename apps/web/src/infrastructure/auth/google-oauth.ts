@@ -1,5 +1,6 @@
 const GOOGLE_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
+const GOOGLE_TOKENINFO_ENDPOINT = "https://oauth2.googleapis.com/tokeninfo";
 
 export interface GoogleProfile {
   providerAccountId: string;
@@ -81,6 +82,64 @@ export async function exchangeGoogleCode(
 
   const claims = decodeJwtPayload(data.id_token);
   if (!claims.email) throw new Error("No email in Google id_token");
+
+  return {
+    providerAccountId: claims.sub,
+    email: claims.email,
+    displayName: claims.name || claims.given_name || claims.email.split("@")[0],
+  };
+}
+
+/**
+ * The mobile app signs in with Google via the native Google Sign-In SDK
+ * (@react-native-google-signin/google-signin) - not a browser/redirect flow.
+ * Google blocks the old custom-URI-scheme browser redirect for newly created
+ * Android/iOS OAuth clients ("Custom URI scheme is not enabled for your
+ * Android client"), so the native SDK is the only supported path today. It
+ * resolves the Android/iOS client automatically from the app's package name +
+ * signing certificate (registered in Google Cloud Console - GOOGLE_ANDROID_
+ * CLIENT_ID / GOOGLE_IOS_CLIENT_ID document that registration but aren't
+ * referenced in code), and is configured with `webClientId` = the *web*
+ * GOOGLE_CLIENT_ID so it also mints a server-verifiable idToken - meaning the
+ * token's `aud` is the web client id, already an allowed audience below.
+ *
+ * Hands the resulting id_token to the backend. Unlike exchangeGoogleCode -
+ * where the id_token comes straight from Google over a server-to-server TLS
+ * call - this one arrives via the client, so it's verified explicitly:
+ * signature + expiry via Google's tokeninfo endpoint, and `aud` checked
+ * against every OAuth client ID configured for this app.
+ */
+export function isGoogleNativeSignInConfigured(): boolean {
+  return Boolean(
+    process.env.GOOGLE_CLIENT_ID ||
+      process.env.GOOGLE_ANDROID_CLIENT_ID ||
+      process.env.GOOGLE_IOS_CLIENT_ID,
+  );
+}
+
+function allowedGoogleAudiences(): string[] {
+  return [
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_ANDROID_CLIENT_ID,
+    process.env.GOOGLE_IOS_CLIENT_ID,
+  ].filter((id): id is string => Boolean(id));
+}
+
+export async function verifyGoogleIdToken(idToken: string): Promise<GoogleProfile> {
+  const res = await fetch(`${GOOGLE_TOKENINFO_ENDPOINT}?id_token=${encodeURIComponent(idToken)}`);
+  if (!res.ok) throw new Error("Google tokeninfo lookup failed");
+
+  const claims = (await res.json()) as GoogleIdTokenClaims & { aud?: string; iss?: string };
+  const allowed = allowedGoogleAudiences();
+  if (!claims.aud || !allowed.includes(claims.aud)) {
+    throw new Error("Google id_token has an unrecognized audience");
+  }
+  if (claims.iss !== "accounts.google.com" && claims.iss !== "https://accounts.google.com") {
+    throw new Error("Google id_token has an unrecognized issuer");
+  }
+  if (!claims.email || claims.email_verified === false) {
+    throw new Error("Google id_token has no verified email");
+  }
 
   return {
     providerAccountId: claims.sub,

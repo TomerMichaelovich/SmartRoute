@@ -1,10 +1,10 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { z } from "zod";
 import { userRepository } from "@/src/infrastructure/container";
 import { hashPassword, verifyPassword } from "@/src/infrastructure/auth/password";
 import { createSession, destroySession } from "@/src/infrastructure/auth/session";
+import { loginSchema, registerSchema } from "@/src/presentation/auth/validation";
 import { he } from "@smartroute/core/i18n/he";
 
 export interface AuthFormState {
@@ -12,25 +12,6 @@ export interface AuthFormState {
   fieldErrors?: { email?: string; password?: string; displayName?: string };
   values?: { email?: string; displayName?: string };
 }
-
-const emailSchema = z
-  .string()
-  .trim()
-  .min(1, he.auth.errors.emailRequired)
-  .email(he.auth.errors.emailInvalid);
-
-const passwordSchema = z.string().min(8, he.auth.errors.passwordTooShort);
-
-const registerSchema = z.object({
-  email: emailSchema,
-  password: passwordSchema,
-  displayName: z.string().trim().min(1, he.auth.errors.nameRequired),
-});
-
-const loginSchema = z.object({
-  email: emailSchema,
-  password: z.string().min(1, he.auth.errors.passwordRequired),
-});
 
 function safeNext(raw: FormDataEntryValue | null): string {
   const value = typeof raw === "string" ? raw : "";

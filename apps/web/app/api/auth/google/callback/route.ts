@@ -1,15 +1,13 @@
 import { NextResponse } from "next/server";
-import { userRepository } from "@/src/infrastructure/container";
 import { createSession } from "@/src/infrastructure/auth/session";
 import { exchangeGoogleCode } from "@/src/infrastructure/auth/google-oauth";
+import { findOrCreateUserFromGoogleProfile } from "@/src/infrastructure/auth/google-user";
 import {
   GOOGLE_NEXT_COOKIE,
   GOOGLE_STATE_COOKIE,
   googleRedirectUri,
   safeNextPath,
 } from "@/src/infrastructure/auth/google-oauth-http";
-
-const PROVIDER = "google" as const;
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -37,27 +35,7 @@ export async function GET(request: Request) {
     return loginError;
   }
 
-  // 1. Known Google identity -> that account.
-  // 2. Same email already registered (e.g. via password) -> link Google to it
-  //    (Google has verified the address, so this is safe).
-  // 3. Otherwise -> new passwordless account.
-  let user = await userRepository.findByOAuth(PROVIDER, profile.providerAccountId);
-  if (!user) {
-    const byEmail = await userRepository.findByEmail(profile.email);
-    if (byEmail) {
-      await userRepository.linkOAuth(byEmail.id, PROVIDER, profile.providerAccountId);
-      user = byEmail;
-    } else {
-      user = await userRepository.create({
-        id: crypto.randomUUID(),
-        email: profile.email,
-        displayName: profile.displayName,
-        passwordHash: null,
-      });
-      await userRepository.linkOAuth(user.id, PROVIDER, profile.providerAccountId);
-    }
-  }
-
+  const user = await findOrCreateUserFromGoogleProfile(profile);
   await createSession(user.id);
 
   const nextCookie = request.headers

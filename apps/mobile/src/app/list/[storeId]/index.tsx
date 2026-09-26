@@ -71,13 +71,15 @@ export default function ChooseListMethodScreen() {
           </Pressable>
         </Link>
 
-        <Link href={`/list/${storeId}/photo`} asChild>
-          <Pressable style={styles.card}>
-            <PhotoIcon />
-            <Text style={styles.cardTitle}>{he.list.chooseMethod.photoTitle}</Text>
-            <Text style={styles.cardDescription}>{he.list.chooseMethod.photoDescription}</Text>
-          </Pressable>
-        </Link>
+        {/* OCR/photo list creation isn't built on mobile yet (see list/[storeId]/photo
+            on web) - shown as a disabled preview instead of linking to a screen
+            that doesn't exist. */}
+        <View style={[styles.card, styles.cardDisabled]}>
+          <PhotoIcon />
+          <Text style={[styles.cardTitle, styles.cardTitleDisabled]}>{he.list.chooseMethod.photoTitle}</Text>
+          <Text style={styles.cardDescription}>{he.list.chooseMethod.photoDescription}</Text>
+          <Text style={styles.comingSoonBadge}>{he.list.chooseMethod.photoComingSoonBadge}</Text>
+        </View>
       </View>
     </ScrollView>
   );
@@ -146,5 +148,17 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.regular,
     color: COLORS.neutral500,
     textAlign: "center",
+  },
+  cardDisabled: {
+    opacity: 0.5,
+  },
+  cardTitleDisabled: {
+    color: COLORS.neutral500,
+  },
+  comingSoonBadge: {
+    fontSize: 10,
+    fontFamily: FONTS.medium,
+    color: COLORS.neutral500,
+    textTransform: "uppercase",
   },
 });

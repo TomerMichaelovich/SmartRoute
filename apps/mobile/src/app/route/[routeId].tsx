@@ -1,6 +1,6 @@
-import { Link, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { MapNode } from "@smartroute/core/domain/entities/map-node";
 import type { Route } from "@smartroute/core/domain/entities/route";
 import type { Store } from "@smartroute/core/domain/entities/store";
@@ -35,6 +35,7 @@ type LoadState =
  */
 export default function RouteScreen() {
   const { routeId } = useLocalSearchParams<{ routeId: string }>();
+  const router = useRouter();
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [checkedItemIds, setCheckedItemIds] = useState<Set<string>>(new Set());
   const [notFoundItemIds, setNotFoundItemIds] = useState<Set<string>>(new Set());
@@ -183,11 +184,20 @@ export default function RouteScreen() {
           <Text style={styles.unresolvedNotice}>{he.route.unresolvedNotice(route.unresolvedItemIds.length)}</Text>
         )}
 
-        <Link href={`/summary/${route.id}`} asChild>
-          <Button variant={allDone ? "primary" : "secondary"} fullWidth>
-            {he.route.finishShopping}
-          </Button>
-        </Link>
+        {/* Trip history/receipts aren't built on mobile yet (see summary/[routeId]
+            on web) - finishing here just acknowledges completion and goes home,
+            without claiming the trip was saved anywhere. */}
+        <Button
+          variant={allDone ? "primary" : "secondary"}
+          fullWidth
+          onPress={() =>
+            Alert.alert(he.route.finishedTitle, he.route.finishedBody, [
+              { text: he.route.finishedOk, onPress: () => router.replace("/") },
+            ])
+          }
+        >
+          {he.route.finishShopping}
+        </Button>
       </ScrollView>
     </View>
   );

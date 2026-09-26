@@ -18,6 +18,28 @@ export const he = {
     },
     myAccount: "החשבון שלי",
   },
+  landing: {
+    features: [
+      "מסלול קנייה מסודר לפי מפת הסניף",
+      "רשימה משותפת לכל בני הבית, מתעדכנת בזמן אמת",
+      "ווידג'ט במסך הבית עם הרשימה הפעילה",
+    ],
+    googlePlay: "הורדה מ־Google Play",
+    googlePlaySoon: "בקרוב ב־Google Play",
+    appStore: "הורדה מ־App Store",
+    openInApp: "פתיחה באפליקציה",
+    manualCode(code: string): string {
+      return `כבר יש לכם את האפליקציה? אפשר להזין בה את הקוד ${code}`;
+    },
+    invite: {
+      title: "הוזמנתם להצטרף לבית ב־NAVIO",
+      body: "פתחו את הקישור באפליקציה, התחברו או הירשמו, וההצטרפות תמשיך אוטומטית.",
+    },
+    sharedList: {
+      title: "שיתפו איתכם רשימת קניות ב־NAVIO",
+      body: "פתחו את הרשימה באפליקציה כדי לצפות ולערוך אותה.",
+    },
+  },
   auth: {
     register: {
       title: "הרשמה ל־NAVIO",
@@ -162,6 +184,22 @@ export const he = {
       return storeName ? `רשימה – ${storeName}` : "רשימת קניות";
     },
     untitled: "רשימה ללא שם",
+    widget: {
+      addProduct: "הוסף מוצר",
+      micComingSoon: "בקרוב",
+      micAccessibilityLabel: "הוספת מוצרים בדיבור (בקרוב)",
+      showLess: "הצג פחות",
+      productCount(n: number): string {
+        if (n === 1) return "מוצר אחד";
+        if (n === 2) return "שני מוצרים";
+        return `${n} מוצרים`;
+      },
+      moreCount(n: number): string {
+        if (n === 1) return "עוד מוצר אחד";
+        if (n === 2) return "עוד שני מוצרים";
+        return `עוד ${n} מוצרים`;
+      },
+    },
     manage: {
       title: "הרשימות שלי",
       subtitle: "הרשימות שלכם נשמרות בחשבון וזמינות מכל מכשיר",
@@ -251,6 +289,7 @@ export const he = {
       manualDescription: "הקלידו או הדביקו את הרשימה",
       photoTitle: "צילום רשימה",
       photoDescription: "צלמו או העלו תמונה של הרשימה",
+      photoComingSoonBadge: "בקרוב",
     },
     photo: {
       title: "צילום רשימת קניות",
@@ -297,6 +336,11 @@ export const he = {
         : `${n} פריטים לא נכללו במסלול`;
     },
     finishShopping: "סיימתי לקנות",
+    // Shown on mobile only, where trip history/receipts aren't built yet -
+    // deliberately doesn't claim anything was saved anywhere.
+    finishedTitle: "כל הכבוד!",
+    finishedBody: "סיימתם את הקנייה. היסטוריית קניות תתווסף בהמשך.",
+    finishedOk: "חזרה למסך הבית",
     notFoundButton: "לא מצאתי",
     notFoundMarked: "דיווחתם שלא נמצא",
   },
