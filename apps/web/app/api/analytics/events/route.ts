@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { getSessionUserId } from "@/src/infrastructure/auth/session";
 import { analyticsRepository } from "@/src/infrastructure/container";
 import { analyticsEventTypeSchema } from "@/src/infrastructure/repositories/schemas";
 
@@ -18,10 +19,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.message }, { status: 400 });
   }
 
+  // Attribution comes from the caller's own session (cookie or bearer), so a
+  // client can't file events under someone else's account.
+  const userId = (await getSessionUserId()) ?? undefined;
+
   await analyticsRepository.append({
     id: crypto.randomUUID(),
     timestamp: new Date().toISOString(),
     ...parsed.data,
+    userId,
   });
 
   return NextResponse.json({ ok: true }, { status: 201 });

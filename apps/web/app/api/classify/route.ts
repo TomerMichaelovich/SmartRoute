@@ -56,6 +56,7 @@ export async function POST(request: Request) {
           id: crypto.randomUUID(),
           type: "item_classified",
           sessionId,
+          userId: user?.id,
           storeId,
           payload: {
             source: item.classification?.source,

@@ -64,6 +64,12 @@ export default async function AdminDashboardPage() {
           ניהול מבצעים
         </Link>
         <Link
+          href="/admin/users"
+          className="rounded-xl border border-neutral-200 bg-white p-4 font-medium text-neutral-900 hover:border-cyan-400"
+        >
+          משתמשים והיסטוריית קנייה
+        </Link>
+        <Link
           href="/admin/analytics"
           className="rounded-xl border border-neutral-200 bg-white p-4 font-medium text-neutral-900 hover:border-cyan-400"
         >

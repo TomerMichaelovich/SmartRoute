@@ -8,6 +8,7 @@ import { analyticsEventSchema } from "../schemas";
 function toDomain(row: typeof analyticsEvents.$inferSelect): AnalyticsEvent {
   return analyticsEventSchema.parse({
     ...row,
+    userId: row.userId ?? undefined,
     storeId: row.storeId ?? undefined,
     routeId: row.routeId ?? undefined,
   });
@@ -20,6 +21,15 @@ export class PgAnalyticsRepository implements IAnalyticsRepository {
 
   async readAll(): Promise<AnalyticsEvent[]> {
     const rows = await db.select().from(analyticsEvents).orderBy(asc(analyticsEvents.timestamp));
+    return rows.map(toDomain);
+  }
+
+  async findByUser(userId: string): Promise<AnalyticsEvent[]> {
+    const rows = await db
+      .select()
+      .from(analyticsEvents)
+      .where(eq(analyticsEvents.userId, userId))
+      .orderBy(asc(analyticsEvents.timestamp));
     return rows.map(toDomain);
   }
 

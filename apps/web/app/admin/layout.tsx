@@ -20,6 +20,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             <Link href="/admin/promotions" className="hover:text-cyan-700">
               מבצעים
             </Link>
+            <Link href="/admin/users" className="hover:text-cyan-700">
+              משתמשים
+            </Link>
             <Link href="/admin/analytics" className="hover:text-cyan-700">
               אנליטיקס
             </Link>

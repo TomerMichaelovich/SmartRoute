@@ -278,6 +278,9 @@ export const analyticsEvents = pgTable(
     id: text("id").primaryKey(),
     type: text("type").notNull(),
     sessionId: text("session_id").notNull(),
+    // Set server-side when the request carried a valid user session; null for
+    // guests and for rows written before per-user attribution.
+    userId: text("user_id"),
     storeId: text("store_id"),
     routeId: text("route_id"),
     payload: jsonb("payload").notNull().$type<Record<string, unknown>>(),
@@ -287,5 +290,6 @@ export const analyticsEvents = pgTable(
     index("analytics_events_session_id_idx").on(table.sessionId),
     index("analytics_events_store_id_idx").on(table.storeId),
     index("analytics_events_route_id_idx").on(table.routeId),
+    index("analytics_events_user_id_idx").on(table.userId),
   ],
 );

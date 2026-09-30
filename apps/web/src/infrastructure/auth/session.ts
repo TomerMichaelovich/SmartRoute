@@ -1,11 +1,16 @@
 import { createHash, randomBytes } from "crypto";
 import { cookies, headers } from "next/headers";
+import { after } from "next/server";
+import { toEpochMs } from "@smartroute/core/application/analytics/user-insights";
 import { sessionRepository } from "@/src/infrastructure/container";
 import { SESSION_COOKIE } from "./constants";
 
 export { SESSION_COOKIE };
 
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+// lastSeenAt feeds the admin's "last active" column. The app polls every few
+// seconds, so only write it when it's this stale rather than on every request.
+const LAST_SEEN_RESOLUTION_MS = 10 * 60 * 1000;
 
 function hashToken(rawToken: string): string {
   return createHash("sha256").update(rawToken).digest("hex");
@@ -68,7 +73,12 @@ export async function getSessionUserId(): Promise<string | null> {
   if (!rawToken) return null;
 
   const session = await sessionRepository.findValidByTokenHash(hashToken(rawToken));
-  return session?.userId ?? null;
+  if (!session) return null;
+
+  if (Date.now() - toEpochMs(session.lastSeenAt) > LAST_SEEN_RESOLUTION_MS) {
+    after(() => sessionRepository.touch(session.id, new Date().toISOString()));
+  }
+  return session.userId;
 }
 
 /** Deletes the current session from the DB and clears the cookie (if any). */

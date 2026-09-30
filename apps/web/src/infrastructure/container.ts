@@ -17,6 +17,7 @@ import { PgSessionRepository } from "./repositories/postgres/pg-session-reposito
 import { PgShoppingListRepository } from "./repositories/postgres/pg-shopping-list-repository";
 import { PgShoppingTripRepository } from "./repositories/postgres/pg-shopping-trip-repository";
 import { PgStoreRepository } from "./repositories/postgres/pg-store-repository";
+import { PgUserAdminRepository } from "./repositories/postgres/pg-user-admin-repository";
 import { PgUserRepository } from "./repositories/postgres/pg-user-repository";
 
 /**
@@ -39,6 +40,7 @@ export const analyticsRepository = new PgAnalyticsRepository();
 export const userRepository = new PgUserRepository();
 export const sessionRepository = new PgSessionRepository();
 export const householdRepository = new PgHouseholdRepository();
+export const userAdminRepository = new PgUserAdminRepository();
 
 const llmClassifier = new AnthropicClassifier();
 

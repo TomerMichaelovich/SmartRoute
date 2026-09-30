@@ -2,6 +2,7 @@ export interface SessionRecord {
   id: string;
   userId: string;
   expiresAt: string;
+  lastSeenAt: string;
 }
 
 export interface CreateSessionInput {

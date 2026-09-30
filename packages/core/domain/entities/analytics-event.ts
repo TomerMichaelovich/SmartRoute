@@ -14,6 +14,12 @@ export interface AnalyticsEvent {
   id: string;
   type: AnalyticsEventType;
   sessionId: string;
+  /**
+   * The signed-in account that produced the event, attached server-side from
+   * the request's session - never trusted from the client body. Absent for
+   * guests and for events recorded before per-user attribution existed.
+   */
+  userId?: string;
   storeId?: string;
   routeId?: string;
   payload: Record<string, unknown>;

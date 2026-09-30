@@ -31,7 +31,7 @@ export class PgSessionRepository implements ISessionRepository {
         ),
       );
     return row
-      ? { id: row.id, userId: row.userId, expiresAt: row.expiresAt }
+      ? { id: row.id, userId: row.userId, expiresAt: row.expiresAt, lastSeenAt: row.lastSeenAt }
       : null;
   }
 

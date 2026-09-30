@@ -235,6 +235,7 @@ export const analyticsEventSchema = z.object({
   id: z.string(),
   type: analyticsEventTypeSchema,
   sessionId: z.string(),
+  userId: z.string().optional(),
   storeId: z.string().optional(),
   routeId: z.string().optional(),
   payload: z.record(z.string(), z.unknown()),
