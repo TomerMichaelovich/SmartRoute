@@ -11,7 +11,7 @@ import {
 interface CreateListInput {
   storeId: string;
   rawItems: string[];
-  /** When set, the list is owned by this user and becomes their active list. */
+  /** When set, the list is owned by this user and joins their active (home-screen) lists. */
   ownerUserId: string | null;
   /** When set, the list is a household's shared list (no personal owner). */
   householdId?: string | null;
@@ -42,7 +42,7 @@ export async function classifyLines(
 /**
  * Shared list-creation path: classify the raw lines, resolve per-store
  * availability, mint a unique shareCode, persist, and (for a logged-in owner)
- * make it the active list. Used by POST /api/classify and "repeat a past trip".
+ * add it to their active lists. Used by POST /api/classify and "repeat a past trip".
  */
 export async function createShoppingList({
   storeId,
@@ -74,8 +74,5 @@ export async function createShoppingList({
   };
 
   await shoppingListRepository.create(list);
-  if (ownerUserId) {
-    await shoppingListRepository.setActive(list.id, ownerUserId);
-  }
   return list;
 }

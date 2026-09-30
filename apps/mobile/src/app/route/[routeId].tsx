@@ -12,7 +12,9 @@ import { ProgressBar } from "@/components/ProgressBar";
 import { StoreMap } from "@/components/StoreMap";
 import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
+import { clearMyListCode, getMyListCode } from "@/lib/my-list-storage";
 import { loadCheckedItemIds, saveCheckedItemIds } from "@/lib/route-storage";
+import { refreshMyListWidget } from "@/widgets/refresh-my-list-widget";
 
 interface RoutePayload {
   route: Route;
@@ -41,6 +43,7 @@ export default function RouteScreen() {
   const [notFoundItemIds, setNotFoundItemIds] = useState<Set<string>>(new Set());
   const [selectedStopOrder, setSelectedStopOrder] = useState<number | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const [finishing, setFinishing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -131,6 +134,58 @@ export default function RouteScreen() {
     if (nowNotFound) setCheckedItemIds((prev) => new Set(prev).add(itemId));
   }
 
+  // Records the trip in the shopper's history (server no-ops with 204 for
+  // guests and lists that aren't theirs). Best-effort: a failed save still
+  // lets them finish, it just doesn't claim anything was saved.
+  async function handleFinish() {
+    setFinishing(true);
+    let saved = false;
+    try {
+      // Not-found items are also in checkedItemIds (so they count as done) -
+      // keep them out of "collected".
+      const collectedItemIds = Array.from(checkedItemIds).filter((id) => !notFoundItemIds.has(id));
+      const res = await apiFetch("/api/trips", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ routeId, collectedItemIds, notFoundItemIds: Array.from(notFoundItemIds) }),
+      });
+      saved = res.status === 200 || res.status === 201;
+    } catch {
+      // Offline or server error - finish without history.
+    }
+    await forgetFinishedHomeList();
+    setFinishing(false);
+
+    const goHome = { text: he.route.finishedOk, onPress: () => router.replace("/") };
+    Alert.alert(
+      he.route.finishedTitle,
+      saved ? he.route.finishedSavedBody : he.route.finishedBody,
+      saved
+        ? [{ text: he.route.finishedViewHistory, onPress: () => router.replace("/history") }, goHome]
+        : [goHome],
+    );
+  }
+
+  // A finished list shouldn't stay on the home screen / Android widget. The
+  // server already deactivates a logged-in owner's list in /api/trips; this
+  // drops the locally-held code (the guest's home list, and the widget's
+  // source for everyone) - but only if it's the list just shopped with.
+  async function forgetFinishedHomeList() {
+    if (state.status !== "ready") return;
+    const code = await getMyListCode();
+    if (!code) return;
+    try {
+      const res = await apiFetch(`/api/lists/${code}`);
+      if (!res.ok) return;
+      const { list }: { list: { id: string } } = await res.json();
+      if (list.id !== state.data.route.shoppingListId) return;
+      await clearMyListCode();
+      refreshMyListWidget();
+    } catch {
+      // Best-effort - worst case the list stays on the home screen.
+    }
+  }
+
   if (state.status === "loading") {
     return (
       <View style={styles.center}>
@@ -184,19 +239,8 @@ export default function RouteScreen() {
           <Text style={styles.unresolvedNotice}>{he.route.unresolvedNotice(route.unresolvedItemIds.length)}</Text>
         )}
 
-        {/* Trip history/receipts aren't built on mobile yet (see summary/[routeId]
-            on web) - finishing here just acknowledges completion and goes home,
-            without claiming the trip was saved anywhere. */}
-        <Button
-          variant={allDone ? "primary" : "secondary"}
-          fullWidth
-          onPress={() =>
-            Alert.alert(he.route.finishedTitle, he.route.finishedBody, [
-              { text: he.route.finishedOk, onPress: () => router.replace("/") },
-            ])
-          }
-        >
-          {he.route.finishShopping}
+        <Button variant={allDone ? "primary" : "secondary"} fullWidth onPress={handleFinish} disabled={finishing}>
+          {finishing ? he.common.loading : he.route.finishShopping}
         </Button>
       </ScrollView>
     </View>

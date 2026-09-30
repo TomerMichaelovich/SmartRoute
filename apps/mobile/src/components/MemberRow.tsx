@@ -6,18 +6,20 @@ import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
 
 interface MemberRowProps {
+  /** Share code of the list this participant belongs to. */
+  listCode: string;
   member: HouseholdMemberView;
   isSelf: boolean;
   viewerIsOwner: boolean;
   onChanged: () => void;
 }
 
-// RN port of the web's MemberRow.tsx.
-export function MemberRow({ member, isSelf, viewerIsOwner, onChanged }: MemberRowProps) {
-  const canManage = viewerIsOwner && !isSelf;
+// One participant of a shared list, with approve/remove for the list's owner.
+export function MemberRow({ listCode, member, isSelf, viewerIsOwner, onChanged }: MemberRowProps) {
+  const canManage = viewerIsOwner && !isSelf && member.role !== "owner";
 
   async function approve() {
-    const res = await apiFetch("/api/household/members/approve", {
+    const res = await apiFetch(`/api/lists/${listCode}/members/approve`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId: member.userId }),
@@ -26,13 +28,13 @@ export function MemberRow({ member, isSelf, viewerIsOwner, onChanged }: MemberRo
   }
 
   function confirmRemove() {
-    Alert.alert(he.household.members.removeConfirm, undefined, [
-      { text: he.common.back, style: "cancel" },
+    Alert.alert(he.myList.sharing.removeConfirm, undefined, [
+      { text: he.myList.manage.cancel, style: "cancel" },
       {
-        text: he.household.members.remove,
+        text: he.myList.sharing.remove,
         style: "destructive",
         onPress: async () => {
-          const res = await apiFetch("/api/household/members/remove", {
+          const res = await apiFetch(`/api/lists/${listCode}/members/remove`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ userId: member.userId }),
@@ -48,23 +50,25 @@ export function MemberRow({ member, isSelf, viewerIsOwner, onChanged }: MemberRo
       <View style={styles.info}>
         <Text style={styles.name}>
           {member.displayName}
-          {isSelf ? ` (${he.household.members.you})` : ""}
+          {isSelf ? ` (${he.myList.sharing.you})` : ""}
         </Text>
         <Text style={styles.meta}>
-          {member.role === "owner" ? he.household.members.owner : member.email}
-          {member.status === "pending" ? ` · ${he.household.members.pendingBadge}` : ""}
+          {member.role === "owner" ? he.myList.sharing.owner : member.email}
+          {member.status === "pending" ? ` · ${he.myList.sharing.pendingBadge}` : ""}
         </Text>
       </View>
 
       {canManage && (
         <View style={styles.actions}>
           {member.status === "pending" && (
-            <Pressable onPress={approve}>
-              <Text style={styles.approveText}>{he.household.members.approve}</Text>
+            <Pressable onPress={approve} hitSlop={8}>
+              <Text style={styles.approveText}>{he.myList.sharing.approve}</Text>
             </Pressable>
           )}
-          <Pressable onPress={confirmRemove}>
-            <Text style={styles.removeText}>{he.household.members.remove}</Text>
+          <Pressable onPress={confirmRemove} hitSlop={8}>
+            <Text style={styles.removeText}>
+              {member.status === "pending" ? he.myList.sharing.decline : he.myList.sharing.remove}
+            </Text>
           </Pressable>
         </View>
       )}
@@ -84,6 +88,7 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.neutral100,
   },
   info: {
+    flexShrink: 1,
     gap: 2,
   },
   name: {

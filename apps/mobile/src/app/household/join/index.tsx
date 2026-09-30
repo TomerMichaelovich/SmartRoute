@@ -1,7 +1,6 @@
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
-import type { Household } from "@smartroute/core/domain/entities/household";
 import { he } from "@smartroute/core/i18n/he";
 import { apiFetch } from "@/lib/api";
 import { AuthField } from "@/components/AuthField";
@@ -15,14 +14,18 @@ type PreviewState =
   | { status: "idle" }
   | { status: "checking" }
   | { status: "invalid" }
-  | { status: "already_member" }
-  | { status: "already_in_other"; household: Household | null }
-  | { status: "joinable"; household: Household | null };
+  | { status: "already_member"; listName: string }
+  | { status: "pending"; listName: string }
+  | { status: "joinable"; listName: string }
+  | { status: "requested"; listName: string };
 
 /**
- * Join-a-household screen. Reached either manually ("have an invite code?")
- * or from an invite link via household/join/[code].tsx / PendingInviteResume,
- * which pass the code as `?code=` so it's checked straight away.
+ * Join-a-shared-list screen (the /household path predates per-list sharing and
+ * is kept for App Links). Reached either manually (an 8-character code typed
+ * into the home screen's "have a code?") or from an invite link via
+ * household/join/[code].tsx / PendingInviteResume, which pass the code as
+ * `?code=` so it's checked straight away. Joining waits for the list owner's
+ * approval; the list then shows up on the home screen.
  */
 export default function HouseholdJoinScreen() {
   const router = useRouter();
@@ -53,8 +56,7 @@ export default function HouseholdJoinScreen() {
       setPreview({ status: "invalid" });
       return;
     }
-    const data: { status: string; household: Household | null } = await res.json();
-    setPreview(data as PreviewState);
+    setPreview((await res.json()) as PreviewState);
   }
 
   async function handleConfirm() {
@@ -65,11 +67,13 @@ export default function HouseholdJoinScreen() {
       body: JSON.stringify({ code: code.trim() }),
     });
     setBusy(false);
-    if (res.ok) {
-      router.replace("/household");
-    } else {
+    if (!res.ok) {
       setPreview({ status: "invalid" });
+      return;
     }
+    const data: { status: string } = await res.json();
+    const listName = "listName" in preview ? preview.listName : "";
+    setPreview(data.status === "already_member" ? { status: "already_member", listName } : { status: "requested", listName });
   }
 
   return (
@@ -91,21 +95,28 @@ export default function HouseholdJoinScreen() {
 
       {preview.status === "invalid" && <Text style={styles.errorText}>{he.household.join.invalid}</Text>}
 
-      {(preview.status === "joinable" || preview.status === "already_in_other") && (
+      {preview.status === "joinable" && (
         <View style={styles.previewBlock}>
-          <Text style={styles.previewText}>{he.household.join.prompt(preview.household?.name ?? "")}</Text>
-          {preview.status === "already_in_other" ? (
-            <Text style={styles.warningText}>{he.household.join.alreadyInOther}</Text>
-          ) : (
-            <Button onPress={handleConfirm} disabled={busy} fullWidth>
-              {he.household.join.confirm}
-            </Button>
-          )}
+          <Text style={styles.previewText}>{he.household.join.prompt(preview.listName)}</Text>
+          <Button onPress={handleConfirm} disabled={busy} fullWidth>
+            {busy ? he.common.loading : he.household.join.confirm}
+          </Button>
         </View>
       )}
 
-      {preview.status === "already_member" && (
-        <Text style={styles.warningText}>{he.household.join.alreadyMember}</Text>
+      {(preview.status === "requested" || preview.status === "pending" || preview.status === "already_member") && (
+        <View style={styles.previewBlock}>
+          <Text style={preview.status === "requested" ? styles.successText : styles.warningText}>
+            {preview.status === "requested"
+              ? he.household.join.requested
+              : preview.status === "pending"
+                ? he.household.join.pending
+                : he.household.join.alreadyMember}
+          </Text>
+          <Button variant="secondary" onPress={() => router.dismissTo("/")} fullWidth>
+            {he.household.join.backHome}
+          </Button>
+        </View>
       )}
     </ScrollView>
   );
@@ -130,6 +141,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: FONTS.regular,
     color: "#dc2626",
+    textAlign: "center",
+  },
+  successText: {
+    fontSize: 15,
+    fontFamily: FONTS.semiBold,
+    color: COLORS.cyan700,
     textAlign: "center",
   },
   warningText: {

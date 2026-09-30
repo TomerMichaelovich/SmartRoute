@@ -10,12 +10,13 @@ import { NAVIO_MARK_DATA_URI } from "./navio-mark";
 export interface MyListWidgetItem {
   id: string;
   name: string;
-  checked: boolean;
   category: ProductCategory;
 }
 
 interface MyListWidgetProps {
   shareCode?: string;
+  /** The displayed list's name - a user may have several lists. */
+  title?: string;
   items?: MyListWidgetItem[];
   expanded?: boolean;
 }
@@ -33,17 +34,19 @@ const MIC_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><pa
  * here rather than shared: no textDecorationLine (no strikethrough for checked items),
  * no custom fontFamily (system font only), and SvgWidget wants raw SVG markup instead of
  * react-native-svg components. Pure/presentational on purpose - all data fetching and the
- * TOGGLE_ITEM/TOGGLE_EXPANDED click handling happen outside this function (see
+ * TOGGLE_EXPANDED click handling happen outside this function (see
  * load-my-list-widget.tsx / handle-widget-click.ts / index.tsx's task handler), since this
  * function is excluded from the React Compiler ("use no memo") and must stay hook-free per
  * react-native-android-widget's requirements.
  *
  * Layout is mirrored for Hebrew by hand: children are listed in visual left-to-right order
- * (checkbox/icon/logo on the right, text right-aligned) instead of relying on RN's
+ * (icon/logo on the right, text right-aligned) instead of relying on RN's
  * I18nManager RTL auto-mirroring the in-app screens use - that doesn't apply inside this
  * separate RemoteViews rendering path, and FlexWidget has no row-reverse.
  */
-export function MyListWidget({ shareCode, items, expanded = false }: MyListWidgetProps) {
+export function MyListWidget({ shareCode, title, items, expanded = false }: MyListWidgetProps) {
+  // No active list (none created yet, or the last one was finished) - say so
+  // instead of just showing the logo; tapping opens the app to start a new one.
   if (!items) {
     return (
       <FlexWidget
@@ -54,14 +57,21 @@ export function MyListWidget({ shareCode, items, expanded = false }: MyListWidge
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          flexGap: 8,
+          flexGap: 6,
           backgroundColor: "#ffffff",
           borderRadius: 20,
           padding: 16,
         }}
       >
         <ImageWidget image={NAVIO_MARK_DATA_URI} imageWidth={44} imageHeight={44} />
-        <TextWidget text={he.common.appName} style={{ fontSize: 15, fontWeight: "700", color: NAVY }} />
+        <TextWidget
+          text={he.myList.widget.noActiveList}
+          style={{ fontSize: 16, fontWeight: "700", color: NAVY, textAlign: "center" }}
+        />
+        <TextWidget
+          text={he.myList.widget.noActiveListHint}
+          style={{ fontSize: 12, color: COLORS.neutral500, textAlign: "center" }}
+        />
       </FlexWidget>
     );
   }
@@ -72,7 +82,6 @@ export function MyListWidget({ shareCode, items, expanded = false }: MyListWidge
 
   const visibleItems = expanded ? items : items.slice(0, COLLAPSED_ITEM_COUNT);
   const hiddenCount = items.length - visibleItems.length;
-  const collectedCount = items.filter((item) => item.checked).length;
 
   return (
     <FlexWidget
@@ -94,6 +103,7 @@ export function MyListWidget({ shareCode, items, expanded = false }: MyListWidge
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
+          flexGap: 10,
           paddingHorizontal: 14,
           paddingVertical: 12,
           borderTopLeftRadius: 20,
@@ -114,8 +124,14 @@ export function MyListWidget({ shareCode, items, expanded = false }: MyListWidge
             style={{ fontSize: 11, fontWeight: "600", color: "#ffffff" }}
           />
         </FlexWidget>
-        <FlexWidget style={{ flexDirection: "row", alignItems: "center", flexGap: 8 }}>
-          <TextWidget text={he.myList.widgetTitle} style={{ fontSize: 16, fontWeight: "700", color: "#ffffff" }} />
+        {/* flex: 1 so a long list name truncates instead of pushing the count pill off. */}
+        <FlexWidget style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", flexGap: 8 }}>
+          <TextWidget
+            text={title ?? he.myList.widgetTitle}
+            maxLines={1}
+            truncate="END"
+            style={{ fontSize: 16, fontWeight: "700", color: "#ffffff", textAlign: "right" }}
+          />
           <FlexWidget
             style={{
               width: 34,
@@ -132,25 +148,6 @@ export function MyListWidget({ shareCode, items, expanded = false }: MyListWidge
       </FlexWidget>
 
       <FlexWidget style={{ width: "match_parent", flexDirection: "column", padding: 14, flexGap: 10 }}>
-        {items.length > 0 && (
-          <FlexWidget style={{ width: "match_parent", flexDirection: "column", flexGap: 4 }}>
-            {collectedCount > 0 && (
-              <TextWidget
-                text={he.history.collectedCount(collectedCount, items.length)}
-                style={{ width: "match_parent", textAlign: "right", fontSize: 11, color: COLORS.neutral500 }}
-              />
-            )}
-            <FlexWidget
-              style={{ width: "match_parent", height: 4, flexDirection: "row", borderRadius: 2, backgroundColor: "#e3f1f5" }}
-            >
-              {collectedCount < items.length && <FlexWidget style={{ flex: items.length - collectedCount, height: 4 }} />}
-              {collectedCount > 0 && (
-                <FlexWidget style={{ flex: collectedCount, height: 4, borderRadius: 2, backgroundColor: TEAL }} />
-              )}
-            </FlexWidget>
-          </FlexWidget>
-        )}
-
         <FlexWidget style={{ width: "match_parent", flexDirection: "row", alignItems: "center", flexGap: 8 }}>
           <FlexWidget
             clickAction={openAction}
@@ -195,12 +192,13 @@ export function MyListWidget({ shareCode, items, expanded = false }: MyListWidge
           <FlexWidget
             style={{ width: "match_parent", flexDirection: "column", flexGap: 1, flexGapColor: DIVIDER }}
           >
-            {visibleItems.map((item) => {
-              const toggleAction = shareCode ? "TOGGLE_ITEM" : "OPEN_APP";
-              const toggleData = shareCode ? { shareCode, itemId: item.id, nextChecked: !item.checked } : undefined;
-              return (
+            {/* No checkboxes: the list is for writing only - items are marked
+                as collected on the route screen, whose progress is separate. */}
+            {visibleItems.map((item) => (
               <FlexWidget
                 key={item.id}
+                clickAction={openAction}
+                clickActionData={openActionData}
                 style={{
                   width: "match_parent",
                   flexDirection: "row",
@@ -209,22 +207,15 @@ export function MyListWidget({ shareCode, items, expanded = false }: MyListWidge
                   paddingVertical: 7,
                 }}
               >
-                <FlexWidget style={{ flex: 1 }} clickAction={toggleAction} clickActionData={toggleData}>
+                <FlexWidget style={{ flex: 1 }}>
                   <TextWidget
                     text={item.name}
                     maxLines={1}
                     truncate="END"
-                    style={{
-                      width: "match_parent",
-                      textAlign: "right",
-                      fontSize: 14,
-                      color: item.checked ? COLORS.neutral300 : COLORS.neutral900,
-                    }}
+                    style={{ width: "match_parent", textAlign: "right", fontSize: 14, color: COLORS.neutral900 }}
                   />
                 </FlexWidget>
                 <FlexWidget
-                  clickAction={toggleAction}
-                  clickActionData={toggleData}
                   style={{
                     width: 28,
                     height: 28,
@@ -236,25 +227,8 @@ export function MyListWidget({ shareCode, items, expanded = false }: MyListWidge
                 >
                   <TextWidget text={CATEGORY_ICON[item.category]} style={{ fontSize: 14 }} />
                 </FlexWidget>
-                <FlexWidget
-                  clickAction={toggleAction}
-                  clickActionData={toggleData}
-                  style={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: 11,
-                    borderWidth: 1.5,
-                    borderColor: item.checked ? TEAL : COLORS.neutral300,
-                    backgroundColor: item.checked ? TEAL : "#ffffff",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  {item.checked && <TextWidget text="✓" style={{ fontSize: 12, fontWeight: "700", color: "#ffffff" }} />}
-                </FlexWidget>
               </FlexWidget>
-              );
-            })}
+            ))}
           </FlexWidget>
         )}
 

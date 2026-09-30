@@ -15,8 +15,11 @@ export interface ListAccess {
  * Resolves who may act on a list:
  * - guest list (no owner, no household): anyone holding the shareCode.
  * - personal list: only its owner.
- * - household list: only an *active* member (checked live, so removing a
- *   member revokes access on their very next request).
+ * - shared list (householdId set - each shared list has its own sharing
+ *   group, stored in the household tables): its owner, plus every *active*
+ *   member (checked live, so removing a member revokes access on their very
+ *   next request). The group's "owner" role counts as the list's owner, which
+ *   also covers legacy ownerless household lists.
  *
  * Returns null when the caller has no access.
  */
@@ -36,7 +39,7 @@ export async function resolveListAccess(list: ShoppingList): Promise<ListAccess 
   if (list.householdId) {
     const membership = await householdRepository.getMembership(list.householdId, user.id);
     if (membership && membership.status === "active") {
-      return { user, kind: "member" };
+      return { user, kind: membership.role === "owner" ? "owner" : "member" };
     }
   }
 

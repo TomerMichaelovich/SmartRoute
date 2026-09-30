@@ -2,8 +2,10 @@ import { Heebo_400Regular, Heebo_500Medium, Heebo_600SemiBold, Heebo_700Bold, us
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
-import { I18nManager } from "react-native";
+import { I18nManager, StyleSheet } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { PendingInviteResume } from "@/components/PendingInviteResume";
+import { COLORS } from "@/constants/colors";
 import { AuthProvider } from "@/lib/auth-context";
 
 SplashScreen.preventAutoHideAsync();
@@ -33,8 +35,20 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <Stack screenOptions={{ headerShown: false }} />
+      {/* Android draws the app edge-to-edge and the system bars are transparent
+          (see expo-navigation-bar in app.json), so keep every screen clear of
+          them here and let the app background show through behind the bars. */}
+      <SafeAreaView style={styles.root}>
+        <Stack screenOptions={{ headerShown: false }} />
+      </SafeAreaView>
       <PendingInviteResume />
     </AuthProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: COLORS.neutral50,
+  },
+});

@@ -1,4 +1,4 @@
-import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, AppState, ScrollView, Share, StyleSheet, Text, TextInput, View } from "react-native";
 import type { Product } from "@smartroute/core/domain/entities/product";
@@ -11,18 +11,22 @@ import { Button } from "@/components/Button";
 import { ClassificationReviewRow } from "@/components/ClassificationReviewRow";
 import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
+import { useAuth } from "@/lib/auth-context";
 import { setMyListCode } from "@/lib/my-list-storage";
+import { refreshMyListWidget } from "@/widgets/refresh-my-list-widget";
+
+// Same cadence as the accounts feature's shared-list sync.
+const SHARED_POLL_MS = 4000;
 
 type LoadState =
   | { status: "loading" }
   | { status: "not_found" }
-  | { status: "household" }
   | { status: "ready"; store: Store | null };
 
 /**
- * RN port of the web's /my-list/[code] page + MyListEditor. Serves both guest
- * lists (no login) and a logged-in user's personal list - access is enforced
- * server-side by GET /api/lists/[code] (resolveListAccess), same as web.
+ * RN port of the web's /my-list/[code] page + MyListEditor. Serves guest lists
+ * (no login), a logged-in user's own lists and lists shared with them - access
+ * is enforced server-side by GET /api/lists/[code] (resolveListAccess).
  */
 export default function MyListScreen() {
   const router = useRouter();
@@ -31,16 +35,16 @@ export default function MyListScreen() {
   const [products, setProducts] = useState<Product[]>([]);
   const [items, setItems] = useState<ShoppingListItem[]>([]);
   const [updatedAt, setUpdatedAt] = useState("");
-  const [listId, setListId] = useState("");
-  const [storeId, setStoreId] = useState("");
+  const [listName, setListName] = useState<string | null>(null);
   const [newLinesText, setNewLinesText] = useState("");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [staleServerList, setStaleServerList] = useState<ShoppingList | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [isGeneratingRoute, setIsGeneratingRoute] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [justSaved, setJustSaved] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
+  const [isShared, setIsShared] = useState(false);
+  const { status: authStatus } = useAuth();
 
   const updatedAtRef = useRef(updatedAt);
   const hasUnsavedChangesRef = useRef(hasUnsavedChanges);
@@ -61,15 +65,11 @@ export default function MyListScreen() {
         return;
       }
       const data: { list: ShoppingList; store: Store | null } = await res.json();
-      if (data.list.householdId) {
-        setState({ status: "household" });
-        return;
-      }
       await setMyListCode(code);
+      setIsShared(Boolean(data.list.householdId));
+      setListName(data.list.name);
       setItems(data.list.items);
       setUpdatedAt(data.list.updatedAt);
-      setListId(data.list.id);
-      setStoreId(data.list.storeId);
 
       const productsRes = await apiFetch(`/api/shopping-lists/${data.list.id}`).catch(() => null);
       if (!cancelled && productsRes?.ok) {
@@ -84,8 +84,17 @@ export default function MyListScreen() {
     };
   }, [code]);
 
-  // Re-check for updates made by someone else (e.g. a household member on
-  // web) when the app returns to the foreground - mirrors web's
+  // A shared list is edited by several people - poll for their changes
+  // (refetchIfStale never overwrites unsaved local edits; it flags them).
+  useEffect(() => {
+    if (!isShared || state.status !== "ready") return;
+    const interval = setInterval(() => void refetchIfStale(), SHARED_POLL_MS);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isShared, state.status, code]);
+
+  // Re-check for updates made by someone else (e.g. another participant of a
+  // shared list) when the app returns to the foreground - mirrors web's
   // visibilitychange listener.
   useEffect(() => {
     const sub = AppState.addEventListener("change", (next) => {
@@ -102,6 +111,9 @@ export default function MyListScreen() {
       if (!res.ok) return;
       const data: { list: ShoppingList } = await res.json();
       if (data.list.updatedAt === updatedAtRef.current) return;
+      // This list is the widget's (opening it selected it) - show the other
+      // participant's change there too, not only on this screen.
+      refreshMyListWidget();
       if (hasUnsavedChangesRef.current) {
         setStaleServerList(data.list);
       } else {
@@ -157,8 +169,9 @@ export default function MyListScreen() {
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
+  const hasPendingChanges = hasUnsavedChanges || newRawLines.length > 0;
 
-  async function handleSave(force = false) {
+  async function handleSave(force = false): Promise<boolean> {
     setIsSaving(true);
     setError(null);
     setJustSaved(false);
@@ -173,7 +186,7 @@ export default function MyListScreen() {
         const body: { current: ShoppingList } = await res.json();
         setStaleServerList(body.current);
         setIsSaving(false);
-        return;
+        return false;
       }
       if (!res.ok) throw new Error("save failed");
       const saved: ShoppingList = await res.json();
@@ -183,8 +196,10 @@ export default function MyListScreen() {
       setHasUnsavedChanges(false);
       setJustSaved(true);
       setTimeout(() => setJustSaved(false), 2000);
+      return true;
     } catch {
       setError(he.common.error);
+      return false;
     } finally {
       setIsSaving(false);
     }
@@ -199,6 +214,12 @@ export default function MyListScreen() {
   }
 
   async function handleShare() {
+    // Account lists are shared with specific people (invite + approval) on
+    // the sharing screen; a guest list is open to anyone holding its code.
+    if (authStatus === "authenticated") {
+      router.push(`/sharing/${code}`);
+      return;
+    }
     try {
       await Share.share({ message: `${he.myList.share.codeLabel(code)}\n${siteUrl(`/my-list/${code}`)}` });
     } catch {
@@ -208,33 +229,14 @@ export default function MyListScreen() {
 
   const unresolvedCount = items.filter((item) => !item.classification?.matchedProductId).length;
 
-  async function handleGenerateRoute() {
-    setIsGeneratingRoute(true);
-    setError(null);
-    try {
-      const res = await apiFetch("/api/routes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storeId, shoppingListId: listId, items }),
-      });
-      if (!res.ok) {
-        const body: { code?: string } | null = await res.json().catch(() => null);
-        setError(
-          body?.code === "missing_entrance_or_checkout"
-            ? he.review.missingEntranceOrCheckout
-            : body?.code === "disconnected_graph"
-              ? he.review.disconnectedGraph
-              : he.common.error,
-        );
-        setIsGeneratingRoute(false);
-        return;
-      }
-      const route: { id: string } = await res.json();
-      router.push(`/route/${route.id}`);
-    } catch {
-      setError(he.common.error);
-      setIsGeneratingRoute(false);
+  // The branch is picked on the next screen, which builds the route from the
+  // saved list - so save pending edits first or they'd be left out.
+  async function handleContinueToRoute() {
+    if (hasPendingChanges) {
+      const saved = await handleSave(false);
+      if (!saved) return;
     }
+    router.push({ pathname: "/branches", params: { listCode: code } });
   }
 
   if (state.status === "loading") {
@@ -243,10 +245,6 @@ export default function MyListScreen() {
         <ActivityIndicator />
       </View>
     );
-  }
-
-  if (state.status === "household") {
-    return <Redirect href="/household/list" />;
   }
 
   if (state.status === "not_found") {
@@ -262,15 +260,18 @@ export default function MyListScreen() {
   return (
     <ScrollView contentContainerStyle={styles.page}>
       <View style={styles.header}>
-        <Text style={styles.title}>{he.myList.editor.title}</Text>
+        <Text style={styles.title}>{listName ?? he.myList.editor.title}</Text>
         <Text style={styles.subtitle}>{he.myList.editor.subtitle}</Text>
       </View>
 
       <View style={styles.shareBlock}>
         <Button variant="secondary" onPress={handleShare} fullWidth>
-          {shareCopied ? he.myList.share.copied : he.myList.share.button}
+          {authStatus === "authenticated"
+            ? he.myList.sharing.buttonLabel
+            : shareCopied
+              ? he.myList.share.copied
+              : he.myList.share.button}
         </Button>
-        <Text style={styles.shareCode}>{he.myList.share.codeLabel(code)}</Text>
       </View>
 
       {staleServerList && (
@@ -316,16 +317,20 @@ export default function MyListScreen() {
       {unresolvedCount > 0 && <Text style={styles.unresolvedWarning}>{he.review.unresolvedWarning(unresolvedCount)}</Text>}
       {error && <Text style={styles.errorText}>{error}</Text>}
 
-      <Button onPress={() => handleSave(false)} disabled={isSaving} fullWidth>
-        {isSaving ? he.common.loading : justSaved ? he.myList.editor.saved : he.myList.editor.save}
-      </Button>
+      {/* Only when there's something to save - stays up through the save and
+          its brief "saved" confirmation, then hides again. */}
+      {(hasPendingChanges || isSaving || justSaved) && (
+        <Button onPress={() => handleSave(false)} disabled={isSaving} fullWidth>
+          {isSaving ? he.common.loading : justSaved ? he.myList.editor.saved : he.myList.editor.save}
+        </Button>
+      )}
       <Button
         variant="secondary"
-        onPress={handleGenerateRoute}
-        disabled={isGeneratingRoute || items.length === 0}
+        onPress={handleContinueToRoute}
+        disabled={isSaving || items.length + newRawLines.length === 0}
         fullWidth
       >
-        {isGeneratingRoute ? he.common.loading : he.review.continueToRoute}
+        {he.review.continueToRoute}
       </Button>
     </ScrollView>
   );
@@ -366,12 +371,6 @@ const styles = StyleSheet.create({
   shareBlock: {
     alignItems: "center",
     gap: 6,
-  },
-  shareCode: {
-    fontSize: 12,
-    fontFamily: FONTS.regular,
-    color: COLORS.neutral500,
-    writingDirection: "ltr",
   },
   staleBox: {
     gap: 8,

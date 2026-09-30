@@ -78,3 +78,21 @@ export async function PATCH(
 
   return NextResponse.json({ ...list, items, updatedAt });
 }
+
+/** Deletes (soft) one of the caller's own lists - it leaves their home screen for good. */
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ code: string }> },
+) {
+  const { code } = await params;
+  const list = await shoppingListRepository.findByShareCode(normalizeShareCode(code));
+  if (!list) {
+    return NextResponse.json({ error: "not_found" }, { status: 404 });
+  }
+  if ((await resolveListAccess(list))?.kind !== "owner") {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+
+  await shoppingListRepository.softDelete(list.id, new Date().toISOString());
+  return new NextResponse(null, { status: 204 });
+}

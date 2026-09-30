@@ -10,6 +10,7 @@ export const he = {
     heroSubtitle: "תכננו את מסלול הקנייה שלכם מראש, חסכו זמן והליכה מיותרת",
     tagline: "קונים חכם. הולכים פחות. קונים מה שתכננתם.",
     startShopping: "התחילו לקנות",
+    createList: "צרו רשימה",
     register: "הרשמה",
     login: "התחברות לחשבון קיים",
     continueAsGuest: "המשך כאורח",
@@ -17,6 +18,15 @@ export const he = {
       return `מחוברים כ${name}`;
     },
     myAccount: "החשבון שלי",
+    greeting(name: string): string {
+      return `שלום, ${name}`;
+    },
+    myLists: "הרשימות שלי",
+    goShopping: "יוצאים לקנות",
+    emptyTitle: "עוד אין לכם רשימת קניות",
+    emptyBody: "רשמו מה צריך לקנות, ו־NAVIO יבנה לכם מסלול קצר בסניף.",
+    emptyCta: "צרו רשימת קניות",
+    guestSaveHint: "הירשמו כדי לשמור כמה רשימות ולגשת אליהן מכל מכשיר",
   },
   landing: {
     features: [
@@ -32,7 +42,7 @@ export const he = {
       return `כבר יש לכם את האפליקציה? אפשר להזין בה את הקוד ${code}`;
     },
     invite: {
-      title: "הוזמנתם להצטרף לבית ב־NAVIO",
+      title: "הוזמנתם לרשימת קניות משותפת ב־NAVIO",
       body: "פתחו את הקישור באפליקציה, התחברו או הירשמו, וההצטרפות תמשיך אוטומטית.",
     },
     sharedList: {
@@ -125,16 +135,19 @@ export const he = {
     leave: "יציאה מהבית",
     leaveConfirm: "לצאת מהבית המשותף?",
     ownerCantLeave: "בתור מנהל/ת, עליך להסיר תחילה את שאר החברים או להעביר ניהול.",
+    // Invite links now join one shared list (the /household/join path is kept
+    // so existing App Links and already-sent links keep working).
     join: {
-      title: "הצטרפות לבית",
+      title: "הצטרפות לרשימה משותפת",
       prompt(name: string): string {
-        return `הוזמנת להצטרף ל"${name}". לאחר האישור של חבר קיים בבית, תוכל לערוך את הרשימה המשותפת.`;
+        return `הוזמנתם לרשימה "${name}". אחרי שמנהל/ת הרשימה יאשר/תאשר, היא תופיע במסך הבית שלכם.`;
       },
-      confirm: "בקש להצטרף",
+      confirm: "בקשו להצטרף",
       invalid: "קישור ההזמנה אינו תקין או שפג תוקפו.",
-      alreadyMember: "את/ה כבר חבר/ה בבית הזה.",
-      alreadyInOther: "את/ה כבר משתייך/ת לבית אחר. צא/י ממנו כדי להצטרף לבית חדש.",
-      requested: "הבקשה נשלחה. נעדכן אותך כשהיא תאושר.",
+      alreadyMember: "הרשימה הזו כבר מופיעה אצלכם במסך הבית.",
+      pending: "כבר ביקשתם להצטרף לרשימה הזו. היא תופיע במסך הבית אחרי האישור.",
+      requested: "הבקשה נשלחה! הרשימה תופיע במסך הבית שלכם אחרי שמנהל/ת הרשימה יאשר/תאשר.",
+      backHome: "חזרה למסך הבית",
     },
     sharedList: {
       badge: "רשימת הבית",
@@ -175,6 +188,8 @@ export const he = {
     repeat: "רשימה חדשה מקנייה זו",
     repeatCreating: "יוצר רשימה...",
     notMine: "הקנייה הזו לא שייכת לחשבון שלך",
+    loadFailed: "לא הצלחנו לטעון את היסטוריית הקניות. נסו שוב.",
+    retry: "נסו שוב",
   },
   myList: {
     widgetTitle: "הרשימה שלי",
@@ -189,6 +204,11 @@ export const he = {
       micComingSoon: "בקרוב",
       micAccessibilityLabel: "הוספת מוצרים בדיבור (בקרוב)",
       showLess: "הצג פחות",
+      addProductPlaceholder: "הוסיפו מוצר…",
+      menuAccessibilityLabel: "אפשרויות הרשימה",
+      emptyListHint: "הוסיפו מוצרים כדי לצאת לקנות",
+      noActiveList: "אין רשימה פעילה",
+      noActiveListHint: "הקישו כדי ליצור רשימת קניות חדשה",
       productCount(n: number): string {
         if (n === 1) return "מוצר אחד";
         if (n === 2) return "שני מוצרים";
@@ -208,6 +228,8 @@ export const he = {
       makeActive: "הפוך לפעילה",
       rename: "שינוי שם",
       renamePrompt: "שם חדש לרשימה",
+      save: "שמירה",
+      cancel: "ביטול",
       delete: "מחיקה",
       deleteConfirm: "למחוק את הרשימה? אפשר יהיה לשחזר רק דרך פנייה אלינו.",
       newList: "רשימה חדשה",
@@ -217,6 +239,34 @@ export const he = {
         if (n === 1) return "פריט אחד";
         if (n === 2) return "שני פריטים";
         return `${n} פריטים`;
+      },
+    },
+    sharing: {
+      title: "שיתוף הרשימה",
+      subtitle(name: string): string {
+        return `כל המשתתפים ב"${name}" יכולים להוסיף ולערוך מוצרים, והשינויים מתעדכנים אצל כולם.`;
+      },
+      buttonLabel: "משתתפים ושיתוף",
+      membersHeading: "משתתפים",
+      you: "את/ה",
+      owner: "מנהל/ת הרשימה",
+      pendingBadge: "ממתין/ה לאישור",
+      approve: "אישור",
+      remove: "הסרה",
+      decline: "דחייה",
+      removeConfirm: "להסיר את המשתתף/ת? הגישה לרשימה תיפסק מיד.",
+      invite: "הזמנת חברים לרשימה",
+      inviteHint: "שלחו קישור למי שתרצו לצרף. הקישור תקף ל־7 ימים, ומי שנכנס דרכו ימתין לאישורכם.",
+      inviteMessage(listName: string, url: string): string {
+        return `הצטרפו לרשימת הקניות "${listName}" שלי ב־NAVIO:\n${url}`;
+      },
+      leave: "עזיבת הרשימה",
+      leaveConfirm: "לעזוב את הרשימה? היא תוסר ממסך הבית שלכם.",
+      pendingCount(n: number): string {
+        return n === 1 ? "בקשת הצטרפות אחת ממתינה" : `${n} בקשות הצטרפות ממתינות`;
+      },
+      memberCount(n: number): string {
+        return n === 1 ? "רק אתם" : `${n} משתתפים`;
       },
     },
     claim: {
@@ -270,10 +320,14 @@ export const he = {
     subtitle: "לאיזה סניף אתם הולכים היום?",
     selectBranch: "בחרו סניף זה",
     noBranches: "אין כרגע סניפים זמינים",
+    loadFailed: "לא הצלחנו לטעון את הסניפים. בדקו את החיבור לאינטרנט ונסו שוב.",
+    retry: "נסו שוב",
   },
   list: {
     title: "רשימת קניות",
     subtitle: "הדביקו או הקלידו את רשימת הקניות שלכם, פריט בכל שורה",
+    nameLabel: "שם הרשימה (לא חובה)",
+    namePlaceholder: "לדוגמה: קניות שבועיות, ערב עם חברים",
     placeholder: "לדוגמה:\nחלב\nלחם\nעגבניות",
     continueToReview: "המשך לבדיקת הפריטים",
     itemCount(n: number): string {
@@ -336,11 +390,13 @@ export const he = {
         : `${n} פריטים לא נכללו במסלול`;
     },
     finishShopping: "סיימתי לקנות",
-    // Shown on mobile only, where trip history/receipts aren't built yet -
-    // deliberately doesn't claim anything was saved anywhere.
+    // Mobile's finish alert. finishedSavedBody only when /api/trips actually
+    // wrote a history entry (logged-in owner) - guests get the plain body.
     finishedTitle: "כל הכבוד!",
-    finishedBody: "סיימתם את הקנייה. היסטוריית קניות תתווסף בהמשך.",
+    finishedBody: "סיימתם את הקנייה.",
+    finishedSavedBody: "סיימתם את הקנייה. היא נשמרה בהיסטוריית הקניות שלכם.",
     finishedOk: "חזרה למסך הבית",
+    finishedViewHistory: "להיסטוריית הקניות",
     notFoundButton: "לא מצאתי",
     notFoundMarked: "דיווחתם שלא נמצא",
   },

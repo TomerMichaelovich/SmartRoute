@@ -1,4 +1,4 @@
-import { Link, Redirect, useRouter } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -43,12 +43,6 @@ export default function AccountScreen() {
             <Text style={[styles.rowValue, styles.ltr]}>{user.email}</Text>
           </View>
         </Card>
-
-        <Link href="/household" asChild>
-          <Button variant="secondary" fullWidth>
-            {he.household.title}
-          </Button>
-        </Link>
 
         <Button variant="secondary" fullWidth onPress={handleLogout} disabled={pending}>
           {pending ? he.account.loggingOut : he.account.logout}

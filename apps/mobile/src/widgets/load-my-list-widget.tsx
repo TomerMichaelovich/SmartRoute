@@ -1,5 +1,6 @@
 import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ShoppingList } from "@smartroute/core/domain/entities/shopping-list";
+import { he } from "@smartroute/core/i18n/he";
 import { apiFetch } from "@/lib/api";
 import { loadStoredToken } from "@/lib/auth-token";
 import { clearMyListCode, getMyListCode } from "@/lib/my-list-storage";
@@ -9,7 +10,7 @@ import { getWidgetListExpanded } from "./widget-list-state";
 // Matches the native widget "name" in apps/mobile/app.json's react-native-android-widget
 // plugin config - kept as "HelloWidget" (the Phase A validation name) rather than renamed,
 // since renaming it is a native-level change requiring a fresh EAS build, and it's an
-// internal identifier only (the user-facing "label" there already says "SmartRoute").
+// internal identifier only (the user-facing "label" there already says "NAVIO").
 export const MY_LIST_WIDGET_NAME = "HelloWidget";
 
 /**
@@ -34,6 +35,13 @@ export async function loadMyListWidget() {
       return <MyListWidget />;
     }
     const data: { list: ShoppingList } = await res.json();
+    // An account list that's no longer active (shopping with it was finished,
+    // possibly on another device) shouldn't linger here. Guest lists are never
+    // flagged active, so only owned lists are checked.
+    if (data.list.ownerUserId && !data.list.isActive) {
+      await clearMyListCode();
+      return <MyListWidget />;
+    }
 
     let products: Product[] = [];
     const productsRes = await apiFetch(`/api/shopping-lists/${data.list.id}`).catch(() => null);
@@ -48,13 +56,14 @@ export async function loadMyListWidget() {
       return {
         id: item.id,
         name: product?.canonicalName ?? item.rawText,
-        checked: Boolean(item.checked),
         category: product?.category ?? "other",
       };
     });
 
     const expanded = await getWidgetListExpanded();
-    return <MyListWidget shareCode={code} items={items} expanded={expanded} />;
+    // Same fallback as the in-app home card, so both show the same name.
+    const title = data.list.name ?? he.myList.defaultName();
+    return <MyListWidget shareCode={code} title={title} items={items} expanded={expanded} />;
   } catch {
     return <MyListWidget />;
   }

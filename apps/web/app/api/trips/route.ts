@@ -22,6 +22,8 @@ const requestSchema = z.object({
  * Records one immutable shopping trip when the shopper finishes. Called from
  * the Summary screen. A no-op (204) for guests and for lists that aren't the
  * caller's - history only exists for a registered owner. Idempotent per route.
+ * Finishing also takes the list off its participants' home screens (it stays in the
+ * DB - the trip keeps its own snapshot).
  */
 export async function POST(request: Request) {
   const parsed = requestSchema.safeParse(await request.json());
@@ -52,6 +54,11 @@ export async function POST(request: Request) {
   }
   if (!list || !user || !eligible) {
     return new NextResponse(null, { status: 204 });
+  }
+
+  // A shared list is done for everyone once any participant finishes with it.
+  if (list.isActive) {
+    await shoppingListRepository.deactivate(list.id);
   }
 
   if (await shoppingTripRepository.existsForRoute(routeId)) {
@@ -85,4 +92,14 @@ export async function POST(request: Request) {
 
   await shoppingTripRepository.create(trip);
   return NextResponse.json({ id: trip.id }, { status: 201 });
+}
+
+/** The caller's completed trips, newest first - the mobile history screen. */
+export async function GET() {
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  const trips = await shoppingTripRepository.findByUser(user.id);
+  return NextResponse.json({ trips });
 }

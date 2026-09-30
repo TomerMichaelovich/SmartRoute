@@ -1,7 +1,7 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import type { ShoppingList, ShoppingListItem } from "@smartroute/core/domain/entities/shopping-list";
 import { db } from "../../db/client";
-import { shoppingLists } from "../../db/schema";
+import { householdMembers, shoppingLists } from "../../db/schema";
 import type {
   AttachToOwnerOptions,
   CheckedBy,
@@ -58,6 +58,21 @@ export class PgShoppingListRepository implements IShoppingListRepository {
     return row ? shoppingListSchema.parse(row) : null;
   }
 
+  async findAllActiveByOwner(userId: string): Promise<ShoppingList[]> {
+    const rows = await db
+      .select()
+      .from(shoppingLists)
+      .where(
+        and(
+          eq(shoppingLists.ownerUserId, userId),
+          eq(shoppingLists.isActive, true),
+          isNull(shoppingLists.deletedAt),
+        ),
+      )
+      .orderBy(desc(shoppingLists.updatedAt));
+    return rows.map((row) => shoppingListSchema.parse(row));
+  }
+
   async findByHousehold(householdId: string): Promise<ShoppingList | null> {
     const [row] = await db
       .select()
@@ -67,6 +82,30 @@ export class PgShoppingListRepository implements IShoppingListRepository {
       )
       .orderBy(desc(shoppingLists.createdAt));
     return row ? shoppingListSchema.parse(row) : null;
+  }
+
+  async findSharedWithUser(userId: string): Promise<ShoppingList[]> {
+    const groups = db
+      .select({ id: householdMembers.householdId })
+      .from(householdMembers)
+      .where(and(eq(householdMembers.userId, userId), eq(householdMembers.status, "active")));
+    const rows = await db
+      .select()
+      .from(shoppingLists)
+      .where(
+        and(
+          inArray(shoppingLists.householdId, groups),
+          isNull(shoppingLists.deletedAt),
+          or(isNull(shoppingLists.ownerUserId), ne(shoppingLists.ownerUserId, userId)),
+          or(eq(shoppingLists.isActive, true), isNull(shoppingLists.ownerUserId)),
+        ),
+      )
+      .orderBy(desc(shoppingLists.updatedAt));
+    return rows.map((row) => shoppingListSchema.parse(row));
+  }
+
+  async setHousehold(listId: string, householdId: string): Promise<void> {
+    await db.update(shoppingLists).set({ householdId }).where(eq(shoppingLists.id, listId));
   }
 
   async appendItems(listId: string, items: ShoppingListItem[]): Promise<void> {
@@ -139,9 +178,6 @@ export class PgShoppingListRepository implements IShoppingListRepository {
     userId: string,
     options: AttachToOwnerOptions = {},
   ): Promise<void> {
-    if (options.activate) {
-      await this.deactivateAll(userId);
-    }
     const patch: Record<string, unknown> = { ownerUserId: userId };
     if (options.name !== undefined) patch.name = options.name;
     if (options.activate) patch.isActive = true;
@@ -149,14 +185,14 @@ export class PgShoppingListRepository implements IShoppingListRepository {
   }
 
   async setActive(listId: string, userId: string): Promise<void> {
-    // One statement: true for the target row, false for every other list this
-    // user owns. Atomic on the neon-http driver (no interactive transactions).
     await db
       .update(shoppingLists)
-      .set({ isActive: sql`(${shoppingLists.id} = ${listId})` })
-      .where(
-        and(eq(shoppingLists.ownerUserId, userId), isNull(shoppingLists.deletedAt)),
-      );
+      .set({ isActive: true })
+      .where(and(eq(shoppingLists.id, listId), eq(shoppingLists.ownerUserId, userId)));
+  }
+
+  async deactivate(listId: string): Promise<void> {
+    await db.update(shoppingLists).set({ isActive: false }).where(eq(shoppingLists.id, listId));
   }
 
   async rename(listId: string, name: string): Promise<void> {
@@ -168,12 +204,5 @@ export class PgShoppingListRepository implements IShoppingListRepository {
       .update(shoppingLists)
       .set({ deletedAt, isActive: false })
       .where(eq(shoppingLists.id, listId));
-  }
-
-  private async deactivateAll(userId: string): Promise<void> {
-    await db
-      .update(shoppingLists)
-      .set({ isActive: false })
-      .where(eq(shoppingLists.ownerUserId, userId));
   }
 }
