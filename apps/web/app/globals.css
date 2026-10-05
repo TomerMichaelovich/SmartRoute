@@ -11,6 +11,22 @@
   --font-sans: var(--font-heebo);
 }
 
+/* NAVIO brand palette, sampled from the logo. */
+@theme {
+  --color-navy-950: #00122f;
+  --color-navy-900: #011e50;
+  --color-navy-800: #0b2f6b;
+  --color-navy-700: #163f86;
+  --color-brand: #18b4c6;
+  --color-brand-dark: #0e8797;
+}
+
+html {
+  scroll-behavior: smooth;
+  /* Keeps anchor targets clear of the landing page's sticky header. */
+  scroll-padding-top: 5rem;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

@@ -29,11 +29,6 @@ export const he = {
     guestSaveHint: "הירשמו כדי לשמור כמה רשימות ולגשת אליהן מכל מכשיר",
   },
   landing: {
-    features: [
-      "מסלול קנייה מסודר לפי מפת הסניף",
-      "רשימה משותפת לכל בני הבית, מתעדכנת בזמן אמת",
-      "ווידג'ט במסך הבית עם הרשימה הפעילה",
-    ],
     googlePlay: "הורדה מ־Google Play",
     googlePlaySoon: "בקרוב ב־Google Play",
     appStore: "הורדה מ־App Store",

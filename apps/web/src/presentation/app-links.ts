@@ -33,3 +33,6 @@ export function androidIntentUrl(path: string): string {
   const fallback = PLAY_STORE_LIVE ? `;S.browser_fallback_url=${encodeURIComponent(playStoreUrl(path))}` : "";
   return `intent://${path.replace(/^\//, "")}#Intent;scheme=${APP_SCHEME};package=${ANDROID_PACKAGE}${fallback};end`;
 }
+
+/** Business contact for the landing page's retailer CTA; the CTA is hidden until it's set. */
+export const CONTACT_EMAIL = process.env.NAVIO_CONTACT_EMAIL || null;
