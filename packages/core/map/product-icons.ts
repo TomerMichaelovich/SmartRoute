@@ -18,6 +18,7 @@ export const PRODUCT_ICONS: ProductIcon[] = [
   { key: "dairy", labelHe: "מוצרי חלב", src: "/icons/products/dairy.png" },
   { key: "vegetables", labelHe: "ירקות", src: "/icons/products/vegetables.png" },
   { key: "fruit", labelHe: "פירות", src: "/icons/products/fruit.png" },
+  { key: "herbs", labelHe: "עשבי תיבול", src: "/icons/products/herbs.png" },
   { key: "bakery", labelHe: "מאפיה", src: "/icons/products/bakery.png" },
   { key: "meat", labelHe: "בשרים", src: "/icons/products/meat.png" },
   { key: "poultry", labelHe: "עופות", src: "/icons/products/poultry.png" },
