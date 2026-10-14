@@ -108,6 +108,8 @@ export async function deleteStore(storeId: string): Promise<void> {
   redirect("/admin/stores");
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function createNode(storeId: string, formData: FormData): Promise<void> {
   const type = String(formData.get("type") ?? "waypoint") as MapNodeType;
   const rawLabel = String(formData.get("label") ?? "").trim();
@@ -119,10 +121,14 @@ export async function createNode(storeId: string, formData: FormData): Promise<v
   const y = Number(formData.get("y") ?? 0);
   const zone = String(formData.get("zone") ?? "").trim() || undefined;
   const iconKey = String(formData.get("iconKey") ?? "").trim() || undefined;
+  // The map editor's click-to-add pre-generates the id so it can select the new waypoint and
+  // chain an edge to it right away, without waiting for this round-trip.
+  const requestedId = String(formData.get("id") ?? "");
+  const id = UUID_PATTERN.test(requestedId) ? requestedId : crypto.randomUUID();
   if (!label) return;
 
   await nodeRepository.create({
-    id: crypto.randomUUID(),
+    id,
     storeId,
     type,
     label,

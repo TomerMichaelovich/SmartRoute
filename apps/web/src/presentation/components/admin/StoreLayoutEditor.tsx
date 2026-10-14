@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MapEdge } from "@smartroute/core/domain/entities/map-edge";
 import type { MapNode, MapNodeType } from "@smartroute/core/domain/entities/map-node";
 import type { Product } from "@smartroute/core/domain/entities/product";
@@ -100,11 +100,25 @@ export function StoreLayoutEditor({
     null,
   );
   const justDraggedRef = useRef(false);
+  const mutationQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [addPopup, setAddPopup] = useState<AddNodePopup | null>(null);
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<Set<string>>(new Set());
+
+  // Clicking empty space now adds a waypoint instead of clearing the selection, so Escape is the
+  // way to stop a corridor chain.
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      setAddPopup(null);
+      setSelectedNodeIds(new Set());
+      setSelectedEdgeIds(new Set());
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   function screenToNormalized(clientX: number, clientY: number): { x: number; y: number } {
     const svg = svgRef.current;
@@ -183,12 +197,40 @@ export function StoreLayoutEditor({
     setAddPopup(null);
   }
 
+  /** Runs map mutations one after another, so an edge is never written before its new waypoint. */
+  function enqueueMutation(mutation: () => Promise<void>) {
+    mutationQueueRef.current = mutationQueueRef.current.then(mutation).catch((error) => console.error(error));
+  }
+
+  function connectNodes(fromNodeId: string, toNodeId: string) {
+    const formData = new FormData();
+    formData.set("fromNodeId", fromNodeId);
+    formData.set("toNodeId", toNodeId);
+    formData.set("bidirectional", "on");
+    enqueueMutation(() => createEdge(formData));
+  }
+
+  // A click on empty map space drops a waypoint right there - no popup. If exactly one node is
+  // selected, the new waypoint is also connected to it and becomes the selection, so clicking
+  // along an aisle lays out the whole corridor. Named nodes are added by dragging an icon.
   function handleBackgroundClick(e: React.MouseEvent) {
-    setSelectedNodeIds(new Set());
-    setSelectedEdgeIds(new Set());
+    closePopups();
     const { x, y } = screenToNormalized(e.clientX, e.clientY);
-    const { left, top } = containerOffset(e.clientX, e.clientY);
-    setAddPopup({ screenLeft: left, screenTop: top, normX: x, normY: y });
+    const newNodeId = crypto.randomUUID();
+    const formData = new FormData();
+    formData.set("id", newNodeId);
+    formData.set("type", "waypoint");
+    formData.set("x", String(x));
+    formData.set("y", String(y));
+    enqueueMutation(() => createNode(formData));
+
+    if (selectedNodeIds.size === 1 && selectedEdgeIds.size === 0) {
+      connectNodes(Array.from(selectedNodeIds)[0], newNodeId);
+      setSelectedNodeIds(new Set([newNodeId]));
+    } else {
+      setSelectedNodeIds(new Set());
+    }
+    setSelectedEdgeIds(new Set());
   }
 
   function handleNodeClick(e: React.MouseEvent, node: MapNode) {
@@ -213,12 +255,7 @@ export function StoreLayoutEditor({
     // node becomes the new selection, so clicking through several nodes in a row lays out a
     // whole corridor in one pass.
     if (selectedNodeIds.size === 1 && selectedEdgeIds.size === 0 && !selectedNodeIds.has(node.id)) {
-      const fromNodeId = Array.from(selectedNodeIds)[0];
-      const formData = new FormData();
-      formData.set("fromNodeId", fromNodeId);
-      formData.set("toNodeId", node.id);
-      formData.set("bidirectional", "on");
-      void createEdge(formData);
+      connectNodes(Array.from(selectedNodeIds)[0], node.id);
       setSelectedNodeIds(new Set([node.id]));
       return;
     }
@@ -311,6 +348,10 @@ export function StoreLayoutEditor({
         .filter((p) => !listedProductIdsInStore.has(p.id))
         .sort((a, b) => a.canonicalName.localeCompare(b.canonicalName, "he"))
     : [];
+  // The catalog has hundreds of products, so the picker groups them by department.
+  const availableProductsByDepartment = Array.from(
+    Map.groupBy(availableProducts, (p) => p.department),
+  ).sort(([a], [b]) => a.localeCompare(b, "he"));
 
   return (
     <section className="flex flex-col gap-3">
@@ -335,8 +376,9 @@ export function StoreLayoutEditor({
         </div>
       </div>
       <p className="text-xs text-neutral-500">
-        לחצו על שטח ריק להוספת צומת · גררו צומת קיים כדי להזיז אותו · לחצו על צומת ואז על צומת נוסף כדי לחבר ביניהם
-        קשת מיידית · לחצו על צומת/קשת כדי לבחור · גררו אייקון מהרשימה כדי להוסיף/לעדכן צומת · Ctrl+לחיצה לבחירה מרובה
+        לחצו על המפה להוספת נקודת ציון · כשצומת נבחר, לחיצה על המפה מוסיפה נקודה ומחברת אליה (לחיצות ברצף = מסדרון)
+        · לחצו על צומת ואז על צומת נוסף כדי לחבר ביניהם · גררו צומת כדי להזיז אותו · גררו אייקון מהרשימה כדי
+        להוסיף/לעדכן צומת · Esc לביטול בחירה · Ctrl+לחיצה לבחירה מרובה
       </p>
 
       <div className="flex flex-col gap-3">
@@ -601,10 +643,14 @@ export function StoreLayoutEditor({
           {availableProducts.length > 0 && (
             <form action={addProductToNode.bind(null, storeId, singleSelectedNode.id)} className="flex gap-2">
               <select name="productId" required className="flex-1 rounded-lg border border-neutral-300 p-1.5 text-sm">
-                {availableProducts.map((product) => (
-                  <option key={product.id} value={product.id}>
-                    {product.canonicalName} ({product.department})
-                  </option>
+                {availableProductsByDepartment.map(([department, departmentProducts]) => (
+                  <optgroup key={department} label={department}>
+                    {departmentProducts.map((product) => (
+                      <option key={product.id} value={product.id}>
+                        {product.canonicalName}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
               <button
