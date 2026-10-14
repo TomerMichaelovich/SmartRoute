@@ -44,7 +44,7 @@ const NODE_COLORS: Record<MapNodeType, string> = {
 };
 
 function nodeRadius(type: MapNodeType): number {
-  if (type === "waypoint") return 8;
+  if (type === "waypoint") return 5;
   if (type === "entrance" || type === "checkout") return 28;
   return 21;
 }
@@ -492,11 +492,15 @@ export function StoreLayoutEditor({
                       <rect {...squareAttrs(x, y, radius)} fill="none" stroke="#ffffff" strokeWidth={2} />
                     </>
                   ) : isWaypoint ? (
-                    <circle cx={x} cy={y} r={radius} fill={NODE_COLORS[node.type]} />
+                    <>
+                      {/* Invisible, larger hit area so the small dot is still easy to click and drag. */}
+                      <circle cx={x} cy={y} r={14} fill="transparent" />
+                      <circle cx={x} cy={y} r={radius} fill={NODE_COLORS[node.type]} />
+                    </>
                   ) : (
                     <rect {...squareAttrs(x, y, radius)} fill={NODE_COLORS[node.type]} />
                   )}
-                  <MultilineSvgText
+                  {!isWaypoint && <MultilineSvgText
                     text={node.label}
                     x={x}
                     y={y + radius + 18}
@@ -509,7 +513,7 @@ export function StoreLayoutEditor({
                     strokeWidth={3.5}
                     strokeLinejoin="round"
                     paintOrder="stroke"
-                  />
+                  />}
                 </g>
               );
             })}
