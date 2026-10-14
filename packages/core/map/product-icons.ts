@@ -26,6 +26,7 @@ export const PRODUCT_ICONS: ProductIcon[] = [
   { key: "eggs", labelHe: "ביצים", src: "/icons/products/eggs.png" },
   { key: "grains", labelHe: "דגנים", src: "/icons/products/grains.png" },
   { key: "dry-staples", labelHe: "מזון יבש ומוצרי בסיס", src: "/icons/products/dry-staples.png" },
+  { key: "coffee-canned", labelHe: "קפה ושימורים", src: "/icons/products/kafe_basic.png" },
   { key: "snacks", labelHe: "חטיפים ונשנושים", src: "/icons/products/snacks.png" },
   { key: "beverages", labelHe: "משקאות", src: "/icons/products/beverages.png" },
   { key: "wine-alcohol", labelHe: "יינות ואלכוהול", src: "/icons/products/wine-alcohol.png" },
