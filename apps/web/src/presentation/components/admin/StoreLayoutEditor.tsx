@@ -106,6 +106,9 @@ export function StoreLayoutEditor({
   const [addPopup, setAddPopup] = useState<AddNodePopup | null>(null);
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<Set<string>>(new Set());
+  const marqueeStartRef = useRef<{ clientX: number; clientY: number; active: boolean } | null>(null);
+  const justMarqueedRef = useRef(false);
+  const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
 
   // Clicking empty space now adds a waypoint instead of clearing the selection, so Escape is the
   // way to stop a corridor chain.
@@ -214,6 +217,10 @@ export function StoreLayoutEditor({
   // selected, the new waypoint is also connected to it and becomes the selection, so clicking
   // along an aisle lays out the whole corridor. Named nodes are added by dragging an icon.
   function handleBackgroundClick(e: React.MouseEvent) {
+    if (justMarqueedRef.current) {
+      justMarqueedRef.current = false;
+      return;
+    }
     closePopups();
     const { x, y } = screenToNormalized(e.clientX, e.clientY);
     const newNodeId = crypto.randomUUID();
@@ -231,6 +238,58 @@ export function StoreLayoutEditor({
       setSelectedNodeIds(new Set());
     }
     setSelectedEdgeIds(new Set());
+  }
+
+  // Pressing on empty map space and dragging draws a selection box; every node inside it is
+  // selected on release (Ctrl/Shift adds to the current selection). A press without dragging
+  // stays a plain click, which adds a waypoint. Pointer capture is only taken once the drag
+  // starts, so a plain click still lands on the background element's onClick.
+  function handleMapPointerDown(e: React.PointerEvent<SVGSVGElement>) {
+    justMarqueedRef.current = false;
+    if (e.button !== 0 || !(e.target as Element).hasAttribute("data-map-background")) return;
+    marqueeStartRef.current = { clientX: e.clientX, clientY: e.clientY, active: false };
+  }
+
+  function handleMapPointerMove(e: React.PointerEvent<SVGSVGElement>) {
+    const start = marqueeStartRef.current;
+    if (!start) return;
+    if (!start.active) {
+      if (Math.hypot(e.clientX - start.clientX, e.clientY - start.clientY) < DRAG_THRESHOLD_PX) return;
+      start.active = true;
+      e.currentTarget.setPointerCapture(e.pointerId);
+      closePopups();
+    }
+    const from = screenToNormalized(start.clientX, start.clientY);
+    const to = screenToNormalized(e.clientX, e.clientY);
+    setMarquee({ x1: from.x, y1: from.y, x2: to.x, y2: to.y });
+  }
+
+  function handleMapPointerUp(e: React.PointerEvent<SVGSVGElement>) {
+    const start = marqueeStartRef.current;
+    marqueeStartRef.current = null;
+    if (!start?.active) return;
+    justMarqueedRef.current = true;
+    setMarquee(null);
+
+    const from = screenToNormalized(start.clientX, start.clientY);
+    const to = screenToNormalized(e.clientX, e.clientY);
+    const [minX, maxX] = [Math.min(from.x, to.x), Math.max(from.x, to.x)];
+    const [minY, maxY] = [Math.min(from.y, to.y), Math.max(from.y, to.y)];
+    const insideIds = nodes
+      .filter((n) => n.position.x >= minX && n.position.x <= maxX && n.position.y >= minY && n.position.y <= maxY)
+      .map((n) => n.id);
+
+    if (e.ctrlKey || e.metaKey || e.shiftKey) {
+      setSelectedNodeIds((prev) => new Set([...prev, ...insideIds]));
+    } else {
+      setSelectedNodeIds(new Set(insideIds));
+      setSelectedEdgeIds(new Set());
+    }
+  }
+
+  function handleMapPointerCancel() {
+    marqueeStartRef.current = null;
+    setMarquee(null);
   }
 
   function handleNodeClick(e: React.MouseEvent, node: MapNode) {
@@ -378,7 +437,8 @@ export function StoreLayoutEditor({
       <p className="text-xs text-neutral-500">
         לחצו על המפה להוספת נקודת ציון · כשצומת נבחר, לחיצה על המפה מוסיפה נקודה ומחברת אליה (לחיצות ברצף = מסדרון)
         · לחצו על צומת ואז על צומת נוסף כדי לחבר ביניהם · גררו צומת כדי להזיז אותו · גררו אייקון מהרשימה כדי
-        להוסיף/לעדכן צומת · Esc לביטול בחירה · Ctrl+לחיצה לבחירה מרובה
+        להוסיף/לעדכן צומת · גררו על שטח ריק כדי לסמן ריבוע ולבחור את כל הצמתים שבתוכו · Esc לביטול בחירה ·
+        Ctrl+לחיצה לבחירה מרובה
       </p>
 
       <div className="flex flex-col gap-3">
@@ -388,7 +448,11 @@ export function StoreLayoutEditor({
           <svg
             ref={svgRef}
             viewBox={`0 0 ${mapWidth} ${mapHeight}`}
-            className="h-auto w-full rounded-2xl border border-neutral-200 bg-white touch-none"
+            className="h-auto w-full select-none rounded-2xl border border-neutral-200 bg-white touch-none"
+            onPointerDown={handleMapPointerDown}
+            onPointerMove={handleMapPointerMove}
+            onPointerUp={handleMapPointerUp}
+            onPointerCancel={handleMapPointerCancel}
           >
             {mapImageUrl ? (
               <image
@@ -399,10 +463,14 @@ export function StoreLayoutEditor({
                 height={mapHeight}
                 preserveAspectRatio="xMidYMid slice"
                 onClick={handleBackgroundClick}
+                data-map-background
               />
             ) : (
               <>
-                <rect x={0} y={0} width={mapWidth} height={mapHeight} fill="#f3f4f6" onClick={handleBackgroundClick} />
+                <rect x={0} y={0} width={mapWidth} height={mapHeight} fill="#f3f4f6"
+                  onClick={handleBackgroundClick}
+                  data-map-background
+                />
                 <text
                   x={mapWidth / 2}
                   y={mapHeight / 2}
@@ -517,6 +585,22 @@ export function StoreLayoutEditor({
                 </g>
               );
             })}
+
+            {marquee && (
+              <rect
+                x={Math.min(marquee.x1, marquee.x2) * mapWidth}
+                y={Math.min(marquee.y1, marquee.y2) * mapHeight}
+                width={Math.abs(marquee.x2 - marquee.x1) * mapWidth}
+                height={Math.abs(marquee.y2 - marquee.y1) * mapHeight}
+                fill="#0891b2"
+                fillOpacity={0.12}
+                stroke="#0891b2"
+                strokeWidth={2}
+                strokeDasharray="6 4"
+                vectorEffect="non-scaling-stroke"
+                pointerEvents="none"
+              />
+            )}
           </svg>
 
           {addPopup && (
