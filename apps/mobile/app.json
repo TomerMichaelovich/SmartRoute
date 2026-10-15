@@ -8,7 +8,7 @@
     "scheme": "smartroute",
     "userInterfaceStyle": "automatic",
     "runtimeVersion": {
-      "policy": "fingerprint"
+      "policy": "appVersion"
     },
     "updates": {
       "url": "https://u.expo.dev/18bdf0f4-1ce1-4d4a-958e-b8d0e3877632",
