@@ -12,6 +12,7 @@ import { PgNodeRepository } from "./repositories/postgres/pg-node-repository";
 import { PgProductListingRepository } from "./repositories/postgres/pg-product-listing-repository";
 import { PgProductRepository } from "./repositories/postgres/pg-product-repository";
 import { PgPromotionRepository } from "./repositories/postgres/pg-promotion-repository";
+import { PgPushTokenRepository } from "./repositories/postgres/pg-push-token-repository";
 import { PgRouteRepository } from "./repositories/postgres/pg-route-repository";
 import { PgSessionRepository } from "./repositories/postgres/pg-session-repository";
 import { PgShoppingListRepository } from "./repositories/postgres/pg-shopping-list-repository";
@@ -41,6 +42,7 @@ export const userRepository = new PgUserRepository();
 export const sessionRepository = new PgSessionRepository();
 export const householdRepository = new PgHouseholdRepository();
 export const userAdminRepository = new PgUserAdminRepository();
+export const pushTokenRepository = new PgPushTokenRepository();
 
 const llmClassifier = new AnthropicClassifier();
 

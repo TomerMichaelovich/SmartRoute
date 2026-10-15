@@ -6,6 +6,7 @@ import { he } from "@smartroute/core/i18n/he";
 import { apiFetch } from "@/lib/api";
 import { clearToken, loadStoredToken, setToken } from "@/lib/auth-token";
 import { claimGuestListIfAny } from "@/lib/guest-claim";
+import { registerPushToken, unregisterPushToken } from "@/lib/list-push";
 import { clearLocalUserData } from "@/lib/local-cleanup";
 
 export interface AuthFieldErrors {
@@ -195,7 +196,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [applySession]);
 
+  // Every launch/sign-in: (re)link this device's push token to the account, so
+  // shared-list changes refresh the widget instantly (see list-push.ts).
+  useEffect(() => {
+    if (status === "authenticated") void registerPushToken();
+  }, [status]);
+
   const logout = useCallback(async () => {
+    await unregisterPushToken();
     try {
       await apiFetch("/api/auth/logout", { method: "POST" });
     } catch {

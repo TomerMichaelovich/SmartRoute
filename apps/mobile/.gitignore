@@ -33,6 +33,10 @@ yarn-error.*
 # local env files
 .env*.local
 
+# Firebase config - kept out of git; EAS builds get it from the
+# GOOGLE_SERVICES_JSON secret file env var (see app.config.js)
+google-services.json
+
 # typescript
 *.tsbuildinfo
 

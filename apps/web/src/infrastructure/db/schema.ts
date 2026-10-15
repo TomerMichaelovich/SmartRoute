@@ -66,6 +66,27 @@ export const sessions = pgTable(
   ],
 );
 
+/**
+ * Expo push tokens of signed-in mobile devices, used to send silent
+ * "list changed" pushes that refresh the home-screen widget of a shared
+ * list's other participants. One row per device; a device that signs into
+ * another account moves its row to that user.
+ */
+export const pushTokens = pgTable(
+  "push_tokens",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    token: text("token").notNull(),
+    createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string" }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("push_tokens_token_idx").on(table.token),
+    index("push_tokens_user_id_idx").on(table.userId),
+  ],
+);
+
 export const households = pgTable("households", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),

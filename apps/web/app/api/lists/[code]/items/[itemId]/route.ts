@@ -3,6 +3,7 @@ import { z } from "zod";
 import { normalizeShareCode } from "@smartroute/core/application/shopping-list/generate-share-code";
 import { shoppingListRepository } from "@/src/infrastructure/container";
 import { resolveListAccess } from "@/src/presentation/auth/list-access";
+import { notifyListChanged } from "@/src/presentation/lib/list-push";
 
 const patchSchema = z.object({
   quantity: z.number().positive().nullable().optional(),
@@ -47,6 +48,7 @@ export async function PATCH(
     await shoppingListRepository.setItemNotFound(list.id, itemId, parsed.data.notFound);
   }
 
+  notifyListChanged(list, access.user?.id);
   const updated = await shoppingListRepository.findById(list.id);
   return NextResponse.json({ list: updated });
 }
@@ -60,6 +62,7 @@ export async function DELETE(
   if (auth instanceof NextResponse) return auth;
 
   await shoppingListRepository.removeItem(auth.list.id, itemId);
+  notifyListChanged(auth.list, auth.access.user?.id);
   const updated = await shoppingListRepository.findById(auth.list.id);
   return NextResponse.json({ list: updated });
 }

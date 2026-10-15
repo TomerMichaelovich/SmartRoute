@@ -1,4 +1,5 @@
 import { registerWidgetTaskHandler, type WidgetTaskHandler } from "react-native-android-widget";
+import { registerListPushTask } from "@/lib/list-push";
 import { handleMyListWidgetClick } from "@/widgets/handle-widget-click";
 import { loadMyListWidget } from "@/widgets/load-my-list-widget";
 
@@ -25,6 +26,10 @@ const widgetTaskHandler: WidgetTaskHandler = async (props) => {
 };
 
 registerWidgetTaskHandler(widgetTaskHandler);
+
+// Silent "shared list changed" pushes refresh the widget with the app closed - also
+// has to be registered here, before the app boots, for Android's headless start.
+registerListPushTask();
 
 // Boots the actual app (expo-router's own entry, normally set as "main" directly -
 // this file replaces that in package.json so the widget handler above registers too).

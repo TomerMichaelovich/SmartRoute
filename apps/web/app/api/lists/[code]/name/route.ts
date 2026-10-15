@@ -3,6 +3,7 @@ import { z } from "zod";
 import { normalizeShareCode } from "@smartroute/core/application/shopping-list/generate-share-code";
 import { shoppingListRepository } from "@/src/infrastructure/container";
 import { resolveListAccess } from "@/src/presentation/auth/list-access";
+import { notifyListChanged } from "@/src/presentation/lib/list-push";
 
 const requestSchema = z.object({
   name: z.string().trim().min(1).max(60),
@@ -23,10 +24,12 @@ export async function PUT(
   if (!list) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
-  if ((await resolveListAccess(list))?.kind !== "owner") {
+  const access = await resolveListAccess(list);
+  if (access?.kind !== "owner") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
   await shoppingListRepository.rename(list.id, parsed.data.name);
+  notifyListChanged(list, access.user?.id);
   return NextResponse.json({ ...list, name: parsed.data.name });
 }

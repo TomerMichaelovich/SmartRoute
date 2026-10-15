@@ -7,6 +7,14 @@
     "icon": "./assets/images/icon.png",
     "scheme": "smartroute",
     "userInterfaceStyle": "automatic",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/18bdf0f4-1ce1-4d4a-958e-b8d0e3877632",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
     "android": {
       "package": "com.smartroute.app",
       "adaptiveIcon": {
@@ -60,6 +68,7 @@
       ],
       "expo-secure-store",
       "expo-image",
+      "expo-notifications",
       [
         "expo-navigation-bar",
         {

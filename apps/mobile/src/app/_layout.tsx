@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { I18nManager, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { PendingInviteResume } from "@/components/PendingInviteResume";
+import { UpdateRequiredGate } from "@/components/UpdateRequiredGate";
 import { COLORS } from "@/constants/colors";
 import { AuthProvider } from "@/lib/auth-context";
 
@@ -39,9 +40,12 @@ export default function RootLayout() {
           (see expo-navigation-bar in app.json), so keep every screen clear of
           them here and let the app background show through behind the bars. */}
       <SafeAreaView style={styles.root}>
-        <Stack screenOptions={{ headerShown: false }} />
+        <UpdateRequiredGate>
+          <Stack screenOptions={{ headerShown: false }} />
+          {/* Inside the gate: a blocked old version has no navigator to open links into. */}
+          <PendingInviteResume />
+        </UpdateRequiredGate>
       </SafeAreaView>
-      <PendingInviteResume />
     </AuthProvider>
   );
 }

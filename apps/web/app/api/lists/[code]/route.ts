@@ -5,6 +5,7 @@ import type { ShoppingListItem } from "@smartroute/core/domain/entities/shopping
 import { shoppingListRepository, storeRepository } from "@/src/infrastructure/container";
 import { classifyLines } from "@/src/presentation/lib/create-list";
 import { resolveListAccess } from "@/src/presentation/auth/list-access";
+import { notifyListChanged } from "@/src/presentation/lib/list-push";
 import { shoppingListItemSchema } from "@/src/infrastructure/repositories/schemas";
 
 export async function GET(
@@ -50,7 +51,8 @@ export async function PATCH(
   if (!list) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
-  if (!(await resolveListAccess(list))) {
+  const access = await resolveListAccess(list);
+  if (!access) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
@@ -75,6 +77,7 @@ export async function PATCH(
   const items = [...existingItems, ...newItems];
   const updatedAt = new Date().toISOString();
   await shoppingListRepository.updateItems(list.id, items, updatedAt);
+  notifyListChanged(list, access.user?.id);
 
   return NextResponse.json({ ...list, items, updatedAt });
 }

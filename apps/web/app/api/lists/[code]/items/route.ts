@@ -4,6 +4,7 @@ import { normalizeShareCode } from "@smartroute/core/application/shopping-list/g
 import { shoppingListRepository } from "@/src/infrastructure/container";
 import { classifyLines } from "@/src/presentation/lib/create-list";
 import { resolveListAccess } from "@/src/presentation/auth/list-access";
+import { notifyListChanged } from "@/src/presentation/lib/list-push";
 
 const bodySchema = z.object({
   lines: z
@@ -39,6 +40,7 @@ export async function POST(
   }));
 
   await shoppingListRepository.appendItems(list.id, items);
+  notifyListChanged(list, access.user?.id);
   const updated = await shoppingListRepository.findById(list.id);
   return NextResponse.json({ list: updated }, { status: 201 });
 }
