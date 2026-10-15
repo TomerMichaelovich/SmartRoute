@@ -1,10 +1,17 @@
 import { View } from "react-native";
-import Svg, { ClipPath, Ellipse, G, Image as SvgImage, Rect, Circle, Text as SvgText } from "react-native-svg";
+import Svg, { ClipPath, Ellipse, G, Image as SvgImage, Path, Rect, Circle, Text as SvgText } from "react-native-svg";
 import type { MapNode } from "@smartroute/core/domain/entities/map-node";
 import type { RouteStop } from "@smartroute/core/domain/entities/route";
 import { findProductIcon } from "@smartroute/core/map/product-icons";
-import { computeFootstepPlacements, type FootstepPlacement } from "@smartroute/core/map/footstep-trail";
+import {
+  computeFootstepPlacements,
+  FOOTPRINT_SOLE_PATH,
+  FOOTPRINT_TOES,
+  footprintTransform,
+  type FootstepPlacement,
+} from "@smartroute/core/map/footstep-trail";
 import { apiUrl } from "@/lib/api";
+import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
 import { MultilineSvgText } from "./MultilineSvgText";
 
@@ -13,15 +20,20 @@ function squareAttrs(cx: number, cy: number, r: number) {
   return { x: cx - r, y: cy - r, width: r * 2, height: r * 2, rx: r * 0.28 };
 }
 
-function Footprint({ x, y, rotationDeg, size }: FootstepPlacement & { size: number }) {
-  const scale = size / 24;
+function Footprint({ size, ...step }: FootstepPlacement & { size: number }) {
   return (
-    <G transform={`translate(${x} ${y}) rotate(${rotationDeg}) scale(${scale})`} fill="#059669" opacity={0.95}>
-      <Ellipse cx={0} cy={5.5} rx={3.4} ry={5.2} />
-      <Ellipse cx={0} cy={-3.5} rx={3.9} ry={6.2} />
-      <Circle cx={-2.6} cy={-10.2} r={1.3} />
-      <Circle cx={0} cy={-11.2} r={1.5} />
-      <Circle cx={2.6} cy={-10.2} r={1.3} />
+    <G
+      transform={footprintTransform(step, size)}
+      fill={COLORS.brand}
+      fillOpacity={0.92}
+      stroke={COLORS.brandDark}
+      strokeWidth={0.45}
+      strokeOpacity={0.8}
+    >
+      <Path d={FOOTPRINT_SOLE_PATH} />
+      {FOOTPRINT_TOES.map(([cx, cy, rx, ry], i) => (
+        <Ellipse key={i} cx={cx} cy={cy} rx={rx} ry={ry} />
+      ))}
     </G>
   );
 }

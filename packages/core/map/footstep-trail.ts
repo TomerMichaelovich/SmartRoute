@@ -3,6 +3,33 @@ export interface Point {
   y: number;
 }
 
+/**
+ * Footprint glyph shared by the web and mobile maps: a bare RIGHT foot in a local ~-13..12 unit
+ * box, toes toward -Y, big toe and arch on the inner (-X) side. A left foot is the same glyph
+ * mirrored on X. Renderers scale it by size / FOOTPRINT_HEIGHT_UNITS.
+ */
+export const FOOTPRINT_HEIGHT_UNITS = 24;
+export const FOOTPRINT_SOLE_PATH =
+  "M-1 -7.6C2.2 -7.9 4.4 -5.6 4.1 -2.4C3.9 0.6 3.1 2.6 3.3 5.2C3.5 8.4 2.6 12 0 12C-2.8 12 -3.5 8.6 -3.1 6" +
+  "C-2.7 3.9 -0.7 2.4 -1.5 -0.1C-2.3 -1.7 -5.1 -2.6 -5.1 -4.9C-5.1 -6.9 -3.6 -7.5 -1 -7.6Z";
+/** Toe ellipses [cx, cy, rx, ry], big toe first. */
+export const FOOTPRINT_TOES: readonly (readonly [number, number, number, number])[] = [
+  [-3.5, -10.6, 1.75, 2.25],
+  [-0.7, -11.4, 1.25, 1.6],
+  [1.35, -10.8, 1.1, 1.4],
+  [3.0, -9.7, 0.95, 1.2],
+  [4.25, -8.2, 0.85, 1.05],
+];
+/** People walk with their toes turned slightly outward. */
+export const FOOTPRINT_TOE_OUT_DEG = 7;
+
+/** SVG transform placing the glyph at a step: rotated along the path, mirrored for the left foot. */
+export function footprintTransform(step: FootstepPlacement, size: number): string {
+  const scale = size / FOOTPRINT_HEIGHT_UNITS;
+  const scaleX = step.side === "left" ? -scale : scale;
+  return `translate(${step.x} ${step.y}) rotate(${step.rotationDeg}) scale(${scaleX} ${scale}) rotate(${FOOTPRINT_TOE_OUT_DEG})`;
+}
+
 export interface FootstepPlacement extends Point {
   /** Degrees to rotate the footprint glyph so its toes point along the walking direction. */
   rotationDeg: number;

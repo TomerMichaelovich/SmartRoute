@@ -12,5 +12,8 @@ export const COLORS = {
   cyan500: "#06b6d4",
   cyan600: "#0891b2",
   cyan700: "#0e7490",
+  // NAVIO brand teal, sampled from the logo (matches --color-brand / --color-brand-dark on web).
+  brand: "#18b4c6",
+  brandDark: "#0e8797",
   white: "#ffffff",
 } as const;
