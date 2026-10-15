@@ -9,6 +9,7 @@ import { apiFetch } from "@/lib/api";
 import { siteUrl } from "@/lib/app-links";
 import { Button } from "@/components/Button";
 import { ClassificationReviewRow } from "@/components/ClassificationReviewRow";
+import { ListSharingPanel } from "@/components/ListSharingPanel";
 import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
 import { useAuth } from "@/lib/auth-context";
@@ -213,13 +214,9 @@ export default function MyListScreen() {
     setHasUnsavedChanges(false);
   }
 
+  // Guest lists only - account lists are shared with specific people
+  // (invite + approval) through the inline sharing panel.
   async function handleShare() {
-    // Account lists are shared with specific people (invite + approval) on
-    // the sharing screen; a guest list is open to anyone holding its code.
-    if (authStatus === "authenticated") {
-      router.push(`/sharing/${code}`);
-      return;
-    }
     try {
       await Share.share({ message: `${he.myList.share.codeLabel(code)}\n${siteUrl(`/my-list/${code}`)}` });
     } catch {
@@ -264,15 +261,15 @@ export default function MyListScreen() {
         <Text style={styles.subtitle}>{he.myList.editor.subtitle}</Text>
       </View>
 
-      <View style={styles.shareBlock}>
-        <Button variant="secondary" onPress={handleShare} fullWidth>
-          {authStatus === "authenticated"
-            ? he.myList.sharing.buttonLabel
-            : shareCopied
-              ? he.myList.share.copied
-              : he.myList.share.button}
-        </Button>
-      </View>
+      {authStatus === "authenticated" ? (
+        <ListSharingPanel code={code} />
+      ) : (
+        <View style={styles.shareBlock}>
+          <Button variant="secondary" onPress={handleShare} fullWidth>
+            {shareCopied ? he.myList.share.copied : he.myList.share.button}
+          </Button>
+        </View>
+      )}
 
       {staleServerList && (
         <View style={styles.staleBox}>
