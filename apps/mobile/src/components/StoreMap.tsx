@@ -136,10 +136,9 @@ export function StoreMap({
                   textAnchor="middle"
                   fontSize={labelFontSize}
                   fontFamily={FONTS.bold}
-                  fill="#111827"
-                  stroke="white"
-                  strokeWidth={labelFontSize * 0.18}
-                  strokeLinejoin="round"
+                  fill="#ffffff"
+                  outlineColor="#000000"
+                  outlineWidth={labelFontSize * 0.3}
                 />
               </G>
             );
@@ -178,10 +177,9 @@ export function StoreMap({
                   textAnchor="middle"
                   fontSize={minorLabelFontSize}
                   fontFamily={FONTS.regular}
-                  fill="#9ca3af"
-                  stroke="white"
-                  strokeWidth={minorLabelFontSize * 0.18}
-                  strokeLinejoin="round"
+                  fill="#ffffff"
+                  outlineColor="#000000"
+                  outlineWidth={minorLabelFontSize * 0.3}
                 />
               </G>
             );
@@ -238,10 +236,9 @@ export function StoreMap({
                 textAnchor="middle"
                 fontSize={labelFontSize}
                 fontWeight={700}
-                fill="#111827"
-                stroke="white"
-                strokeWidth={labelFontSize * 0.18}
-                strokeLinejoin="round"
+                fill="#ffffff"
+                outlineColor="#000000"
+                outlineWidth={labelFontSize * 0.3}
               />
             </G>
           );
