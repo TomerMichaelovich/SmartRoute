@@ -10,6 +10,7 @@ import {
   storeRepository,
 } from "@/src/infrastructure/container";
 import { shoppingListItemSchema } from "@/src/infrastructure/repositories/schemas";
+import { resolveListAccess } from "@/src/presentation/auth/list-access";
 
 const requestSchema = z.object({
   storeId: z.string().min(1),
@@ -27,6 +28,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.message }, { status: 400 });
   }
   const { storeId, shoppingListId, items } = parsed.data;
+
+  // This also overwrites the list's items, so only someone who may edit the
+  // list can route it (guest lists: anyone holding them, as everywhere else).
+  const shoppingList = await shoppingListRepository.findById(shoppingListId);
+  if (!shoppingList) {
+    return NextResponse.json({ error: "not_found" }, { status: 404 });
+  }
+  if (!(await resolveListAccess(shoppingList))) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
 
   const [store, nodes, edges, listings] = await Promise.all([
     storeRepository.findById(storeId),

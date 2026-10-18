@@ -14,8 +14,10 @@ import {
 import { readImageDimensions } from "@/src/infrastructure/image-dimensions";
 import { saveUploadedImage } from "@/src/infrastructure/image-upload";
 import { NODE_TYPE_LABELS } from "@/src/presentation/node-type-labels";
+import { requireAdmin } from "@/src/presentation/auth/admin";
 
 export async function createStore(formData: FormData): Promise<void> {
+  await requireAdmin();
   const name = String(formData.get("name") ?? "").trim();
   const chainId = String(formData.get("chainId") ?? "").trim();
   const address = String(formData.get("address") ?? "").trim();
@@ -45,6 +47,7 @@ export async function createStore(formData: FormData): Promise<void> {
 }
 
 export async function updateStore(storeId: string, formData: FormData): Promise<void> {
+  await requireAdmin();
   const name = String(formData.get("name") ?? "").trim();
   const address = String(formData.get("address") ?? "").trim();
   const city = String(formData.get("city") ?? "").trim();
@@ -76,6 +79,7 @@ export async function updateStore(storeId: string, formData: FormData): Promise<
  * nothing in the admin UI lists them by store.
  */
 export async function deleteStore(storeId: string): Promise<void> {
+  await requireAdmin();
   const store = await storeRepository.findById(storeId);
   if (!store) return;
 
@@ -111,6 +115,7 @@ export async function deleteStore(storeId: string): Promise<void> {
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function createNode(storeId: string, formData: FormData): Promise<void> {
+  await requireAdmin();
   const type = String(formData.get("type") ?? "waypoint") as MapNodeType;
   const rawLabel = String(formData.get("label") ?? "").trim();
   // Only "department" is customer-facing (shown on the shopper's map/checklist), so it's the
@@ -141,6 +146,7 @@ export async function createNode(storeId: string, formData: FormData): Promise<v
 }
 
 export async function deleteNode(storeId: string, nodeId: string): Promise<void> {
+  await requireAdmin();
   await nodeRepository.delete(nodeId);
   revalidatePath(`/admin/stores/${storeId}`);
 }
@@ -151,17 +157,20 @@ export async function updateNodePosition(
   x: number,
   y: number,
 ): Promise<void> {
+  await requireAdmin();
   const clamp = (n: number) => Math.max(0, Math.min(1, n));
   await nodeRepository.update(nodeId, { position: { x: clamp(x), y: clamp(y) } });
   revalidatePath(`/admin/stores/${storeId}`);
 }
 
 export async function updateNodeIcon(storeId: string, nodeId: string, iconKey: string): Promise<void> {
+  await requireAdmin();
   await nodeRepository.update(nodeId, { iconKey });
   revalidatePath(`/admin/stores/${storeId}`);
 }
 
 export async function updateNodeLabel(storeId: string, nodeId: string, formData: FormData): Promise<void> {
+  await requireAdmin();
   // Textareas normalize line breaks to \r\n on submit in some browsers - collapse to a
   // plain \n so the stored label and MultilineSvgText's split both only ever see one form.
   const label = String(formData.get("label") ?? "")
@@ -173,6 +182,7 @@ export async function updateNodeLabel(storeId: string, nodeId: string, formData:
 }
 
 export async function addProductToNode(storeId: string, nodeId: string, formData: FormData): Promise<void> {
+  await requireAdmin();
   const productId = String(formData.get("productId") ?? "");
   if (!productId) return;
   // One product, one node, per store - guard against it already being listed anywhere
@@ -184,6 +194,7 @@ export async function addProductToNode(storeId: string, nodeId: string, formData
 }
 
 export async function removeProductFromNode(storeId: string, nodeId: string, productId: string): Promise<void> {
+  await requireAdmin();
   const storeListings = await productListingRepository.findByStore(storeId);
   const match = storeListings.find((l) => l.productId === productId && l.nodeId === nodeId);
   if (!match) return;
@@ -192,6 +203,7 @@ export async function removeProductFromNode(storeId: string, nodeId: string, pro
 }
 
 export async function createEdge(storeId: string, formData: FormData): Promise<void> {
+  await requireAdmin();
   const fromNodeId = String(formData.get("fromNodeId") ?? "");
   const toNodeId = String(formData.get("toNodeId") ?? "");
   const bidirectional = formData.get("bidirectional") === "on";
@@ -209,6 +221,7 @@ export async function createEdge(storeId: string, formData: FormData): Promise<v
 }
 
 export async function deleteEdge(storeId: string, edgeId: string): Promise<void> {
+  await requireAdmin();
   await edgeRepository.delete(edgeId);
   revalidatePath(`/admin/stores/${storeId}`);
 }
@@ -224,6 +237,7 @@ export async function deleteEdge(storeId: string, edgeId: string): Promise<void>
  * accumulating orphaned files.
  */
 export async function uploadStoreImage(storeId: string, formData: FormData): Promise<void> {
+  await requireAdmin();
   const file = formData.get("image");
   if (!(file instanceof File)) return;
   const saved = await saveUploadedImage("stores", storeId, file);

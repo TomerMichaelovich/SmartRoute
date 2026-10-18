@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { productListingRepository, productRepository, shoppingListRepository } from "@/src/infrastructure/container";
+import { resolveListAccess } from "@/src/presentation/auth/list-access";
 
 // Backs the mobile app's Classification Review screen the same data the web app's
 // /review/[listId] page (a Server Component) fetches directly via repositories: the
@@ -11,6 +12,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ lis
   const shoppingList = await shoppingListRepository.findById(listId);
   if (!shoppingList) {
     return NextResponse.json({ error: `Shopping list not found: ${listId}` }, { status: 404 });
+  }
+  if (!(await resolveListAccess(shoppingList))) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
   const [allProducts, listings] = await Promise.all([

@@ -6,6 +6,7 @@ import {
   shoppingListRepository,
   storeRepository,
 } from "@/src/infrastructure/container";
+import { resolveListAccess } from "@/src/presentation/auth/list-access";
 
 // GET-by-id counterpart to POST /api/routes (route.ts, one level up), which creates routes.
 // Needed because the web app's /route/[routeId] page fetches route/store/nodes/shoppingList/
@@ -29,6 +30,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ rou
   ]);
   if (!store || !shoppingList) {
     return NextResponse.json({ error: `Store or shopping list not found for route: ${routeId}` }, { status: 404 });
+  }
+  // A route shows its shopping list's items - same access rule as the list itself.
+  if (!(await resolveListAccess(shoppingList))) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
   const productById = new Map(products.map((p) => [p.id, p]));

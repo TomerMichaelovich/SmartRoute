@@ -5,6 +5,7 @@ import { normalizeHebrewText } from "@smartroute/core/application/classification
 import type { ProductCategory } from "@smartroute/core/domain/entities/product";
 import { productRepository } from "@/src/infrastructure/container";
 import { saveUploadedImage } from "@/src/infrastructure/image-upload";
+import { requireAdmin } from "@/src/presentation/auth/admin";
 
 function parseAliases(raw: string): string[] {
   return raw
@@ -18,6 +19,7 @@ function computeNormalizedAliases(canonicalName: string, aliases: string[]): str
 }
 
 export async function createProduct(formData: FormData): Promise<void> {
+  await requireAdmin();
   const canonicalName = String(formData.get("canonicalName") ?? "").trim();
   const category = String(formData.get("category") ?? "other") as ProductCategory;
   const department = String(formData.get("department") ?? "").trim();
@@ -43,6 +45,7 @@ export async function createProduct(formData: FormData): Promise<void> {
 }
 
 export async function updateProduct(productId: string, formData: FormData): Promise<void> {
+  await requireAdmin();
   const canonicalName = String(formData.get("canonicalName") ?? "").trim();
   const category = String(formData.get("category") ?? "other") as ProductCategory;
   const department = String(formData.get("department") ?? "").trim();

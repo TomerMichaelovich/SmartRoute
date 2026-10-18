@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { promotionRepository, storeRepository } from "@/src/infrastructure/container";
+import { requireAdmin } from "@/src/presentation/auth/admin";
 
 function toIsoOrUndefined(raw: string): string | undefined {
   const trimmed = raw.trim();
@@ -9,6 +10,7 @@ function toIsoOrUndefined(raw: string): string | undefined {
 }
 
 export async function createPromotion(formData: FormData): Promise<void> {
+  await requireAdmin();
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   const frequencyCapPerSession = Number(formData.get("frequencyCapPerSession") ?? 3);
@@ -40,6 +42,7 @@ export async function createPromotion(formData: FormData): Promise<void> {
 }
 
 export async function updatePromotion(promotionId: string, formData: FormData): Promise<void> {
+  await requireAdmin();
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   const isActive = formData.get("isActive") === "on";

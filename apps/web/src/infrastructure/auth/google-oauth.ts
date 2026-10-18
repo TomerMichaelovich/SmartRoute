@@ -37,7 +37,8 @@ export function buildGoogleAuthUrl(state: string, redirectUri: string): string {
 interface GoogleIdTokenClaims {
   sub: string;
   email?: string;
-  email_verified?: boolean;
+  // A boolean in a decoded JWT, but the tokeninfo endpoint returns it as the string "true"/"false".
+  email_verified?: boolean | string;
   name?: string;
   given_name?: string;
 }
@@ -81,7 +82,9 @@ export async function exchangeGoogleCode(
   if (!data.id_token) throw new Error("No id_token in Google response");
 
   const claims = decodeJwtPayload(data.id_token);
-  if (!claims.email) throw new Error("No email in Google id_token");
+  if (!claims.email || String(claims.email_verified) !== "true") {
+    throw new Error("Google id_token has no verified email");
+  }
 
   return {
     providerAccountId: claims.sub,
@@ -137,7 +140,9 @@ export async function verifyGoogleIdToken(idToken: string): Promise<GoogleProfil
   if (claims.iss !== "accounts.google.com" && claims.iss !== "https://accounts.google.com") {
     throw new Error("Google id_token has an unrecognized issuer");
   }
-  if (!claims.email || claims.email_verified === false) {
+  // Must be explicitly verified: an existing account with this email gets linked to the
+  // Google identity (google-user.ts), so an unverified address would hand that account over.
+  if (!claims.email || String(claims.email_verified) !== "true") {
     throw new Error("Google id_token has no verified email");
   }
 
