@@ -20,6 +20,7 @@ import { PgShoppingTripRepository } from "./repositories/postgres/pg-shopping-tr
 import { PgStoreRepository } from "./repositories/postgres/pg-store-repository";
 import { PgUserAdminRepository } from "./repositories/postgres/pg-user-admin-repository";
 import { PgUserRepository } from "./repositories/postgres/pg-user-repository";
+import { PgWalkableMapRepository } from "./repositories/postgres/pg-walkable-map-repository";
 
 /**
  * Composition root: the single place infrastructure implementations are
@@ -43,6 +44,7 @@ export const sessionRepository = new PgSessionRepository();
 export const householdRepository = new PgHouseholdRepository();
 export const userAdminRepository = new PgUserAdminRepository();
 export const pushTokenRepository = new PgPushTokenRepository();
+export const walkableMapRepository = new PgWalkableMapRepository();
 
 const llmClassifier = new AnthropicClassifier();
 

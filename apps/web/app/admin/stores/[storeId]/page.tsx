@@ -8,6 +8,7 @@ import {
   productListingRepository,
   productRepository,
   storeRepository,
+  walkableMapRepository,
 } from "@/src/infrastructure/container";
 import {
   addProductToNode,
@@ -17,6 +18,7 @@ import {
   deleteNode,
   deleteStore,
   removeProductFromNode,
+  saveWalkableMap,
   updateNodeIcon,
   updateNodeLabel,
   updateNodePosition,
@@ -40,11 +42,12 @@ export default async function AdminStoreDetailPage({
   const store = await storeRepository.findById(storeId);
   if (!store) notFound();
 
-  const [nodes, edges, products, listings] = await Promise.all([
+  const [nodes, edges, products, listings, walkableMask] = await Promise.all([
     nodeRepository.findByStore(storeId),
     edgeRepository.findByStore(storeId),
     productRepository.findAllActive(),
     productListingRepository.findByStore(storeId),
+    walkableMapRepository.findMask(storeId),
   ]);
   const nodeLabelById = new Map(nodes.map((n) => [n.id, n.label]));
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
@@ -64,6 +67,10 @@ export default async function AdminStoreDetailPage({
   const boundUpdateNodeIcon = updateNodeIcon.bind(null, storeId);
   const boundUploadStoreImage = uploadStoreImage.bind(null, storeId);
   const mapImageUrl = store.mapImageUrl ? `${store.mapImageUrl}?v=${encodeURIComponent(store.updatedAt)}` : "";
+  // Blob-hosted images are proxied through our origin so the walkable-area editor can read pixels.
+  const mapPixelSourceUrl = store.mapImageUrl.startsWith("https://")
+    ? `/admin/stores/${storeId}/map-image?v=${encodeURIComponent(store.updatedAt)}`
+    : mapImageUrl;
 
   return (
     <div className="flex flex-col gap-8">
@@ -103,6 +110,9 @@ export default async function AdminStoreDetailPage({
         addProductToNode={addProductToNode}
         removeProductFromNode={removeProductFromNode}
         uploadStoreImage={boundUploadStoreImage}
+        mapPixelSourceUrl={mapPixelSourceUrl}
+        walkableMask={walkableMask}
+        saveWalkableMap={saveWalkableMap.bind(null, storeId)}
       />
 
       <section className="flex flex-col gap-3">

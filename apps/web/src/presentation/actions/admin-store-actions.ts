@@ -3,13 +3,17 @@
 import { del } from "@vercel/blob";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import type { MapNodeType } from "@smartroute/core/domain/entities/map-node";
+import type { MapEdge } from "@smartroute/core/domain/entities/map-edge";
+import type { MapNode, MapNodeType } from "@smartroute/core/domain/entities/map-node";
+import { generateNavGraph } from "@smartroute/core/map/walkable/generate-graph";
+import { type StoredWalkableMask, decodeRle, encodeRle } from "@smartroute/core/map/walkable/mask";
 import {
   edgeRepository,
   nodeRepository,
   productListingRepository,
   promotionRepository,
   storeRepository,
+  walkableMapRepository,
 } from "@/src/infrastructure/container";
 import { readImageDimensions } from "@/src/infrastructure/image-dimensions";
 import { saveUploadedImage } from "@/src/infrastructure/image-upload";
@@ -106,6 +110,7 @@ export async function deleteStore(storeId: string): Promise<void> {
     await del(store.mapImageUrl).catch(() => {});
   }
 
+  await walkableMapRepository.deleteMask(storeId);
   await storeRepository.delete(storeId);
 
   revalidatePath("/admin/stores");
@@ -252,4 +257,74 @@ export async function uploadStoreImage(storeId: string, formData: FormData): Pro
   });
 
   revalidatePath(`/admin/stores/${storeId}`);
+}
+
+export interface WalkableMapSaveResult {
+  waypointCount: number;
+  edgeCount: number;
+  /** Departments/entrance/checkouts the entrance can't reach through the generated graph. */
+  unreachable: { id: string; label: string }[];
+}
+
+/**
+ * Saves the admin's walkable-floor mask and regenerates the store's navigation graph from it on
+ * the server (the client only previews the same generateNavGraph). Every waypoint and every edge
+ * of the store is replaced; departments, entrance and checkouts stay, so product listings and
+ * promotions keep pointing at them. A waypoint that a listing or promotion points at is kept too
+ * and treated like a department.
+ */
+export async function saveWalkableMap(storeId: string, stored: StoredWalkableMask): Promise<WalkableMapSaveResult> {
+  await requireAdmin();
+  const mask = decodeRle({
+    cols: Number(stored?.cols),
+    rows: Number(stored?.rows),
+    rle: Array.isArray(stored?.rle) ? stored.rle : [],
+  });
+
+  const [store, nodes, listings, promotions] = await Promise.all([
+    storeRepository.findById(storeId),
+    nodeRepository.findByStore(storeId),
+    productListingRepository.findByStore(storeId),
+    promotionRepository.findAll(),
+  ]);
+  if (!store) throw new Error(`Store not found: ${storeId}`);
+
+  const referencedIds = new Set([...listings.map((l) => l.nodeId), ...promotions.map((p) => p.attachedNodeId)]);
+  const anchors = nodes.filter((n) => n.type !== "waypoint" || referencedIds.has(n.id));
+  const replacedWaypoints = nodes.filter((n) => n.type === "waypoint" && !referencedIds.has(n.id));
+
+  const graph = generateNavGraph(
+    mask,
+    anchors.map((n) => ({ id: n.id, position: n.position, isEntrance: n.type === "entrance" })),
+  );
+
+  const idByKey = new Map<string, string>(anchors.map((n) => [n.id, n.id]));
+  const newNodes: MapNode[] = graph.waypoints.map((w) => {
+    const id = crypto.randomUUID();
+    idByKey.set(w.key, id);
+    return { id, storeId, type: "waypoint", label: NODE_TYPE_LABELS.waypoint, position: w.position };
+  });
+  const newEdges: MapEdge[] = graph.edges.map((e) => ({
+    id: crypto.randomUUID(),
+    storeId,
+    fromNodeId: idByKey.get(e.from)!,
+    toNodeId: idByKey.get(e.to)!,
+    bidirectional: true,
+  }));
+
+  await walkableMapRepository.saveMaskAndReplaceGraph({
+    storeId,
+    mask: encodeRle(mask),
+    deleteNodeIds: replacedWaypoints.map((n) => n.id),
+    nodes: newNodes,
+    edges: newEdges,
+  });
+
+  revalidatePath(`/admin/stores/${storeId}`);
+  const labelById = new Map(anchors.map((n) => [n.id, n.label]));
+  return {
+    waypointCount: newNodes.length,
+    edgeCount: newEdges.length,
+    unreachable: graph.unreachableAnchorIds.map((id) => ({ id, label: labelById.get(id) ?? id })),
+  };
 }

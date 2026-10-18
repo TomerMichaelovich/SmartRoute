@@ -139,6 +139,15 @@ export const stores = pgTable("stores", {
   updatedAt: timestamp("updated_at", { mode: "string" }).notNull(),
 });
 
+/** The admin's walkable-floor mask for a store's map image (see packages/core/map/walkable). */
+export const storeWalkableMasks = pgTable("store_walkable_masks", {
+  storeId: text("store_id").primaryKey(),
+  cols: integer("cols").notNull(),
+  rows: integer("rows").notNull(),
+  rle: jsonb("rle").notNull().$type<number[]>(),
+  updatedAt: timestamp("updated_at", { mode: "string" }).notNull(),
+});
+
 export const mapNodes = pgTable(
   "map_nodes",
   {

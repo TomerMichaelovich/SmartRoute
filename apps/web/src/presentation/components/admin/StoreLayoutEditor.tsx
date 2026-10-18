@@ -8,8 +8,11 @@ import type { ProductListing } from "@smartroute/core/domain/entities/product-li
 import { distanceBetweenNodes } from "@smartroute/core/domain/value-objects/geo-point";
 import { NODE_TYPE_LABELS } from "@/src/presentation/node-type-labels";
 import { findProductIcon, type ProductIcon } from "@smartroute/core/map/product-icons";
+import type { StoredWalkableMask } from "@smartroute/core/map/walkable/mask";
+import type { WalkableMapSaveResult } from "@/src/presentation/actions/admin-store-actions";
 import { MultilineSvgText } from "../map/MultilineSvgText";
 import { ProductIconSidebar } from "./ProductIconSidebar";
+import { WalkableAreaEditor } from "./WalkableAreaEditor";
 
 interface StoreLayoutEditorProps {
   storeId: string;
@@ -32,6 +35,10 @@ interface StoreLayoutEditorProps {
   addProductToNode: (storeId: string, nodeId: string, formData: FormData) => Promise<void>;
   removeProductFromNode: (storeId: string, nodeId: string, productId: string) => Promise<void>;
   uploadStoreImage: (formData: FormData) => Promise<void>;
+  /** Same-origin URL of the map image, for reading its pixels in the walkable-area mode. */
+  mapPixelSourceUrl: string;
+  walkableMask: StoredWalkableMask | null;
+  saveWalkableMap: (mask: StoredWalkableMask) => Promise<WalkableMapSaveResult>;
 }
 
 const ICON_DROP_HIT_RADIUS_PX = 26;
@@ -93,7 +100,11 @@ export function StoreLayoutEditor({
   addProductToNode,
   removeProductFromNode,
   uploadStoreImage,
+  mapPixelSourceUrl,
+  walkableMask,
+  saveWalkableMap,
 }: StoreLayoutEditorProps) {
+  const [walkableMode, setWalkableMode] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const dragStartRef = useRef<{ nodeId: string; clientX: number; clientY: number; moved: boolean } | null>(
@@ -417,6 +428,20 @@ export function StoreLayoutEditor({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-base font-semibold text-neutral-900">עריכת פריסה חזותית</h2>
         <div className="flex flex-wrap items-center gap-2">
+          {mapImageUrl && !walkableMode && (
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedNodeIds(new Set());
+                setSelectedEdgeIds(new Set());
+                closePopups();
+                setWalkableMode(true);
+              }}
+              className="rounded-full bg-cyan-600 px-3 py-1.5 text-sm font-semibold text-white"
+            >
+              מיפוי אוטומטי של שטח עביר
+            </button>
+          )}
           <form
             action={uploadStoreImage}
             className="flex items-center gap-2 rounded-full border border-neutral-300 bg-white ps-1 pe-3 py-1"
@@ -434,367 +459,382 @@ export function StoreLayoutEditor({
           </form>
         </div>
       </div>
-      <p className="text-xs text-neutral-500">
-        לחצו על המפה להוספת נקודת ציון · כשצומת נבחר, לחיצה על המפה מוסיפה נקודה ומחברת אליה (לחיצות ברצף = מסדרון)
-        · לחצו על צומת ואז על צומת נוסף כדי לחבר ביניהם · גררו צומת כדי להזיז אותו · גררו אייקון מהרשימה כדי
-        להוסיף/לעדכן צומת · גררו על שטח ריק כדי לסמן ריבוע ולבחור את כל הצמתים שבתוכו · Esc לביטול בחירה ·
-        Ctrl+לחיצה לבחירה מרובה
-      </p>
+      {walkableMode ? (
+        <WalkableAreaEditor
+          mapWidth={mapWidth}
+          mapHeight={mapHeight}
+          mapImageUrl={mapImageUrl}
+          pixelSourceUrl={mapPixelSourceUrl}
+          nodes={nodes}
+          initialMask={walkableMask}
+          saveWalkableMap={saveWalkableMap}
+          onClose={() => setWalkableMode(false)}
+        />
+      ) : (
+        <>
+          <p className="text-xs text-neutral-500">
+            לחצו על המפה להוספת נקודת ציון · כשצומת נבחר, לחיצה על המפה מוסיפה נקודה ומחברת אליה (לחיצות ברצף = מסדרון)
+            · לחצו על צומת ואז על צומת נוסף כדי לחבר ביניהם · גררו צומת כדי להזיז אותו · גררו אייקון מהרשימה כדי
+            להוסיף/לעדכן צומת · גררו על שטח ריק כדי לסמן ריבוע ולבחור את כל הצמתים שבתוכו · Esc לביטול בחירה ·
+            Ctrl+לחיצה לבחירה מרובה
+          </p>
 
-      <div className="flex flex-col gap-3">
-        <ProductIconSidebar icons={productIcons} onIconDropped={handleIconDropped} />
+          <div className="flex flex-col gap-3">
+            <ProductIconSidebar icons={productIcons} onIconDropped={handleIconDropped} />
 
-        <div ref={containerRef} className="relative">
-          <svg
-            ref={svgRef}
-            viewBox={`0 0 ${mapWidth} ${mapHeight}`}
-            className="h-auto w-full select-none rounded-2xl border border-neutral-200 bg-white touch-none"
-            onPointerDown={handleMapPointerDown}
-            onPointerMove={handleMapPointerMove}
-            onPointerUp={handleMapPointerUp}
-            onPointerCancel={handleMapPointerCancel}
-          >
-            {mapImageUrl ? (
-              <image
-                href={mapImageUrl}
-                x={0}
-                y={0}
-                width={mapWidth}
-                height={mapHeight}
-                preserveAspectRatio="xMidYMid slice"
-                onClick={handleBackgroundClick}
-                data-map-background
-              />
-            ) : (
-              <>
-                <rect x={0} y={0} width={mapWidth} height={mapHeight} fill="#f3f4f6"
-                  onClick={handleBackgroundClick}
-                  data-map-background
-                />
-                <text
-                  x={mapWidth / 2}
-                  y={mapHeight / 2}
-                  textAnchor="middle"
-                  fontSize={Math.min(mapWidth, mapHeight) * 0.04}
-                  fill="#9ca3af"
-                  pointerEvents="none"
-                >
-                  העלו תמונת מפה כדי להתחיל
-                </text>
-              </>
-            )}
-
-            {edges.map((edge) => {
-              const from = nodeById.get(edge.fromNodeId);
-              const to = nodeById.get(edge.toNodeId);
-              if (!from || !to) return null;
-              const isSelected = selectedEdgeIds.has(edge.id);
-              const x1 = from.position.x * mapWidth;
-              const y1 = from.position.y * mapHeight;
-              const x2 = to.position.x * mapWidth;
-              const y2 = to.position.y * mapHeight;
-              return (
-                <g key={edge.id}>
-                  <line
-                    x1={x1}
-                    y1={y1}
-                    x2={x2}
-                    y2={y2}
-                    stroke="transparent"
-                    strokeWidth={20}
-                    className="cursor-pointer"
-                    onClick={(e) => handleEdgeClick(e, edge)}
+            <div ref={containerRef} className="relative">
+              <svg
+                ref={svgRef}
+                viewBox={`0 0 ${mapWidth} ${mapHeight}`}
+                className="h-auto w-full select-none rounded-2xl border border-neutral-200 bg-white touch-none"
+                onPointerDown={handleMapPointerDown}
+                onPointerMove={handleMapPointerMove}
+                onPointerUp={handleMapPointerUp}
+                onPointerCancel={handleMapPointerCancel}
+              >
+                {mapImageUrl ? (
+                  <image
+                    href={mapImageUrl}
+                    x={0}
+                    y={0}
+                    width={mapWidth}
+                    height={mapHeight}
+                    preserveAspectRatio="xMidYMid slice"
+                    onClick={handleBackgroundClick}
+                    data-map-background
                   />
-                  <line
-                    x1={x1}
-                    y1={y1}
-                    x2={x2}
-                    y2={y2}
-                    stroke={isSelected ? "#059669" : "#d1d5db"}
-                    strokeWidth={isSelected ? 6 : 4}
-                    strokeLinecap="round"
+                ) : (
+                  <>
+                    <rect x={0} y={0} width={mapWidth} height={mapHeight} fill="#f3f4f6"
+                      onClick={handleBackgroundClick}
+                      data-map-background
+                    />
+                    <text
+                      x={mapWidth / 2}
+                      y={mapHeight / 2}
+                      textAnchor="middle"
+                      fontSize={Math.min(mapWidth, mapHeight) * 0.04}
+                      fill="#9ca3af"
+                      pointerEvents="none"
+                    >
+                      העלו תמונת מפה כדי להתחיל
+                    </text>
+                  </>
+                )}
+
+                {edges.map((edge) => {
+                  const from = nodeById.get(edge.fromNodeId);
+                  const to = nodeById.get(edge.toNodeId);
+                  if (!from || !to) return null;
+                  const isSelected = selectedEdgeIds.has(edge.id);
+                  const x1 = from.position.x * mapWidth;
+                  const y1 = from.position.y * mapHeight;
+                  const x2 = to.position.x * mapWidth;
+                  const y2 = to.position.y * mapHeight;
+                  return (
+                    <g key={edge.id}>
+                      <line
+                        x1={x1}
+                        y1={y1}
+                        x2={x2}
+                        y2={y2}
+                        stroke="transparent"
+                        strokeWidth={20}
+                        className="cursor-pointer"
+                        onClick={(e) => handleEdgeClick(e, edge)}
+                      />
+                      <line
+                        x1={x1}
+                        y1={y1}
+                        x2={x2}
+                        y2={y2}
+                        stroke={isSelected ? "#059669" : "#d1d5db"}
+                        strokeWidth={isSelected ? 6 : 4}
+                        strokeLinecap="round"
+                        pointerEvents="none"
+                      />
+                    </g>
+                  );
+                })}
+
+                {nodes.map((node) => {
+                  const isDragging = dragState?.nodeId === node.id;
+                  const x = (isDragging ? dragState!.x : node.position.x) * mapWidth;
+                  const y = (isDragging ? dragState!.y : node.position.y) * mapHeight;
+                  const radius = nodeRadius(node.type);
+                  const isSelected = selectedNodeIds.has(node.id);
+                  const icon = findProductIcon(node.iconKey);
+                  const isWaypoint = node.type === "waypoint";
+
+                  return (
+                    <g
+                      key={node.id}
+                      className="cursor-grab active:cursor-grabbing"
+                      onPointerDown={(e) => handleNodePointerDown(e, node)}
+                      onPointerMove={(e) => handleNodePointerMove(e, node)}
+                      onPointerUp={(e) => void handleNodePointerUp(e, node)}
+                      onClick={(e) => handleNodeClick(e, node)}
+                    >
+                      {isSelected && (isWaypoint ? (
+                        <circle cx={x} cy={y} r={radius + 6} fill="none" stroke="#059669" strokeWidth={3} />
+                      ) : (
+                        <rect {...squareAttrs(x, y, radius + 6)} fill="none" stroke="#059669" strokeWidth={3} />
+                      ))}
+                      {icon ? (
+                        <>
+                          <clipPath id={`node-clip-${node.id}`}>
+                            <rect {...squareAttrs(x, y, radius)} />
+                          </clipPath>
+                          <rect {...squareAttrs(x, y, radius)} fill="#f3f4f6" />
+                          <image
+                            href={icon.src}
+                            x={x - radius}
+                            y={y - radius}
+                            width={radius * 2}
+                            height={radius * 2}
+                            clipPath={`url(#node-clip-${node.id})`}
+                            preserveAspectRatio="xMidYMid slice"
+                          />
+                          <rect {...squareAttrs(x, y, radius)} fill="none" stroke="#ffffff" strokeWidth={2} />
+                        </>
+                      ) : isWaypoint ? (
+                        <>
+                          {/* Invisible, larger hit area so the small dot is still easy to click and drag. */}
+                          <circle cx={x} cy={y} r={14} fill="transparent" />
+                          <circle cx={x} cy={y} r={radius} fill={NODE_COLORS[node.type]} />
+                        </>
+                      ) : (
+                        <rect {...squareAttrs(x, y, radius)} fill={NODE_COLORS[node.type]} />
+                      )}
+                      {!isWaypoint && <MultilineSvgText
+                        text={node.label}
+                        x={x}
+                        y={y + radius + 18}
+                        lineHeight={21}
+                        textAnchor="middle"
+                        fontSize={18}
+                        fontWeight={600}
+                        fill="#111827"
+                        stroke="white"
+                        strokeWidth={3.5}
+                        strokeLinejoin="round"
+                        paintOrder="stroke"
+                      />}
+                    </g>
+                  );
+                })}
+
+                {marquee && (
+                  <rect
+                    x={Math.min(marquee.x1, marquee.x2) * mapWidth}
+                    y={Math.min(marquee.y1, marquee.y2) * mapHeight}
+                    width={Math.abs(marquee.x2 - marquee.x1) * mapWidth}
+                    height={Math.abs(marquee.y2 - marquee.y1) * mapHeight}
+                    fill="#0891b2"
+                    fillOpacity={0.12}
+                    stroke="#0891b2"
+                    strokeWidth={2}
+                    strokeDasharray="6 4"
+                    vectorEffect="non-scaling-stroke"
                     pointerEvents="none"
                   />
-                </g>
-              );
-            })}
-
-            {nodes.map((node) => {
-              const isDragging = dragState?.nodeId === node.id;
-              const x = (isDragging ? dragState!.x : node.position.x) * mapWidth;
-              const y = (isDragging ? dragState!.y : node.position.y) * mapHeight;
-              const radius = nodeRadius(node.type);
-              const isSelected = selectedNodeIds.has(node.id);
-              const icon = findProductIcon(node.iconKey);
-              const isWaypoint = node.type === "waypoint";
-
-              return (
-                <g
-                  key={node.id}
-                  className="cursor-grab active:cursor-grabbing"
-                  onPointerDown={(e) => handleNodePointerDown(e, node)}
-                  onPointerMove={(e) => handleNodePointerMove(e, node)}
-                  onPointerUp={(e) => void handleNodePointerUp(e, node)}
-                  onClick={(e) => handleNodeClick(e, node)}
-                >
-                  {isSelected && (isWaypoint ? (
-                    <circle cx={x} cy={y} r={radius + 6} fill="none" stroke="#059669" strokeWidth={3} />
-                  ) : (
-                    <rect {...squareAttrs(x, y, radius + 6)} fill="none" stroke="#059669" strokeWidth={3} />
-                  ))}
-                  {icon ? (
-                    <>
-                      <clipPath id={`node-clip-${node.id}`}>
-                        <rect {...squareAttrs(x, y, radius)} />
-                      </clipPath>
-                      <rect {...squareAttrs(x, y, radius)} fill="#f3f4f6" />
-                      <image
-                        href={icon.src}
-                        x={x - radius}
-                        y={y - radius}
-                        width={radius * 2}
-                        height={radius * 2}
-                        clipPath={`url(#node-clip-${node.id})`}
-                        preserveAspectRatio="xMidYMid slice"
-                      />
-                      <rect {...squareAttrs(x, y, radius)} fill="none" stroke="#ffffff" strokeWidth={2} />
-                    </>
-                  ) : isWaypoint ? (
-                    <>
-                      {/* Invisible, larger hit area so the small dot is still easy to click and drag. */}
-                      <circle cx={x} cy={y} r={14} fill="transparent" />
-                      <circle cx={x} cy={y} r={radius} fill={NODE_COLORS[node.type]} />
-                    </>
-                  ) : (
-                    <rect {...squareAttrs(x, y, radius)} fill={NODE_COLORS[node.type]} />
-                  )}
-                  {!isWaypoint && <MultilineSvgText
-                    text={node.label}
-                    x={x}
-                    y={y + radius + 18}
-                    lineHeight={21}
-                    textAnchor="middle"
-                    fontSize={18}
-                    fontWeight={600}
-                    fill="#111827"
-                    stroke="white"
-                    strokeWidth={3.5}
-                    strokeLinejoin="round"
-                    paintOrder="stroke"
-                  />}
-                </g>
-              );
-            })}
-
-            {marquee && (
-              <rect
-                x={Math.min(marquee.x1, marquee.x2) * mapWidth}
-                y={Math.min(marquee.y1, marquee.y2) * mapHeight}
-                width={Math.abs(marquee.x2 - marquee.x1) * mapWidth}
-                height={Math.abs(marquee.y2 - marquee.y1) * mapHeight}
-                fill="#0891b2"
-                fillOpacity={0.12}
-                stroke="#0891b2"
-                strokeWidth={2}
-                strokeDasharray="6 4"
-                vectorEffect="non-scaling-stroke"
-                pointerEvents="none"
-              />
-            )}
-          </svg>
-
-          {addPopup && (
-            <div
-              style={{ left: addPopup.screenLeft, top: addPopup.screenTop }}
-              className="absolute z-10 flex w-56 -translate-x-1/2 flex-col gap-2 rounded-xl border border-neutral-200 bg-white p-3 shadow-lg"
-            >
-              <form
-                action={async (formData) => {
-                  await createNode(formData);
-                  closePopups();
-                }}
-                className="flex flex-col gap-2"
-              >
-                <input type="hidden" name="x" value={addPopup.normX} />
-                <input type="hidden" name="y" value={addPopup.normY} />
-                <input type="hidden" name="iconKey" value={addPopup.presetIconKey ?? ""} />
-                {addPopup.presetIconKey && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={findProductIcon(addPopup.presetIconKey)?.src}
-                    alt=""
-                    className="mx-auto h-10 w-10 rounded-full object-cover"
-                  />
                 )}
-                <input
-                  name="label"
-                  placeholder="תווית (חובה למחלקה בלבד)"
-                  autoFocus
-                  defaultValue={addPopup.presetLabel ?? ""}
-                  className="rounded-lg border border-neutral-300 p-1.5 text-sm"
-                />
-                <select
-                  name="type"
-                  defaultValue={addPopup.presetType ?? (addPopup.presetIconKey ? "department" : undefined)}
-                  className="rounded-lg border border-neutral-300 p-1.5 text-sm"
+              </svg>
+
+              {addPopup && (
+                <div
+                  style={{ left: addPopup.screenLeft, top: addPopup.screenTop }}
+                  className="absolute z-10 flex w-56 -translate-x-1/2 flex-col gap-2 rounded-xl border border-neutral-200 bg-white p-3 shadow-lg"
                 >
-                  {nodeTypes.map((t) => (
-                    <option key={t} value={t}>
-                      {NODE_TYPE_LABELS[t]}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  name="zone"
-                  placeholder="אזור (אופציונלי)"
-                  className="rounded-lg border border-neutral-300 p-1.5 text-sm"
-                />
-                <div className="flex gap-2">
-                  <button
-                    type="submit"
-                    className="flex-1 rounded-lg bg-cyan-600 px-3 py-1.5 text-sm font-semibold text-white"
+                  <form
+                    action={async (formData) => {
+                      await createNode(formData);
+                      closePopups();
+                    }}
+                    className="flex flex-col gap-2"
                   >
-                    הוסף צומת
-                  </button>
-                  <button
-                    type="button"
-                    onClick={closePopups}
-                    className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm text-neutral-600"
-                  >
-                    ביטול
-                  </button>
+                    <input type="hidden" name="x" value={addPopup.normX} />
+                    <input type="hidden" name="y" value={addPopup.normY} />
+                    <input type="hidden" name="iconKey" value={addPopup.presetIconKey ?? ""} />
+                    {addPopup.presetIconKey && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={findProductIcon(addPopup.presetIconKey)?.src}
+                        alt=""
+                        className="mx-auto h-10 w-10 rounded-full object-cover"
+                      />
+                    )}
+                    <input
+                      name="label"
+                      placeholder="תווית (חובה למחלקה בלבד)"
+                      autoFocus
+                      defaultValue={addPopup.presetLabel ?? ""}
+                      className="rounded-lg border border-neutral-300 p-1.5 text-sm"
+                    />
+                    <select
+                      name="type"
+                      defaultValue={addPopup.presetType ?? (addPopup.presetIconKey ? "department" : undefined)}
+                      className="rounded-lg border border-neutral-300 p-1.5 text-sm"
+                    >
+                      {nodeTypes.map((t) => (
+                        <option key={t} value={t}>
+                          {NODE_TYPE_LABELS[t]}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      name="zone"
+                      placeholder="אזור (אופציונלי)"
+                      className="rounded-lg border border-neutral-300 p-1.5 text-sm"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="submit"
+                        className="flex-1 rounded-lg bg-cyan-600 px-3 py-1.5 text-sm font-semibold text-white"
+                      >
+                        הוסף צומת
+                      </button>
+                      <button
+                        type="button"
+                        onClick={closePopups}
+                        className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm text-neutral-600"
+                      >
+                        ביטול
+                      </button>
+                    </div>
+                  </form>
                 </div>
+              )}
+            </div>
+          </div>
+
+          {singleSelectedNode && !showsProductPanel && (
+            <div className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white p-3">
+              <span className="text-sm text-neutral-700">
+                נבחר: <strong>{singleSelectedNode.label}</strong> ({NODE_TYPE_LABELS[singleSelectedNode.type]})
+              </span>
+              <form action={deleteNode.bind(null, storeId, singleSelectedNode.id)}>
+                <button type="submit" className="text-sm text-red-600 hover:underline">
+                  מחק צומת
+                </button>
               </form>
             </div>
           )}
-        </div>
-      </div>
 
-      {singleSelectedNode && !showsProductPanel && (
-        <div className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white p-3">
-          <span className="text-sm text-neutral-700">
-            נבחר: <strong>{singleSelectedNode.label}</strong> ({NODE_TYPE_LABELS[singleSelectedNode.type]})
-          </span>
-          <form action={deleteNode.bind(null, storeId, singleSelectedNode.id)}>
-            <button type="submit" className="text-sm text-red-600 hover:underline">
-              מחק צומת
-            </button>
-          </form>
-        </div>
-      )}
-
-      {singleSelectedNode && showsProductPanel && (
-        <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4">
-          <form
-            key={singleSelectedNode.id}
-            action={updateNodeLabel.bind(null, storeId, singleSelectedNode.id)}
-            className="flex items-start gap-2"
-          >
-            <textarea
-              name="label"
-              defaultValue={singleSelectedNode.label}
-              rows={2}
-              placeholder="לרדת שורה: Enter"
-              className="flex-1 resize-y rounded-lg border border-neutral-300 p-1.5 text-sm"
-            />
-            <button
-              type="submit"
-              className="rounded-lg bg-cyan-600 px-3 py-1.5 text-sm font-semibold text-white"
-            >
-              שמור שם
-            </button>
-            <span className="text-xs text-neutral-400">{NODE_TYPE_LABELS[singleSelectedNode.type]}</span>
-          </form>
-
-          <div className="flex flex-col gap-1">
-            <h3 className="text-sm font-semibold text-neutral-700">
-              מוצרים בנקודה זו ({productsAtNode.length})
-            </h3>
-            {productsAtNode.length === 0 ? (
-              <p className="text-xs text-neutral-400">אין עדיין מוצרים משויכים</p>
-            ) : (
-              <ul className="flex flex-col divide-y divide-neutral-100">
-                {productsAtNode.map((product) => (
-                  <li key={product.id} className="flex items-center justify-between py-1.5 text-sm">
-                    <span>{product.canonicalName}</span>
-                    <form action={removeProductFromNode.bind(null, storeId, singleSelectedNode.id, product.id)}>
-                      <button type="submit" className="text-red-600 hover:underline" title="הסר מהנקודה">
-                        ✕
-                      </button>
-                    </form>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          {availableProducts.length > 0 && (
-            <form action={addProductToNode.bind(null, storeId, singleSelectedNode.id)} className="flex gap-2">
-              <select name="productId" required className="flex-1 rounded-lg border border-neutral-300 p-1.5 text-sm">
-                {availableProductsByDepartment.map(([department, departmentProducts]) => (
-                  <optgroup key={department} label={department}>
-                    {departmentProducts.map((product) => (
-                      <option key={product.id} value={product.id}>
-                        {product.canonicalName}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-              <button
-                type="submit"
-                className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700"
+          {singleSelectedNode && showsProductPanel && (
+            <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4">
+              <form
+                key={singleSelectedNode.id}
+                action={updateNodeLabel.bind(null, storeId, singleSelectedNode.id)}
+                className="flex items-start gap-2"
               >
-                הוסף
-              </button>
-            </form>
+                <textarea
+                  name="label"
+                  defaultValue={singleSelectedNode.label}
+                  rows={2}
+                  placeholder="לרדת שורה: Enter"
+                  className="flex-1 resize-y rounded-lg border border-neutral-300 p-1.5 text-sm"
+                />
+                <button
+                  type="submit"
+                  className="rounded-lg bg-cyan-600 px-3 py-1.5 text-sm font-semibold text-white"
+                >
+                  שמור שם
+                </button>
+                <span className="text-xs text-neutral-400">{NODE_TYPE_LABELS[singleSelectedNode.type]}</span>
+              </form>
+
+              <div className="flex flex-col gap-1">
+                <h3 className="text-sm font-semibold text-neutral-700">
+                  מוצרים בנקודה זו ({productsAtNode.length})
+                </h3>
+                {productsAtNode.length === 0 ? (
+                  <p className="text-xs text-neutral-400">אין עדיין מוצרים משויכים</p>
+                ) : (
+                  <ul className="flex flex-col divide-y divide-neutral-100">
+                    {productsAtNode.map((product) => (
+                      <li key={product.id} className="flex items-center justify-between py-1.5 text-sm">
+                        <span>{product.canonicalName}</span>
+                        <form action={removeProductFromNode.bind(null, storeId, singleSelectedNode.id, product.id)}>
+                          <button type="submit" className="text-red-600 hover:underline" title="הסר מהנקודה">
+                            ✕
+                          </button>
+                        </form>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {availableProducts.length > 0 && (
+                <form action={addProductToNode.bind(null, storeId, singleSelectedNode.id)} className="flex gap-2">
+                  <select name="productId" required className="flex-1 rounded-lg border border-neutral-300 p-1.5 text-sm">
+                    {availableProductsByDepartment.map(([department, departmentProducts]) => (
+                      <optgroup key={department} label={department}>
+                        {departmentProducts.map((product) => (
+                          <option key={product.id} value={product.id}>
+                            {product.canonicalName}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                  <button
+                    type="submit"
+                    className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700"
+                  >
+                    הוסף
+                  </button>
+                </form>
+              )}
+
+              <form action={deleteNode.bind(null, storeId, singleSelectedNode.id)}>
+                <button type="submit" className="text-sm text-red-600 hover:underline">
+                  מחק צומת
+                </button>
+              </form>
+            </div>
           )}
 
-          <form action={deleteNode.bind(null, storeId, singleSelectedNode.id)}>
-            <button type="submit" className="text-sm text-red-600 hover:underline">
-              מחק צומת
-            </button>
-          </form>
-        </div>
-      )}
+          {singleSelectedEdge && (
+            <div className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white p-3">
+              <span className="text-sm text-neutral-700">
+                נבחרה קשת:{" "}
+                <strong>{nodeById.get(singleSelectedEdge.fromNodeId)?.label ?? singleSelectedEdge.fromNodeId}</strong>{" "}
+                → <strong>{nodeById.get(singleSelectedEdge.toNodeId)?.label ?? singleSelectedEdge.toNodeId}</strong> (
+                {(() => {
+                  const from = nodeById.get(singleSelectedEdge.fromNodeId);
+                  const to = nodeById.get(singleSelectedEdge.toNodeId);
+                  return from && to ? Math.round(distanceBetweenNodes(from.position, to.position, mapWidth, mapHeight)) : "—";
+                })()}
+                )
+              </span>
+              <form action={deleteEdge.bind(null, storeId, singleSelectedEdge.id)}>
+                <button type="submit" className="text-sm text-red-600 hover:underline">
+                  מחק קשת
+                </button>
+              </form>
+            </div>
+          )}
 
-      {singleSelectedEdge && (
-        <div className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white p-3">
-          <span className="text-sm text-neutral-700">
-            נבחרה קשת:{" "}
-            <strong>{nodeById.get(singleSelectedEdge.fromNodeId)?.label ?? singleSelectedEdge.fromNodeId}</strong>{" "}
-            → <strong>{nodeById.get(singleSelectedEdge.toNodeId)?.label ?? singleSelectedEdge.toNodeId}</strong> (
-            {(() => {
-              const from = nodeById.get(singleSelectedEdge.fromNodeId);
-              const to = nodeById.get(singleSelectedEdge.toNodeId);
-              return from && to ? Math.round(distanceBetweenNodes(from.position, to.position, mapWidth, mapHeight)) : "—";
-            })()}
-            )
-          </span>
-          <form action={deleteEdge.bind(null, storeId, singleSelectedEdge.id)}>
-            <button type="submit" className="text-sm text-red-600 hover:underline">
-              מחק קשת
-            </button>
-          </form>
-        </div>
-      )}
-
-      {totalSelected > 1 && (
-        <div className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white p-3">
-          <span className="text-sm text-neutral-700">
-            נבחרו{" "}
-            {selectedNodeIds.size > 0 && <strong>{selectedNodeIds.size} צמתים</strong>}
-            {selectedNodeIds.size > 0 && selectedEdgeIds.size > 0 && " ו-"}
-            {selectedEdgeIds.size > 0 && <strong>{selectedEdgeIds.size} קשתות</strong>}
-          </span>
-          <button
-            type="button"
-            onClick={() => void handleDeleteSelected()}
-            className="text-sm text-red-600 hover:underline"
-          >
-            מחק את הנבחרים
-          </button>
-        </div>
+          {totalSelected > 1 && (
+            <div className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white p-3">
+              <span className="text-sm text-neutral-700">
+                נבחרו{" "}
+                {selectedNodeIds.size > 0 && <strong>{selectedNodeIds.size} צמתים</strong>}
+                {selectedNodeIds.size > 0 && selectedEdgeIds.size > 0 && " ו-"}
+                {selectedEdgeIds.size > 0 && <strong>{selectedEdgeIds.size} קשתות</strong>}
+              </span>
+              <button
+                type="button"
+                onClick={() => void handleDeleteSelected()}
+                className="text-sm text-red-600 hover:underline"
+              >
+                מחק את הנבחרים
+              </button>
+            </div>
+          )}
+        </>
       )}
     </section>
   );
