@@ -14,6 +14,7 @@ import { apiUrl } from "@/lib/api";
 import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
 import { MultilineSvgText } from "./MultilineSvgText";
+import { ZoomableView } from "./ZoomableView";
 
 /** x/y/width/height/rx for a rounded-square icon container of "radius" r centered at cx/cy. */
 function squareAttrs(cx: number, cy: number, r: number) {
@@ -86,28 +87,117 @@ export function StoreMap({
 
   return (
     <View style={{ width: "100%", aspectRatio: mapWidth / mapHeight, borderRadius: 16, overflow: "hidden", backgroundColor: "#ffffff" }}>
-      <Svg width="100%" height="100%" viewBox={`0 0 ${mapWidth} ${mapHeight}`}>
-        {mapImageUrl && (
-          <SvgImage href={mapImageUrl} x={0} y={0} width={mapWidth} height={mapHeight} preserveAspectRatio="xMidYMid slice" />
-        )}
+      <ZoomableView>
+        <Svg width="100%" height="100%" viewBox={`0 0 ${mapWidth} ${mapHeight}`}>
+          {mapImageUrl && (
+            <SvgImage href={mapImageUrl} x={0} y={0} width={mapWidth} height={mapHeight} preserveAspectRatio="xMidYMid slice" />
+          )}
 
-        {footsteps.map((step, i) => (
-          <Footprint key={i} {...step} size={footstepSize} />
-        ))}
+          {footsteps.map((step, i) => (
+            <Footprint key={i} {...step} size={footstepSize} />
+          ))}
 
-        {nodes.map((node) => {
-          const cx = node.position.x * mapWidth;
-          const cy = node.position.y * mapHeight;
-          const icon = findProductIcon(node.iconKey);
+          {nodes.map((node) => {
+            const cx = node.position.x * mapWidth;
+            const cy = node.position.y * mapHeight;
+            const icon = findProductIcon(node.iconKey);
 
-          if (node.type === "waypoint") {
-            return null;
-          }
+            if (node.type === "waypoint") {
+              return null;
+            }
 
-          if (node.type === "entrance" || node.type === "checkout") {
-            const ringColor = node.type === "entrance" ? "#2563eb" : "#7c3aed";
+            if (node.type === "entrance" || node.type === "checkout") {
+              const ringColor = node.type === "entrance" ? "#2563eb" : "#7c3aed";
+              return (
+                <G key={node.id}>
+                  {icon ? (
+                    <>
+                      <ClipPath id={`node-clip-${node.id}`}>
+                        <Rect {...squareAttrs(cx, cy, stopRadius)} />
+                      </ClipPath>
+                      <Rect {...squareAttrs(cx, cy, stopRadius)} fill="#ffffff" />
+                      <SvgImage
+                        href={apiUrl(icon.src)}
+                        x={cx - stopRadius}
+                        y={cy - stopRadius}
+                        width={stopRadius * 2}
+                        height={stopRadius * 2}
+                        clipPath={`url(#node-clip-${node.id})`}
+                        preserveAspectRatio="xMidYMid slice"
+                      />
+                      <Rect {...squareAttrs(cx, cy, stopRadius)} fill="none" stroke={ringColor} strokeWidth={4 * scale} />
+                    </>
+                  ) : (
+                    <Rect {...squareAttrs(cx, cy, stopRadius)} fill={ringColor} />
+                  )}
+                  <MultilineSvgText
+                    text={node.label}
+                    x={cx}
+                    y={cy + stopRadius + labelFontSize * 0.9}
+                    lineHeight={labelFontSize * 1.15}
+                    textAnchor="middle"
+                    fontSize={labelFontSize}
+                    fontFamily={FONTS.bold}
+                    fill="#ffffff"
+                    outlineColor="#000000"
+                    outlineWidth={labelFontSize * 0.3}
+                  />
+                </G>
+              );
+            }
+
+            const stop = stopByNodeId.get(node.id);
+            if (!stop) {
+              return (
+                <G key={node.id}>
+                  {icon ? (
+                    <>
+                      <ClipPath id={`node-clip-${node.id}`}>
+                        <Rect {...squareAttrs(cx, cy, minorNodeRadius)} />
+                      </ClipPath>
+                      <Rect {...squareAttrs(cx, cy, minorNodeRadius)} fill="#f3f4f6" />
+                      <SvgImage
+                        href={apiUrl(icon.src)}
+                        x={cx - minorNodeRadius}
+                        y={cy - minorNodeRadius}
+                        width={minorNodeRadius * 2}
+                        height={minorNodeRadius * 2}
+                        clipPath={`url(#node-clip-${node.id})`}
+                        preserveAspectRatio="xMidYMid slice"
+                        opacity={0.6}
+                      />
+                      <Rect {...squareAttrs(cx, cy, minorNodeRadius)} fill="none" stroke="#d1d5db" strokeWidth={2 * scale} />
+                    </>
+                  ) : (
+                    <Rect {...squareAttrs(cx, cy, minorNodeRadius)} fill="#f3f4f6" stroke="#d1d5db" strokeWidth={2 * scale} />
+                  )}
+                  <MultilineSvgText
+                    text={node.label}
+                    x={cx}
+                    y={cy + minorNodeRadius + minorLabelFontSize * 0.75}
+                    lineHeight={minorLabelFontSize * 1.15}
+                    textAnchor="middle"
+                    fontSize={minorLabelFontSize}
+                    fontFamily={FONTS.regular}
+                    fill="#ffffff"
+                    outlineColor="#000000"
+                    outlineWidth={minorLabelFontSize * 0.3}
+                  />
+                </G>
+              );
+            }
+
+            const isChecked = checkedStopOrders.has(stop.order);
+            const isSelected = selectedStopOrder === stop.order;
+            const ringColor = isChecked ? "#9ca3af" : "#059669";
+            const badgeX = cx + stopRadius * 0.75;
+            const badgeY = cy - stopRadius * 0.75;
+
             return (
-              <G key={node.id}>
+              <G key={node.id} onPress={onSelectStop ? () => onSelectStop(stop.order) : undefined}>
+                {isSelected && (
+                  <Rect {...squareAttrs(cx, cy, stopRadius + 8 * scale)} fill="none" stroke="#059669" strokeWidth={4 * scale} />
+                )}
                 {icon ? (
                   <>
                     <ClipPath id={`node-clip-${node.id}`}>
@@ -122,11 +212,23 @@ export function StoreMap({
                       height={stopRadius * 2}
                       clipPath={`url(#node-clip-${node.id})`}
                       preserveAspectRatio="xMidYMid slice"
+                      opacity={isChecked ? 0.5 : 1}
                     />
                     <Rect {...squareAttrs(cx, cy, stopRadius)} fill="none" stroke={ringColor} strokeWidth={4 * scale} />
+                    <Circle cx={badgeX} cy={badgeY} r={badgeRadius} fill={ringColor} stroke="white" strokeWidth={2 * scale} />
+                    {/* react-native-svg's <Text> has no dominantBaseline; nudge y by ~0.35*fontSize to
+                        approximate vertical centering on the default alphabetic baseline. */}
+                    <SvgText x={badgeX} y={badgeY + badgeFontSize * 0.35} textAnchor="middle" fontSize={badgeFontSize} fontFamily={FONTS.bold} fill="white">
+                      {stop.order}
+                    </SvgText>
                   </>
                 ) : (
-                  <Rect {...squareAttrs(cx, cy, stopRadius)} fill={ringColor} />
+                  <>
+                    <Rect {...squareAttrs(cx, cy, stopRadius)} fill={ringColor} />
+                    <SvgText x={cx} y={cy + labelFontSize * 0.75 * 0.35} textAnchor="middle" fontSize={labelFontSize * 0.75} fontFamily={FONTS.bold} fill="white">
+                      {stop.order}
+                    </SvgText>
+                  </>
                 )}
                 <MultilineSvgText
                   text={node.label}
@@ -135,115 +237,16 @@ export function StoreMap({
                   lineHeight={labelFontSize * 1.15}
                   textAnchor="middle"
                   fontSize={labelFontSize}
-                  fontFamily={FONTS.bold}
+                  fontWeight={700}
                   fill="#ffffff"
                   outlineColor="#000000"
                   outlineWidth={labelFontSize * 0.3}
                 />
               </G>
             );
-          }
-
-          const stop = stopByNodeId.get(node.id);
-          if (!stop) {
-            return (
-              <G key={node.id}>
-                {icon ? (
-                  <>
-                    <ClipPath id={`node-clip-${node.id}`}>
-                      <Rect {...squareAttrs(cx, cy, minorNodeRadius)} />
-                    </ClipPath>
-                    <Rect {...squareAttrs(cx, cy, minorNodeRadius)} fill="#f3f4f6" />
-                    <SvgImage
-                      href={apiUrl(icon.src)}
-                      x={cx - minorNodeRadius}
-                      y={cy - minorNodeRadius}
-                      width={minorNodeRadius * 2}
-                      height={minorNodeRadius * 2}
-                      clipPath={`url(#node-clip-${node.id})`}
-                      preserveAspectRatio="xMidYMid slice"
-                      opacity={0.6}
-                    />
-                    <Rect {...squareAttrs(cx, cy, minorNodeRadius)} fill="none" stroke="#d1d5db" strokeWidth={2 * scale} />
-                  </>
-                ) : (
-                  <Rect {...squareAttrs(cx, cy, minorNodeRadius)} fill="#f3f4f6" stroke="#d1d5db" strokeWidth={2 * scale} />
-                )}
-                <MultilineSvgText
-                  text={node.label}
-                  x={cx}
-                  y={cy + minorNodeRadius + minorLabelFontSize * 0.75}
-                  lineHeight={minorLabelFontSize * 1.15}
-                  textAnchor="middle"
-                  fontSize={minorLabelFontSize}
-                  fontFamily={FONTS.regular}
-                  fill="#ffffff"
-                  outlineColor="#000000"
-                  outlineWidth={minorLabelFontSize * 0.3}
-                />
-              </G>
-            );
-          }
-
-          const isChecked = checkedStopOrders.has(stop.order);
-          const isSelected = selectedStopOrder === stop.order;
-          const ringColor = isChecked ? "#9ca3af" : "#059669";
-          const badgeX = cx + stopRadius * 0.75;
-          const badgeY = cy - stopRadius * 0.75;
-
-          return (
-            <G key={node.id} onPress={onSelectStop ? () => onSelectStop(stop.order) : undefined}>
-              {isSelected && (
-                <Rect {...squareAttrs(cx, cy, stopRadius + 8 * scale)} fill="none" stroke="#059669" strokeWidth={4 * scale} />
-              )}
-              {icon ? (
-                <>
-                  <ClipPath id={`node-clip-${node.id}`}>
-                    <Rect {...squareAttrs(cx, cy, stopRadius)} />
-                  </ClipPath>
-                  <Rect {...squareAttrs(cx, cy, stopRadius)} fill="#ffffff" />
-                  <SvgImage
-                    href={apiUrl(icon.src)}
-                    x={cx - stopRadius}
-                    y={cy - stopRadius}
-                    width={stopRadius * 2}
-                    height={stopRadius * 2}
-                    clipPath={`url(#node-clip-${node.id})`}
-                    preserveAspectRatio="xMidYMid slice"
-                    opacity={isChecked ? 0.5 : 1}
-                  />
-                  <Rect {...squareAttrs(cx, cy, stopRadius)} fill="none" stroke={ringColor} strokeWidth={4 * scale} />
-                  <Circle cx={badgeX} cy={badgeY} r={badgeRadius} fill={ringColor} stroke="white" strokeWidth={2 * scale} />
-                  {/* react-native-svg's <Text> has no dominantBaseline; nudge y by ~0.35*fontSize to
-                      approximate vertical centering on the default alphabetic baseline. */}
-                  <SvgText x={badgeX} y={badgeY + badgeFontSize * 0.35} textAnchor="middle" fontSize={badgeFontSize} fontFamily={FONTS.bold} fill="white">
-                    {stop.order}
-                  </SvgText>
-                </>
-              ) : (
-                <>
-                  <Rect {...squareAttrs(cx, cy, stopRadius)} fill={ringColor} />
-                  <SvgText x={cx} y={cy + labelFontSize * 0.75 * 0.35} textAnchor="middle" fontSize={labelFontSize * 0.75} fontFamily={FONTS.bold} fill="white">
-                    {stop.order}
-                  </SvgText>
-                </>
-              )}
-              <MultilineSvgText
-                text={node.label}
-                x={cx}
-                y={cy + stopRadius + labelFontSize * 0.9}
-                lineHeight={labelFontSize * 1.15}
-                textAnchor="middle"
-                fontSize={labelFontSize}
-                fontWeight={700}
-                fill="#ffffff"
-                outlineColor="#000000"
-                outlineWidth={labelFontSize * 0.3}
-              />
-            </G>
-          );
-        })}
-      </Svg>
+          })}
+        </Svg>
+      </ZoomableView>
     </View>
   );
 }

@@ -378,6 +378,8 @@ export const he = {
     },
   },
   route: {
+    zoomIn: "הגדלת המפה",
+    zoomOut: "הקטנת המפה",
     progress(checked: number, total: number): string {
       if (total === 0) return "אין פריטים למסלול הזה";
       return `${checked} מתוך ${total} פריטים נאספו`;

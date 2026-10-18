@@ -3,6 +3,7 @@ import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
 import { I18nManager, StyleSheet } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { PendingInviteResume } from "@/components/PendingInviteResume";
 import { UpdateRequiredGate } from "@/components/UpdateRequiredGate";
@@ -35,22 +36,27 @@ export default function RootLayout() {
   if (!fontsLoaded) return null;
 
   return (
-    <AuthProvider>
-      {/* Android draws the app edge-to-edge and the system bars are transparent
-          (see expo-navigation-bar in app.json), so keep every screen clear of
-          them here and let the app background show through behind the bars. */}
-      <SafeAreaView style={styles.root}>
-        <UpdateRequiredGate>
-          <Stack screenOptions={{ headerShown: false }} />
-          {/* Inside the gate: a blocked old version has no navigator to open links into. */}
-          <PendingInviteResume />
-        </UpdateRequiredGate>
-      </SafeAreaView>
-    </AuthProvider>
+    <GestureHandlerRootView style={styles.gestureRoot}>
+      <AuthProvider>
+        {/* Android draws the app edge-to-edge and the system bars are transparent
+            (see expo-navigation-bar in app.json), so keep every screen clear of
+            them here and let the app background show through behind the bars. */}
+        <SafeAreaView style={styles.root}>
+          <UpdateRequiredGate>
+            <Stack screenOptions={{ headerShown: false }} />
+            {/* Inside the gate: a blocked old version has no navigator to open links into. */}
+            <PendingInviteResume />
+          </UpdateRequiredGate>
+        </SafeAreaView>
+      </AuthProvider>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
+  gestureRoot: {
+    flex: 1,
+  },
   root: {
     flex: 1,
     backgroundColor: COLORS.neutral50,
