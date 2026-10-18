@@ -18,14 +18,20 @@ interface ClassificationReviewRowProps {
   productById: Map<string, Product>;
   onChangeProduct: (itemId: string, productId: string | null) => void;
   onRemove?: (itemId: string) => void;
+  /** False where no branch has been picked yet (the home list) - availability there is
+   * only against the placeholder store the list is filed under, so it would mislead. */
+  showAvailability?: boolean;
 }
 
-function confidenceBadge(item: ShoppingListItem): { label: string; color: string; background: string } | null {
+function confidenceBadge(
+  item: ShoppingListItem,
+  showAvailability: boolean,
+): { label: string; color: string; background: string } | null {
   const c = item.classification;
   if (!c || !c.matchedProductId || c.source === "unresolved") {
     return { label: he.review.notFound, color: "#b91c1c", background: "#fef2f2" };
   }
-  if (c.availableAtStore === false) {
+  if (showAvailability && c.availableAtStore === false) {
     return { label: he.review.outOfStock, color: "#b91c1c", background: "#fef2f2" };
   }
   if (c.confidence < 0.85) {
@@ -44,8 +50,9 @@ export function ClassificationReviewRow({
   productById,
   onChangeProduct,
   onRemove,
+  showAvailability = true,
 }: ClassificationReviewRowProps) {
-  const badge = confidenceBadge(item);
+  const badge = confidenceBadge(item, showAvailability);
   const selectedProductId = item.classification?.matchedProductId ?? "";
   const suggestions = (item.classification?.alternativeMatches ?? [])
     .filter((alt) => productById.has(alt.productId))

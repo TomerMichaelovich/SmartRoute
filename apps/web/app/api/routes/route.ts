@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { resolveAvailability } from "@smartroute/core/application/classification/resolve-availability";
 import { buildRoute } from "@smartroute/core/application/routing/route-service";
 import {
   edgeRepository,
   nodeRepository,
   productListingRepository,
+  productRepository,
   routeRepository,
   shoppingListRepository,
   storeRepository,
@@ -27,7 +29,7 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.message }, { status: 400 });
   }
-  const { storeId, shoppingListId, items } = parsed.data;
+  const { storeId, shoppingListId } = parsed.data;
 
   // This also overwrites the list's items, so only someone who may edit the
   // list can route it (guest lists: anyone holding them, as everywhere else).
@@ -39,17 +41,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  const [store, nodes, edges, listings] = await Promise.all([
+  const [store, nodes, edges, listings, products] = await Promise.all([
     storeRepository.findById(storeId),
     nodeRepository.findByStore(storeId),
     edgeRepository.findByStore(storeId),
     productListingRepository.findByStore(storeId),
-    // Persist Classification Review corrections so the shopping list stays in sync -
-    // the route page reads item display names from stored shopping-list items, not
-    // from this request body, so without this the checklist would keep showing the
-    // pre-correction product name.
-    shoppingListRepository.updateItems(shoppingListId, items, new Date().toISOString()),
+    productRepository.findAllActive(),
   ]);
+
+  // Items were classified against the list's own store, which for a mobile home-screen
+  // list is just a placeholder (the branch is picked only now) - re-resolve them against
+  // the branch actually being routed, so a same-name product carried here is used.
+  const items = parsed.data.items.map((item) =>
+    item.classification
+      ? { ...item, classification: resolveAvailability(item.classification, storeId, listings, products) }
+      : item,
+  );
+  // Persist Classification Review corrections so the shopping list stays in sync -
+  // the route page reads item display names from stored shopping-list items, not
+  // from this request body, so without this the checklist would keep showing the
+  // pre-correction product name.
+  await shoppingListRepository.updateItems(shoppingListId, items, new Date().toISOString());
 
   if (!store || nodes.length === 0) {
     return NextResponse.json({ error: `Store not found: ${storeId}` }, { status: 404 });

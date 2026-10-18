@@ -13,6 +13,9 @@ import { normalizeHebrewText } from "./normalize-hebrew-text";
  * exact name/alias (e.g. generic "קפה נמס" vs. a store's "קפה נמס בריסטה" aliased
  * "קפה נמס"). If the matched one isn't carried here but another exact-name match is,
  * the result is switched to that one instead of reporting "not in stock".
+ *
+ * Safe to re-run against a different store (e.g. when a branch is picked for routing):
+ * any availability flag from a previous store is dropped first.
  */
 export function resolveAvailability(
   result: ClassificationResult,
@@ -20,18 +23,19 @@ export function resolveAvailability(
   listings: ProductListing[],
   products: Product[],
 ): ClassificationResult {
-  if (!result.matchedProductId) return result;
+  const { availableAtStore: _previousStore, ...base } = result;
+  if (!base.matchedProductId) return base;
   const carriedIds = new Set(
     listings.filter((l) => l.storeId === storeId).map((l) => l.productId),
   );
-  if (carriedIds.has(result.matchedProductId)) return result;
+  if (carriedIds.has(base.matchedProductId)) return base;
 
-  const normalized = normalizeHebrewText(result.rawText);
+  const normalized = normalizeHebrewText(base.rawText);
   const carriedExactMatch = products.find(
     (p) => carriedIds.has(p.id) && p.normalizedAliases.includes(normalized),
   );
   if (carriedExactMatch) {
-    return { ...result, matchedProductId: carriedExactMatch.id, confidence: 1, source: "dictionary" };
+    return { ...base, matchedProductId: carriedExactMatch.id, confidence: 1, source: "dictionary" };
   }
-  return { ...result, availableAtStore: false };
+  return { ...base, availableAtStore: false };
 }

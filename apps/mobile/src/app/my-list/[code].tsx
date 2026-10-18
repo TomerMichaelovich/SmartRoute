@@ -294,6 +294,7 @@ export default function MyListScreen() {
             productById={productById}
             onChangeProduct={handleChangeProduct}
             onRemove={handleRemove}
+            showAvailability={false}
           />
         ))}
       </View>
