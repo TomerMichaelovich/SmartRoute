@@ -1,20 +1,37 @@
 import type { ClassificationResult } from "@smartroute/core/domain/entities/classification-result";
+import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ProductListing } from "@smartroute/core/domain/entities/product-listing";
+import { normalizeHebrewText } from "./normalize-hebrew-text";
 
 /**
  * Classification matches against the whole shared catalog, so a matched product isn't
  * necessarily carried by the requesting store. Cheap, per-request, not cached (unlike
  * classify() itself) - checks the store's own listings and marks the result unavailable
  * there if none exists, without touching matchedProductId/confidence/source.
+ *
+ * Exception: the global (cached) match picks one product even when several share the
+ * exact name/alias (e.g. generic "קפה נמס" vs. a store's "קפה נמס בריסטה" aliased
+ * "קפה נמס"). If the matched one isn't carried here but another exact-name match is,
+ * the result is switched to that one instead of reporting "not in stock".
  */
 export function resolveAvailability(
   result: ClassificationResult,
   storeId: string,
   listings: ProductListing[],
+  products: Product[],
 ): ClassificationResult {
   if (!result.matchedProductId) return result;
-  const carried = listings.some(
-    (l) => l.productId === result.matchedProductId && l.storeId === storeId,
+  const carriedIds = new Set(
+    listings.filter((l) => l.storeId === storeId).map((l) => l.productId),
   );
-  return carried ? result : { ...result, availableAtStore: false };
+  if (carriedIds.has(result.matchedProductId)) return result;
+
+  const normalized = normalizeHebrewText(result.rawText);
+  const carriedExactMatch = products.find(
+    (p) => carriedIds.has(p.id) && p.normalizedAliases.includes(normalized),
+  );
+  if (carriedExactMatch) {
+    return { ...result, matchedProductId: carriedExactMatch.id, confidence: 1, source: "dictionary" };
+  }
+  return { ...result, availableAtStore: false };
 }

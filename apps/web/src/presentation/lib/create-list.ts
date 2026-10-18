@@ -5,6 +5,7 @@ import type { ShoppingList, ShoppingListItem } from "@smartroute/core/domain/ent
 import {
   classificationService,
   productListingRepository,
+  productRepository,
   shoppingListRepository,
 } from "@/src/infrastructure/container";
 
@@ -27,14 +28,15 @@ export async function classifyLines(
   rawTexts: string[],
   addedByUserId?: string,
 ): Promise<ShoppingListItem[]> {
-  const [rawClassifications, listings] = await Promise.all([
+  const [rawClassifications, listings, products] = await Promise.all([
     classificationService.classifyBatch(rawTexts),
     productListingRepository.findByStore(storeId),
+    productRepository.findAllActive(),
   ]);
   return rawTexts.map((rawText, i) => ({
     id: crypto.randomUUID(),
     rawText,
-    classification: resolveAvailability(rawClassifications[i], storeId, listings),
+    classification: resolveAvailability(rawClassifications[i], storeId, listings, products),
     ...(addedByUserId ? { addedByUserId } : {}),
   }));
 }
