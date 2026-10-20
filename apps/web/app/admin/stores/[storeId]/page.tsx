@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { MapNodeType } from "@smartroute/core/domain/entities/map-node";
-import { distanceBetweenNodes } from "@smartroute/core/domain/value-objects/geo-point";
 import {
   edgeRepository,
   nodeRepository,
@@ -52,7 +51,6 @@ export default async function AdminStoreDetailPage({
   const departments = nodes
     .filter((n) => n.type === "department")
     .sort((a, b) => a.label.localeCompare(b.label, "he"));
-  const nodeById = new Map(nodes.map((n) => [n.id, n]));
   const productById = new Map(products.map((p) => [p.id, p]));
   const storeInventory = listings
     .map((listing) => ({ listing, product: productById.get(listing.productId) }))
@@ -132,7 +130,9 @@ export default async function AdminStoreDetailPage({
                   <td className="p-2">{product!.canonicalName}</td>
                   <td className="p-2">{product!.department}</td>
                   <td className="whitespace-pre-line p-2">
-                    {nodeLabelById.get(listing.nodeId) ?? listing.nodeId}
+                    {nodeLabelById.get(listing.nodeId) ?? (
+                      <span className="font-semibold text-red-600">מחלקה שנמחקה - הסירו ושייכו מחדש</span>
+                    )}
                   </td>
                   <td className="p-2">
                     <form
@@ -232,81 +232,6 @@ export default async function AdminStoreDetailPage({
             className="rounded-lg bg-cyan-600 px-4 py-2 font-semibold text-white"
           >
             הוסף צומת
-          </button>
-        </form>
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <h2 className="text-base font-semibold text-neutral-900">קשתות ({edges.length})</h2>
-        <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-neutral-500">
-              <tr>
-                <th className="p-2 text-start">מ-</th>
-                <th className="p-2 text-start">אל</th>
-                <th className="p-2 text-start">מרחק</th>
-                <th className="p-2 text-start">דו-כיווני</th>
-                <th className="p-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {edges.map((edge) => {
-                const fromNode = nodeById.get(edge.fromNodeId);
-                const toNode = nodeById.get(edge.toNodeId);
-                const distance =
-                  fromNode && toNode
-                    ? Math.round(
-                        distanceBetweenNodes(fromNode.position, toNode.position, store.mapWidth, store.mapHeight),
-                      )
-                    : "—";
-                return (
-                <tr key={edge.id} className="border-t border-neutral-100">
-                  <td className="p-2">{nodeLabelById.get(edge.fromNodeId) ?? edge.fromNodeId}</td>
-                  <td className="p-2">{nodeLabelById.get(edge.toNodeId) ?? edge.toNodeId}</td>
-                  <td className="p-2">{distance}</td>
-                  <td className="p-2">{edge.bidirectional ? "כן" : "לא"}</td>
-                  <td className="p-2">
-                    <form action={deleteEdge.bind(null, storeId, edge.id)}>
-                      <button type="submit" className="text-red-600 hover:underline">
-                        מחק
-                      </button>
-                    </form>
-                  </td>
-                </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        <form
-          action={boundCreateEdge}
-          className="grid grid-cols-2 gap-2 rounded-xl border border-neutral-200 bg-white p-4 sm:grid-cols-4"
-        >
-          <select name="fromNodeId" required className="rounded-lg border border-neutral-300 p-2">
-            <option value="">מ-...</option>
-            {nodes.map((n) => (
-              <option key={n.id} value={n.id}>
-                {n.label}
-              </option>
-            ))}
-          </select>
-          <select name="toNodeId" required className="rounded-lg border border-neutral-300 p-2">
-            <option value="">אל...</option>
-            {nodes.map((n) => (
-              <option key={n.id} value={n.id}>
-                {n.label}
-              </option>
-            ))}
-          </select>
-          <label className="flex items-center gap-2 text-sm text-neutral-700">
-            <input type="checkbox" name="bidirectional" defaultChecked /> דו-כיווני
-          </label>
-          <button
-            type="submit"
-            className="rounded-lg bg-cyan-600 px-4 py-2 font-semibold text-white"
-          >
-            הוסף קשת
           </button>
         </form>
       </section>

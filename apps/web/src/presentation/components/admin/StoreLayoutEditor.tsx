@@ -60,8 +60,10 @@ const DISCONNECTED_COLOR = "#dc2626";
 function findDisconnectedNodeIds(nodes: MapNode[], edges: MapEdge[]): Set<string> {
   const entrances = nodes.filter((n) => n.type === "entrance");
   if (entrances.length === 0) return new Set();
+  const nodeIds = new Set(nodes.map((n) => n.id));
   const neighbours = new Map<string, string[]>();
-  for (const edge of edges) {
+  // Edges left pointing at a deleted node don't count - the route graph skips them too.
+  for (const edge of edges.filter((e) => nodeIds.has(e.fromNodeId) && nodeIds.has(e.toNodeId))) {
     neighbours.set(edge.fromNodeId, [...(neighbours.get(edge.fromNodeId) ?? []), edge.toNodeId]);
     neighbours.set(edge.toNodeId, [...(neighbours.get(edge.toNodeId) ?? []), edge.fromNodeId]);
   }

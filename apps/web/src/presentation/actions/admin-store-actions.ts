@@ -150,8 +150,21 @@ export async function createNode(storeId: string, formData: FormData): Promise<v
   revalidatePath(`/admin/stores/${storeId}`);
 }
 
+/**
+ * Deletes a node together with everything that points at it - its edges and the products
+ * listed there. Left behind, an orphaned listing sends routes to a stop that no longer
+ * exists on the map, and route building fails for any list containing that product.
+ */
 export async function deleteNode(storeId: string, nodeId: string): Promise<void> {
   await requireAdmin();
+  const [edges, listings] = await Promise.all([
+    edgeRepository.findByStore(storeId),
+    productListingRepository.findByStore(storeId),
+  ]);
+  await Promise.all([
+    ...edges.filter((e) => e.fromNodeId === nodeId || e.toNodeId === nodeId).map((e) => edgeRepository.delete(e.id)),
+    ...listings.filter((l) => l.nodeId === nodeId).map((l) => productListingRepository.delete(l.id)),
+  ]);
   await nodeRepository.delete(nodeId);
   revalidatePath(`/admin/stores/${storeId}`);
 }

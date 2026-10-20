@@ -149,6 +149,27 @@ describe("buildRoute", () => {
     expect(route.stops.some((s) => s.itemIds.includes("item-x"))).toBe(false);
   });
 
+  it("treats a product listed at a deleted node as unresolved instead of failing the route", () => {
+    const milk = productByName("חלב 3% תנובה 1 ליטר");
+    const listings = demoProductListings.map((l) =>
+      l.productId === milk.id ? { ...l, nodeId: "n-deleted" } : l,
+    );
+    const route = buildRoute({
+      routeId: "r-5",
+      storeId: "store-ramat-gan-1",
+      shoppingListId: "sl-5",
+      items: [itemFor("item-0", "עגבניות"), itemFor("item-1", "חלב 3% תנובה 1 ליטר")],
+      listings,
+      nodes: demoNodes,
+      edges: demoEdges,
+      mapWidth: demoStore.mapWidth,
+      mapHeight: demoStore.mapHeight,
+    });
+
+    expect(route.unresolvedItemIds).toEqual(["item-1"]);
+    expect(route.stops.map((s) => s.itemIds)).toEqual([["item-0"]]);
+  });
+
   it("returns an empty route when no items resolve to a location", () => {
     const unresolved: ShoppingListItem = {
       id: "item-x",

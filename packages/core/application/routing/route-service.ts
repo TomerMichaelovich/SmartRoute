@@ -44,7 +44,9 @@ export function buildRoute(params: BuildRouteParams): Route {
     const listing = productId
       ? listings.find((l) => l.productId === productId && l.storeId === storeId)
       : undefined;
-    if (!listing) {
+    // A listing whose node was deleted from the map can't be routed to - treat the item like
+    // one the store doesn't carry instead of failing the whole route.
+    if (!listing || !graph.nodes.has(listing.nodeId)) {
       unresolvedItemIds.push(item.id);
       continue;
     }
