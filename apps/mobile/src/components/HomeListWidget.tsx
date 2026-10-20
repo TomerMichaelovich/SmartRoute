@@ -70,12 +70,14 @@ interface MineResponse {
   lists?: ShoppingList[];
   list: ShoppingList | null;
   sharing?: Record<string, ListSharingSummary>;
+  /** The user's own join requests not yet approved. */
+  awaitingApproval?: number;
 }
 
 /** What the home screen shows of the account's lists - a change means someone edited something. */
 function mineSignature(data: MineResponse): string {
   const lists = (data.lists ?? []).map((l) => `${l.id}:${l.updatedAt}:${l.name ?? ""}`).sort();
-  return JSON.stringify([lists, data.sharing ?? {}]);
+  return JSON.stringify([lists, data.sharing ?? {}, data.awaitingApproval ?? 0]);
 }
 
 // Invite codes (household/join links) are 8 characters; list share codes are 6.
@@ -113,6 +115,7 @@ export function HomeListWidget({
   const [expanded, setExpanded] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [sharing, setSharing] = useState<Record<string, ListSharingSummary>>({});
+  const [awaitingApproval, setAwaitingApproval] = useState(0);
   const [addText, setAddText] = useState("");
   const [didYouMean, setDidYouMean] = useState<{ typed: string; suggestions: Product[] } | null>(null);
   const addInputRef = useRef<TextInput>(null);
@@ -130,6 +133,7 @@ export function HomeListWidget({
     lastMineSignature.current = mineSignature(data);
     setLists(open);
     setSharing(data.sharing ?? {});
+    setAwaitingApproval(data.awaitingApproval ?? 0);
     setSelectedCode(selected?.shareCode ?? null);
     if (selected?.shareCode && selected.shareCode !== storedCode) {
       await setMyListCode(selected.shareCode);
@@ -199,8 +203,9 @@ export function HomeListWidget({
 
   // While the home screen is open, pick up other participants' edits to
   // shared lists (and new join requests) within seconds. Only when some list
-  // is shared - nobody else can change a private list.
-  const hasShared = loggedIn && lists.some((l) => l.householdId);
+  // is shared - nobody else can change a private list - or while the user's
+  // own join request awaits approval, so the list appears once it's approved.
+  const hasShared = loggedIn && (lists.some((l) => l.householdId) || awaitingApproval > 0);
   useFocusEffect(
     useCallback(() => {
       if (!hasShared) return;

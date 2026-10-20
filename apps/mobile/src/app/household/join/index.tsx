@@ -10,6 +10,9 @@ import { FONTS } from "@/constants/fonts";
 import { useAuth } from "@/lib/auth-context";
 import { clearPendingInvite } from "@/lib/pending-invite";
 
+// Invite codes are 8 characters (list share codes are 6).
+const INVITE_CODE_LENGTH = 8;
+
 type PreviewState =
   | { status: "idle" }
   | { status: "checking" }
@@ -80,18 +83,22 @@ export default function HouseholdJoinScreen() {
     <ScrollView contentContainerStyle={styles.page}>
       <Text style={styles.title}>{he.household.join.title}</Text>
 
+      {/* No separate "continue" button: a full code is checked as soon as it's typed (or on
+          Enter), leaving "ask to join" as the screen's one action. */}
       <AuthField
         label={he.myList.codePlaceholder}
         value={code}
         onChangeText={(text) => {
           setCode(text);
           setPreview({ status: "idle" });
+          if (text.trim().length === INVITE_CODE_LENGTH) void handleCheck(text);
         }}
+        onSubmitEditing={() => void handleCheck()}
+        returnKeyType="search"
         autoCapitalize="none"
+        maxLength={INVITE_CODE_LENGTH}
       />
-      <Button onPress={() => handleCheck()} disabled={!code.trim() || preview.status === "checking"}>
-        {he.common.continue}
-      </Button>
+      {preview.status === "checking" && <Text style={styles.checkingText}>{he.common.loading}</Text>}
 
       {preview.status === "invalid" && <Text style={styles.errorText}>{he.household.join.invalid}</Text>}
 
@@ -135,6 +142,12 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontFamily: FONTS.bold,
     color: COLORS.neutral900,
+    textAlign: "center",
+  },
+  checkingText: {
+    fontSize: 14,
+    fontFamily: FONTS.regular,
+    color: COLORS.neutral500,
     textAlign: "center",
   },
   errorText: {

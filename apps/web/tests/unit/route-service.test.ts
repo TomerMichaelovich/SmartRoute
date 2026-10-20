@@ -149,6 +149,52 @@ describe("buildRoute", () => {
     expect(route.stops.some((s) => s.itemIds.includes("item-x"))).toBe(false);
   });
 
+  it("re-plans mid-shop from the last finished stop, keeping finished stops first", () => {
+    const items = [
+      itemFor("item-0", "עגבניות"),
+      itemFor("item-1", "חלב 3% תנובה 1 ליטר"),
+      itemFor("item-2", "קוקה קולה 1.5 ליטר"),
+      itemFor("item-3", "שמפו"),
+    ];
+    const base = {
+      storeId: "store-ramat-gan-1",
+      shoppingListId: "sl-6",
+      items,
+      listings: demoProductListings,
+      nodes: demoNodes,
+      edges: demoEdges,
+      mapWidth: demoStore.mapWidth,
+      mapHeight: demoStore.mapHeight,
+    };
+    // Collected produce, then shampoo (personal care) - the shopper now stands there.
+    const route = buildRoute({ ...base, routeId: "r-6", completedItemIds: ["item-0", "item-3"] });
+
+    expect(route.stops.slice(0, 2).map((s) => s.nodeId)).toEqual(["n-produce", "n-personal-care"]);
+    const next = route.stops[2];
+    expect(next.pathFromPrevious[0]).toBe("n-personal-care");
+    expect(route.stops.map((s) => s.nodeId).sort()).toEqual(
+      ["n-beverages", "n-dairy", "n-personal-care", "n-produce"].sort(),
+    );
+  });
+
+  it("leaves items the shopper chose not to buy off the route", () => {
+    const route = buildRoute({
+      routeId: "r-7",
+      storeId: "store-ramat-gan-1",
+      shoppingListId: "sl-7",
+      items: [itemFor("item-0", "עגבניות"), itemFor("item-1", "שמפו")],
+      listings: demoProductListings,
+      nodes: demoNodes,
+      edges: demoEdges,
+      mapWidth: demoStore.mapWidth,
+      mapHeight: demoStore.mapHeight,
+      skippedItemIds: ["item-1"],
+    });
+
+    expect(route.stops.map((s) => s.nodeId)).toEqual(["n-produce"]);
+    expect(route.unresolvedItemIds).toEqual(["item-1"]);
+  });
+
   it("treats a product listed at a deleted node as unresolved instead of failing the route", () => {
     const milk = productByName("חלב 3% תנובה 1 ליטר");
     const listings = demoProductListings.map((l) =>

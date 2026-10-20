@@ -21,6 +21,9 @@ const requestSchema = z.object({
   // Review corrections (edited matchedProductId) are reflected in the route
   // without needing a separate "update shopping list" endpoint.
   items: z.array(shoppingListItemSchema).min(1),
+  // Re-planning mid-shop: item ids already collected, in tick order (see buildRoute).
+  completedItemIds: z.array(z.string()).optional(),
+  skippedItemIds: z.array(z.string()).optional(),
 });
 
 export async function POST(request: Request) {
@@ -79,6 +82,8 @@ export async function POST(request: Request) {
       edges,
       mapWidth: store.mapWidth,
       mapHeight: store.mapHeight,
+      completedItemIds: parsed.data.completedItemIds,
+      skippedItemIds: parsed.data.skippedItemIds,
     });
   } catch (err) {
     // buildRoute() throws when the store's node graph has no entrance and/or checkout - a data

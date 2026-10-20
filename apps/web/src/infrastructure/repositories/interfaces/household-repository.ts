@@ -19,6 +19,8 @@ export interface IHouseholdRepository {
   approveMember(householdId: string, userId: string): Promise<void>;
   removeMember(householdId: string, userId: string): Promise<void>;
   countActiveMembers(householdId: string): Promise<number>;
+  /** Join requests this user has made that the list owner hasn't approved yet. */
+  countPendingForUser(userId: string): Promise<number>;
 
   createInvite(householdId: string, createdBy: string, code: string, expiresAt: string): Promise<HouseholdInvite>;
   findValidInviteByCode(code: string): Promise<HouseholdInvite | null>;

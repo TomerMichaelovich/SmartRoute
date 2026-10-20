@@ -19,6 +19,15 @@ export interface BuildRouteParams {
   edges: MapEdge[];
   mapWidth: number;
   mapHeight: number;
+  /**
+   * Re-planning mid-shop (e.g. a shared-list participant added items): the items already
+   * collected, in the order they were ticked. Stops whose items are all collected keep that
+   * walked order up front, and only the rest is optimized - starting from the last of them,
+   * where the shopper is now, rather than from the entrance.
+   */
+  completedItemIds?: string[];
+  /** Items the shopper decided not to buy here - left out of the route like unresolved ones. */
+  skippedItemIds?: string[];
 }
 
 /**
@@ -27,7 +36,20 @@ export interface BuildRouteParams {
  * entrance -> stops -> checkout via Dijkstra shortest paths between them.
  */
 export function buildRoute(params: BuildRouteParams): Route {
-  const { routeId, storeId, shoppingListId, items, listings, nodes, edges, mapWidth, mapHeight } = params;
+  const {
+    routeId,
+    storeId,
+    shoppingListId,
+    items,
+    listings,
+    nodes,
+    edges,
+    mapWidth,
+    mapHeight,
+    completedItemIds = [],
+    skippedItemIds = [],
+  } = params;
+  const skipped = new Set(skippedItemIds);
   const graph = buildGraph(nodes, edges, mapWidth, mapHeight);
 
   const entrance = nodes.find((n) => n.type === "entrance");
@@ -46,7 +68,7 @@ export function buildRoute(params: BuildRouteParams): Route {
       : undefined;
     // A listing whose node was deleted from the map can't be routed to - treat the item like
     // one the store doesn't carry instead of failing the whole route.
-    if (!listing || !graph.nodes.has(listing.nodeId)) {
+    if (!listing || !graph.nodes.has(listing.nodeId) || skipped.has(item.id)) {
       unresolvedItemIds.push(item.id);
       continue;
     }
@@ -84,8 +106,19 @@ export function buildRoute(params: BuildRouteParams): Route {
   const distanceBetween = (a: string, b: string): number =>
     dijkstraByNode.get(a)?.distances.get(b) ?? Infinity;
 
-  const initialOrder = nearestNeighborOrder(entrance.id, stopNodeIds, distanceBetween);
-  const optimizedOrder = twoOptImprove(entrance.id, checkout.id, initialOrder, distanceBetween);
+  // Stops already fully collected stay first, in the order they were finished; a stop with
+  // anything left on it (e.g. a new item at a visited shelf) is still ahead of the shopper.
+  const tickOrder = new Map(completedItemIds.map((id, index) => [id, index]));
+  const lastTick = (nodeId: string) => Math.max(...itemsByNode.get(nodeId)!.map((id) => tickOrder.get(id) ?? -1));
+  const doneNodeIds = stopNodeIds
+    .filter((nodeId) => itemsByNode.get(nodeId)!.every((id) => tickOrder.has(id)))
+    .sort((a, b) => lastTick(a) - lastTick(b));
+  const doneSet = new Set(doneNodeIds);
+  const remainingNodeIds = stopNodeIds.filter((nodeId) => !doneSet.has(nodeId));
+  const start = doneNodeIds.at(-1) ?? entrance.id;
+
+  const initialOrder = nearestNeighborOrder(start, remainingNodeIds, distanceBetween);
+  const optimizedOrder = [...doneNodeIds, ...twoOptImprove(start, checkout.id, initialOrder, distanceBetween)];
 
   const fullSequence = [entrance.id, ...optimizedOrder, checkout.id];
   const pathNodeIds: string[] = [];

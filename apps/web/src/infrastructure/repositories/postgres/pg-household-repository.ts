@@ -45,6 +45,14 @@ export class PgHouseholdRepository implements IHouseholdRepository {
     return row ? this.toMembership(row) : null;
   }
 
+  async countPendingForUser(userId: string): Promise<number> {
+    const rows = await db
+      .select({ id: householdMembers.id })
+      .from(householdMembers)
+      .where(and(eq(householdMembers.userId, userId), eq(householdMembers.status, "pending")));
+    return rows.length;
+  }
+
   async getMembership(
     householdId: string,
     userId: string,

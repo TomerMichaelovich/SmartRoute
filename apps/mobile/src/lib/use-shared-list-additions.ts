@@ -134,17 +134,25 @@ export function useSharedListAdditions(route: Route | null, storeId: string | nu
         classification: { rawText: item.rawText, matchedProductId: productId, confidence: 1, source: "dictionary" as const },
       };
     });
+    // Ticks carry over, sent in tick order so the new route continues from where the shopper
+    // is now rather than from the entrance. Additions they chose not to buy stay off the route.
+    const completedItemIds = [...checkedItemIds];
+    const skippedItemIds = pending.entries.filter((e) => e.chosenProductId === null).map((e) => e.itemId);
     try {
       const res = await apiFetch("/api/routes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storeId, shoppingListId: route.shoppingListId, items }),
+        body: JSON.stringify({
+          storeId,
+          shoppingListId: route.shoppingListId,
+          items,
+          completedItemIds,
+          skippedItemIds,
+        }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const newRoute: { id: string } = await res.json();
-      // Ticks carry over; additions the shopper chose not to buy count as done.
-      const skipped = pending.entries.filter((e) => e.chosenProductId === null).map((e) => e.itemId);
-      await saveCheckedItemIds(newRoute.id, new Set([...checkedItemIds, ...skipped]));
+      await saveCheckedItemIds(newRoute.id, new Set(completedItemIds));
       pending.entries.forEach((e) => handledIds.current.add(e.itemId));
       setPending(null);
       router.replace(`/route/${newRoute.id}`);

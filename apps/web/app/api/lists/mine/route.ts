@@ -15,7 +15,9 @@ interface ListSharingSummary {
  * The caller's open lists for the mobile home screen. `lists` holds every
  * active list they own plus the lists others shared with them (a user may
  * keep several - e.g. a weekly shop and a party list), and `sharing` who takes
- * part in each, keyed by list id. `list`/`store` are the most recently
+ * part in each, keyed by list id. `awaitingApproval` counts the caller's own join
+ * requests still waiting for an owner - while it's above 0 the app keeps checking, so
+ * an approved list shows up right away. `list`/`store` are the most recently
  * updated owned list, kept for app builds that predate multiple lists.
  */
 export async function GET() {
@@ -24,9 +26,10 @@ export async function GET() {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const [owned, shared] = await Promise.all([
+  const [owned, shared, awaitingApproval] = await Promise.all([
     shoppingListRepository.findAllActiveByOwner(user.id),
     shoppingListRepository.findSharedWithUser(user.id),
+    householdRepository.countPendingForUser(user.id),
   ]);
   const lists: ShoppingList[] = [...owned, ...shared];
 
@@ -49,5 +52,5 @@ export async function GET() {
 
   const list = owned[0] ?? null;
   const store = list ? await storeRepository.findById(list.storeId) : null;
-  return NextResponse.json({ list, store, lists, sharing });
+  return NextResponse.json({ list, store, lists, sharing, awaitingApproval });
 }
