@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { sameInstant } from "@smartroute/core/application/shopping-list/same-instant";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ShoppingList, ShoppingListItem } from "@smartroute/core/domain/entities/shopping-list";
@@ -52,7 +53,7 @@ export function MyListEditor({ initialList, products }: MyListEditorProps) {
         const res = await fetch(`/api/lists/${shareCode}`);
         if (!res.ok) return;
         const data: { list: ShoppingList } = await res.json();
-        if (data.list.updatedAt === updatedAtRef.current) return;
+        if (sameInstant(data.list.updatedAt, updatedAtRef.current)) return;
         if (hasUnsavedChangesRef.current) {
           setStaleServerList(data.list);
         } else {

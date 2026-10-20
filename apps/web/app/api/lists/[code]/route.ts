@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { normalizeShareCode } from "@smartroute/core/application/shopping-list/generate-share-code";
+import { sameInstant } from "@smartroute/core/application/shopping-list/same-instant";
 import type { ShoppingListItem } from "@smartroute/core/domain/entities/shopping-list";
 import { shoppingListRepository, storeRepository } from "@/src/infrastructure/container";
 import { classifyLines } from "@/src/presentation/lib/create-list";
@@ -56,7 +57,9 @@ export async function PATCH(
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  if (expectedUpdatedAt && !force && expectedUpdatedAt !== list.updatedAt) {
+  // Compared as instants: the client may hold the ISO spelling while the row reads back in
+  // Postgres's, and a string mismatch flagged the user's own previous save as someone else's.
+  if (expectedUpdatedAt && !force && !sameInstant(expectedUpdatedAt, list.updatedAt)) {
     return NextResponse.json({ error: "stale", current: list }, { status: 409 });
   }
 
@@ -67,9 +70,11 @@ export async function PATCH(
 
   let newItems: ShoppingListItem[] = [];
   if (newLines.length > 0) {
+    // Attributed, so other participants can be told who added what (e.g. mid-shop).
     const classified = await classifyLines(
       list.storeId,
       newLines.map((line) => line.rawText),
+      access.user?.id,
     );
     newItems = classified.map((item, i) => ({ ...item, quantity: newLines[i].quantity }));
   }
@@ -79,7 +84,9 @@ export async function PATCH(
   await shoppingListRepository.updateItems(list.id, items, updatedAt);
   notifyListChanged(list, access.user?.id);
 
-  return NextResponse.json({ ...list, items, updatedAt });
+  // Read back, so updatedAt is spelled exactly as every later read of the list will spell it.
+  const saved = await shoppingListRepository.findById(list.id);
+  return NextResponse.json(saved ?? { ...list, items, updatedAt });
 }
 
 /** Deletes (soft) one of the caller's own lists - it leaves their home screen for good. */

@@ -9,11 +9,13 @@ import { apiFetch, resolveAssetUrl } from "@/lib/api";
 import { Button } from "@/components/Button";
 import { Checklist, type ChecklistStopView } from "@/components/Checklist";
 import { ProgressBar } from "@/components/ProgressBar";
+import { SharedListUpdateModal } from "@/components/SharedListUpdateModal";
 import { StoreMap } from "@/components/StoreMap";
 import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
 import { clearMyListCode, getMyListCode } from "@/lib/my-list-storage";
 import { loadCheckedItemIds, saveCheckedItemIds } from "@/lib/route-storage";
+import { useSharedListAdditions } from "@/lib/use-shared-list-additions";
 import { refreshMyListWidget } from "@/widgets/refresh-my-list-widget";
 
 interface RoutePayload {
@@ -41,7 +43,9 @@ export default function RouteScreen() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [checkedItemIds, setCheckedItemIds] = useState<Set<string>>(new Set());
   const [notFoundItemIds, setNotFoundItemIds] = useState<Set<string>>(new Set());
-  const [hydrated, setHydrated] = useState(false);
+  // Which route's ticks have been loaded - saving waits for the current one, so moving to a
+  // re-planned route (shared-list additions) never writes the old route's ticks over it.
+  const [hydratedRouteId, setHydratedRouteId] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
   const [mapExpanded, setMapExpanded] = useState(false);
 
@@ -60,7 +64,7 @@ export default function RouteScreen() {
         const checked = await loadCheckedItemIds(routeId);
         if (!cancelled) {
           setCheckedItemIds(checked);
-          setHydrated(true);
+          setHydratedRouteId(routeId);
         }
       } catch (err) {
         if (!cancelled) {
@@ -75,11 +79,16 @@ export default function RouteScreen() {
   }, [routeId]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (hydratedRouteId !== routeId) return;
     saveCheckedItemIds(routeId, checkedItemIds);
-  }, [checkedItemIds, hydrated, routeId]);
+  }, [checkedItemIds, hydratedRouteId, routeId]);
 
   const stopViews = state.status === "ready" ? state.data.stopViews : [];
+  const sharedAdditions = useSharedListAdditions(
+    state.status === "ready" ? state.data.route : null,
+    state.status === "ready" ? state.data.store.id : null,
+    checkedItemIds,
+  );
 
   const totalItems = useMemo(() => stopViews.reduce((sum, s) => sum + s.items.length, 0), [stopViews]);
   const checkedCount = useMemo(
@@ -242,6 +251,15 @@ export default function RouteScreen() {
           {finishing ? he.common.loading : he.route.finishShopping}
         </Button>
       </ScrollView>
+
+      <SharedListUpdateModal
+        adderName={sharedAdditions.pending?.adderName ?? null}
+        entries={sharedAdditions.pending?.entries ?? []}
+        busy={sharedAdditions.busy}
+        onChoose={sharedAdditions.choose}
+        onConfirm={sharedAdditions.confirm}
+        onLater={sharedAdditions.later}
+      />
     </View>
   );
 }

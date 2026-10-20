@@ -14,9 +14,13 @@ import { resolveListAccess } from "@/src/presentation/auth/list-access";
 // branches carry (and that classification already matched against). The app
 // itself keeps chain-exclusive products (chainId) out of picks and suggestions
 // until a branch is chosen - see resolveBeforeBranch.
+//
+// ?storeId=X returns what branch X carries instead of the list's own store - the route
+// screen, which is shopping at a branch the list isn't filed under.
 export async function GET(request: Request, { params }: { params: Promise<{ listId: string }> }) {
   const { listId } = await params;
-  const wholeCatalog = new URL(request.url).searchParams.get("scope") === "catalog";
+  const searchParams = new URL(request.url).searchParams;
+  const wholeCatalog = searchParams.get("scope") === "catalog";
   const shoppingList = await shoppingListRepository.findById(listId);
   if (!shoppingList) {
     return NextResponse.json({ error: `Shopping list not found: ${listId}` }, { status: 404 });
@@ -31,7 +35,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ list
 
   const [allProducts, listings] = await Promise.all([
     productRepository.findAllActive(),
-    productListingRepository.findByStore(shoppingList.storeId),
+    productListingRepository.findByStore(searchParams.get("storeId") || shoppingList.storeId),
   ]);
   const carriedProductIds = new Set(listings.map((l) => l.productId));
   const products = allProducts.filter((p) => carriedProductIds.has(p.id));

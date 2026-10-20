@@ -125,6 +125,24 @@ export function ShoppingListInput({ value, onChangeText, style, onFocus, onBlur,
       style={styles.wrapper}
       onLayout={(e) => setSize({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height })}
     >
+      {/* Drawn first, so the input (opaque background) covers it, and fully transparent too:
+          Android was painting this measuring copy over the typed text. */}
+      {size.width > 0 && (
+        <Text
+          style={[
+            mirrorStyle,
+            styles.mirror,
+            { top: borderWidth + padTop, [PHYSICAL_LEFT]: contentLeft, width: Math.max(0, contentRight - contentLeft) },
+          ]}
+          onTextLayout={(e) => setLines(e.nativeEvent.lines)}
+          pointerEvents="none"
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
+          {value}
+        </Text>
+      )}
+
       <TextInput
         ref={inputRef}
         {...props}
@@ -150,22 +168,6 @@ export function ShoppingListInput({ value, onChangeText, style, onFocus, onBlur,
         }}
       />
 
-      {size.width > 0 && (
-        <Text
-          style={[
-            mirrorStyle,
-            styles.mirror,
-            { top: borderWidth + padTop, [PHYSICAL_LEFT]: contentLeft, width: Math.max(0, contentRight - contentLeft) },
-          ]}
-          onTextLayout={(e) => setLines(e.nativeEvent.lines)}
-          pointerEvents="none"
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-        >
-          {value}
-        </Text>
-      )}
-
       {checkVisible && (
         <Pressable
           onPress={handleNextLine}
@@ -184,11 +186,11 @@ export function ShoppingListInput({ value, onChangeText, style, onFocus, onBlur,
 const styles = StyleSheet.create({
   wrapper: {
     width: "100%",
-    overflow: "hidden",
   },
   mirror: {
     position: "absolute",
     color: "transparent",
+    opacity: 0,
   },
   check: {
     position: "absolute",

@@ -1,7 +1,8 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, AppState, Keyboard, type ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, AppState, Keyboard, Pressable, type ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { resolveBeforeBranch } from "@smartroute/core/application/classification/resolve-before-branch";
+import { sameInstant } from "@smartroute/core/application/shopping-list/same-instant";
 import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ShoppingList, ShoppingListItem } from "@smartroute/core/domain/entities/shopping-list";
 import type { Store } from "@smartroute/core/domain/entities/store";
@@ -127,7 +128,8 @@ export default function MyListScreen() {
       const res = await apiFetch(`/api/lists/${code}`);
       if (!res.ok) return;
       const data: { list: ShoppingList } = await res.json();
-      if (data.list.updatedAt === updatedAtRef.current) return;
+      // Instants, not strings: the same moment can come back spelled differently.
+      if (sameInstant(data.list.updatedAt, updatedAtRef.current)) return;
       // This list is the widget's (opening it selected it) - show the other
       // participant's change there too, not only on this screen.
       refreshMyListWidget();
@@ -306,12 +308,12 @@ export default function MyListScreen() {
         <View style={styles.staleBox}>
           <Text style={styles.staleText}>{he.myList.editor.staleTitle}</Text>
           <View style={styles.staleActions}>
-            <Button variant="secondary" onPress={handleLoadLatest}>
-              {he.myList.editor.loadLatest}
-            </Button>
-            <Button variant="secondary" onPress={() => handleSave(true)} disabled={isSaving}>
-              {he.myList.editor.saveAnyway}
-            </Button>
+            <Pressable onPress={handleLoadLatest} hitSlop={6} accessibilityRole="button">
+              <Text style={styles.staleActionPrimary}>{he.myList.editor.loadLatest}</Text>
+            </Pressable>
+            <Pressable onPress={() => handleSave(true)} disabled={isSaving} hitSlop={6} accessibilityRole="button">
+              <Text style={styles.staleAction}>{he.myList.editor.saveAnyway}</Text>
+            </Pressable>
           </View>
         </View>
       )}
@@ -417,19 +419,33 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   staleBox: {
-    gap: 8,
-    borderRadius: 16,
+    gap: 6,
+    borderRadius: 12,
     backgroundColor: "#fffbeb",
-    padding: 16,
+    borderWidth: 1,
+    borderColor: "#fde68a",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   staleText: {
-    fontSize: 14,
-    fontFamily: FONTS.regular,
+    fontSize: 13,
+    fontFamily: FONTS.medium,
     color: "#92400e",
   },
   staleActions: {
     flexDirection: "row",
-    gap: 8,
+    flexWrap: "wrap",
+    gap: 16,
+  },
+  staleActionPrimary: {
+    fontSize: 13,
+    fontFamily: FONTS.semiBold,
+    color: COLORS.cyan700,
+  },
+  staleAction: {
+    fontSize: 13,
+    fontFamily: FONTS.regular,
+    color: COLORS.neutral600,
   },
   itemsSection: {
     gap: 6,

@@ -433,6 +433,19 @@ export const he = {
     finishedViewHistory: "להיסטוריית הקניות",
     notFoundButton: "לא מצאתי",
     notFoundMarked: "דיווחתם שלא נמצא",
+    // A shared-list participant added items while this shopper is mid-route.
+    sharedUpdate: {
+      title: "שימו לב",
+      someone: "משתתף/ת ברשימה",
+      body(name: string, count: number): string {
+        return `${name} עדכן/ה את הרשימה והוסיף/ה ${count === 1 ? "פריט" : `${count} פריטים`}:`;
+      },
+      chooseHint: "בחרו איזה מוצר לקנות בסניף הזה",
+      notCarried: "לא נמכר בסניף הזה",
+      skip: "לא לקנות",
+      confirm: "עדכון המסלול",
+      later: "לא עכשיו",
+    },
   },
   promotions: {
     sponsored: "ממומן",
