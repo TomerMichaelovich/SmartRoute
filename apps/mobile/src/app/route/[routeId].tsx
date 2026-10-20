@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { MapNode } from "@smartroute/core/domain/entities/map-node";
 import type { Route } from "@smartroute/core/domain/entities/route";
 import type { Store } from "@smartroute/core/domain/entities/store";
@@ -41,12 +41,9 @@ export default function RouteScreen() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [checkedItemIds, setCheckedItemIds] = useState<Set<string>>(new Set());
   const [notFoundItemIds, setNotFoundItemIds] = useState<Set<string>>(new Set());
-  const [selectedStopOrder, setSelectedStopOrder] = useState<number | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [mapExpanded, setMapExpanded] = useState(false);
-  // The inline map gets a good share of the screen; the list scrolls below it.
-  const mapFrameHeight = Math.round(useWindowDimensions().height * 0.42);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,7 +57,6 @@ export default function RouteScreen() {
         const data: RoutePayload = await res.json();
         if (cancelled) return;
         setState({ status: "ready", data });
-        setSelectedStopOrder(data.stopViews[0]?.stop.order ?? null);
         const checked = await loadCheckedItemIds(routeId);
         if (!cancelled) {
           setCheckedItemIds(checked);
@@ -224,11 +220,8 @@ export default function RouteScreen() {
           pathNodeIds={displayPathNodeIds}
           stops={route.stops}
           checkedStopOrders={checkedStopOrders}
-          selectedStopOrder={selectedStopOrder}
-          onSelectStop={setSelectedStopOrder}
           expanded={mapExpanded}
           onToggleExpanded={() => setMapExpanded((v) => !v)}
-          frameHeight={mapFrameHeight}
         />
       </View>
 
@@ -237,10 +230,8 @@ export default function RouteScreen() {
           stopViews={stopViews}
           checkedItemIds={checkedItemIds}
           notFoundItemIds={notFoundItemIds}
-          selectedStopOrder={selectedStopOrder}
           onToggleItem={toggleItem}
           onNotFoundItem={toggleNotFound}
-          onSelectStop={setSelectedStopOrder}
         />
 
         {route.unresolvedItemIds.length > 0 && (

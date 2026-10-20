@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { StyleSheet, View, type LayoutChangeEvent } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
@@ -9,6 +9,12 @@ const DOUBLE_TAP_ZOOM = 2.5;
 function clamp(value: number, min: number, max: number): number {
   "worklet";
   return Math.min(Math.max(value, min), max);
+}
+
+/** The drawing's on-screen size at scale 1, letterboxed inside a w x h frame. */
+function bandSize(w: number, h: number, aspect: number): { w: number; h: number } {
+  "worklet";
+  return { w: Math.min(w, h * aspect), h: Math.min(h, w / aspect) };
 }
 
 interface ZoomableViewProps {
@@ -43,50 +49,52 @@ export function ZoomableView({ children, contentAspect, cover = false, focus }: 
   const startFocalX = useSharedValue(0);
   const startFocalY = useSharedValue(0);
 
-  // The drawing's on-screen size at scale 1 (letterboxed inside the frame).
-  function band() {
-    "worklet";
-    const w = Math.min(width.value, height.value * contentAspect);
-    const h = Math.min(height.value, width.value / contentAspect);
-    return { w, h };
-  }
+  // The frame size as last laid out, for JS-side math: a shared value written on the JS thread
+  // only updates (on the UI thread) asynchronously, so reading it straight back can be stale.
+  const frameRef = useRef({ w: 0, h: 0 });
 
   // Scaled around the frame's center, the drawing overhangs the frame by (size*s - frame)/2 on
   // each side - that's how far it may be dragged (never less than 0).
   function clampX(x: number, s: number): number {
     "worklet";
-    const max = Math.max(0, (band().w * s - width.value) / 2);
+    const bandW = bandSize(width.value, height.value, contentAspect).w;
+    const max = Math.max(0, (bandW * s - width.value) / 2);
     return clamp(x, -max, max);
   }
   function clampY(y: number, s: number): number {
     "worklet";
-    const max = Math.max(0, (band().h * s - height.value) / 2);
+    const bandH = bandSize(width.value, height.value, contentAspect).h;
+    const max = Math.max(0, (bandH * s - height.value) / 2);
     return clamp(y, -max, max);
   }
 
-  function applyLayout(w: number, h: number) {
+  function applyLayout() {
+    const { w, h } = frameRef.current;
     width.value = w;
     height.value = h;
     if (w === 0 || h === 0) return;
-    const { w: bandW, h: bandH } = band();
-    const min = cover ? Math.max(w / bandW, h / bandH) : 1;
-    baseScale.value = min;
-    scale.value = min;
-    // Center the focus point: it sits (fx*bandW - bandW/2) from the frame's center at scale 1.
+    const { w: bandW, h: bandH } = bandSize(w, h, contentAspect);
+    const base = cover ? Math.max(w / bandW, h / bandH) : 1;
+    // Center the focus point: at scale 1 it sits (f - 0.5) * band from the frame's center.
     const dx = focus ? (focus.x - 0.5) * bandW : 0;
     const dy = focus ? (focus.y - 0.5) * bandH : 0;
-    translateX.value = clampX(-dx * min, min);
-    translateY.value = clampY(-dy * min, min);
+    const maxX = Math.max(0, (bandW * base - w) / 2);
+    const maxY = Math.max(0, (bandH * base - h) / 2);
+    baseScale.value = base;
+    scale.value = base;
+    translateX.value = clamp(-dx * base, -maxX, maxX);
+    translateY.value = clamp(-dy * base, -maxY, maxY);
   }
 
   function onLayout(e: LayoutChangeEvent) {
-    applyLayout(e.nativeEvent.layout.width, e.nativeEvent.layout.height);
+    frameRef.current = { w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height };
+    applyLayout();
   }
 
   // Switching between the inline and full-screen map, or moving on to the next stop, re-fits
   // and re-centers it.
   useEffect(() => {
-    applyLayout(width.value, height.value);
+    applyLayout();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cover, focus?.x, focus?.y]);
 

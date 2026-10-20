@@ -50,6 +50,33 @@ function nodeRadius(type: MapNodeType): number {
 }
 
 const LABEL_FONT_SIZE = 18;
+const DISCONNECTED_COLOR = "#dc2626";
+
+/**
+ * Nodes a route can never reach: everything outside the part of the graph that's connected
+ * (either direction) to an entrance. These are what make route building fail, so the editor
+ * paints them red. With no entrance at all, nothing is flagged here (the page says so instead).
+ */
+function findDisconnectedNodeIds(nodes: MapNode[], edges: MapEdge[]): Set<string> {
+  const entrances = nodes.filter((n) => n.type === "entrance");
+  if (entrances.length === 0) return new Set();
+  const neighbours = new Map<string, string[]>();
+  for (const edge of edges) {
+    neighbours.set(edge.fromNodeId, [...(neighbours.get(edge.fromNodeId) ?? []), edge.toNodeId]);
+    neighbours.set(edge.toNodeId, [...(neighbours.get(edge.toNodeId) ?? []), edge.fromNodeId]);
+  }
+  const reached = new Set(entrances.map((n) => n.id));
+  const queue = [...reached];
+  while (queue.length > 0) {
+    for (const next of neighbours.get(queue.pop()!) ?? []) {
+      if (!reached.has(next)) {
+        reached.add(next);
+        queue.push(next);
+      }
+    }
+  }
+  return new Set(nodes.filter((n) => !reached.has(n.id)).map((n) => n.id));
+}
 // Rough Heebo width per Hebrew letter, to size the label's box without measuring.
 const LABEL_CHAR_WIDTH_EM = 0.6;
 
@@ -58,7 +85,21 @@ const LABEL_CHAR_WIDTH_EM = 0.6;
  * same look the app's route map uses - centered on the node's position, with a
  * type-colored border (green ring when selected).
  */
-function NodeLabel({ x, y, text, color, selected }: { x: number; y: number; text: string; color: string; selected: boolean }) {
+function NodeLabel({
+  x,
+  y,
+  text,
+  color,
+  selected,
+  disconnected,
+}: {
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+  selected: boolean;
+  disconnected: boolean;
+}) {
   const lines = (text || "?").split("\n").map((l) => l.trim()).filter(Boolean);
   const lineHeight = LABEL_FONT_SIZE * 1.2;
   const width = Math.max(...lines.map((l) => l.length)) * LABEL_FONT_SIZE * LABEL_CHAR_WIDTH_EM + LABEL_FONT_SIZE;
@@ -69,7 +110,16 @@ function NodeLabel({ x, y, text, color, selected }: { x: number; y: number; text
       {selected && (
         <rect x={x - width / 2 - 5} y={top - 5} width={width + 10} height={height + 10} rx={12} fill="none" stroke="#059669" strokeWidth={3} />
       )}
-      <rect x={x - width / 2} y={top} width={width} height={height} rx={8} fill="#ffffff" stroke={color} strokeWidth={2} />
+      <rect
+        x={x - width / 2}
+        y={top}
+        width={width}
+        height={height}
+        rx={8}
+        fill={disconnected ? "#fee2e2" : "#ffffff"}
+        stroke={disconnected ? DISCONNECTED_COLOR : color}
+        strokeWidth={disconnected ? 3 : 2}
+      />
       {lines.map((line, i) => (
         <text
           key={i}
@@ -139,6 +189,9 @@ export function StoreLayoutEditor({
   const [addPopup, setAddPopup] = useState<AddNodePopup | null>(null);
   // "Add department" armed: the next click on the map places a named node there.
   const [placingNode, setPlacingNode] = useState(false);
+  // "move": clicks only select and drags only move - nothing gets added or connected by
+  // accident. "build": a click on the map adds a waypoint, a click on a second node connects.
+  const [editMode, setEditMode] = useState<"move" | "build">("move");
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<Set<string>>(new Set());
   const marqueeStartRef = useRef<{ clientX: number; clientY: number; active: boolean } | null>(null);
@@ -209,6 +262,11 @@ export function StoreLayoutEditor({
     }
     closePopups();
     const { x, y } = screenToNormalized(e.clientX, e.clientY);
+    if (editMode === "move") {
+      setSelectedNodeIds(new Set());
+      setSelectedEdgeIds(new Set());
+      return;
+    }
     if (placingNode) {
       const { left, top } = containerOffset(e.clientX, e.clientY);
       setPlacingNode(false);
@@ -307,7 +365,12 @@ export function StoreLayoutEditor({
     // them with a (bidirectional) edge immediately - no confirmation popup. The just-connected
     // node becomes the new selection, so clicking through several nodes in a row lays out a
     // whole corridor in one pass.
-    if (selectedNodeIds.size === 1 && selectedEdgeIds.size === 0 && !selectedNodeIds.has(node.id)) {
+    if (
+      editMode === "build" &&
+      selectedNodeIds.size === 1 &&
+      selectedEdgeIds.size === 0 &&
+      !selectedNodeIds.has(node.id)
+    ) {
       connectNodes(Array.from(selectedNodeIds)[0], node.id);
       setSelectedNodeIds(new Set([node.id]));
       return;
@@ -374,6 +437,8 @@ export function StoreLayoutEditor({
   }
 
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
+  const disconnectedNodeIds = findDisconnectedNodeIds(nodes, edges);
+  const hasEntrance = nodes.some((n) => n.type === "entrance");
   const totalSelected = selectedNodeIds.size + selectedEdgeIds.size;
   const singleSelectedNode =
     totalSelected === 1 && selectedNodeIds.size === 1
@@ -455,15 +520,34 @@ export function StoreLayoutEditor({
         />
       ) : (
         <>
-          <p className="text-xs text-neutral-500">
-            לחצו על המפה להוספת נקודת ציון · כשצומת נבחר, לחיצה על המפה מוסיפה נקודה ומחברת אליה (לחיצות ברצף = מסדרון)
-            · לחצו על צומת ואז על צומת נוסף כדי לחבר ביניהם · גררו צומת כדי להזיז אותו · &quot;הוספת מחלקה&quot; ואז
-            לחיצה על המפה מוסיפה מחלקה/כניסה/קופה · גררו על שטח ריק כדי לסמן ריבוע ולבחור את כל הצמתים שבתוכו · Esc לביטול בחירה ·
-            Ctrl+לחיצה לבחירה מרובה
-          </p>
-
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center gap-3">
+              <div className="flex rounded-lg border border-neutral-300 bg-white p-0.5 text-sm font-semibold">
+                {(
+                  [
+                    ["move", "הזזה ובחירה"],
+                    ["build", "הוספה וחיבור"],
+                  ] as const
+                ).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => {
+                      closePopups();
+                      setPlacingNode(false);
+                      setSelectedNodeIds(new Set());
+                      setSelectedEdgeIds(new Set());
+                      setEditMode(mode);
+                    }}
+                    className={`rounded-md px-3 py-1 ${
+                      editMode === mode ? "bg-cyan-600 text-white" : "text-neutral-600 hover:text-neutral-900"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {editMode === "build" && (
               <button
                 type="button"
                 onClick={() => {
@@ -476,8 +560,27 @@ export function StoreLayoutEditor({
               >
                 {placingNode ? "ביטול הוספה" : "+ הוספת מחלקה"}
               </button>
+              )}
               {placingNode && <span className="text-sm text-cyan-700">לחצו על המפה במיקום המחלקה</span>}
             </div>
+
+            <p className="text-xs text-neutral-500">
+              {editMode === "move"
+                ? "גררו צומת כדי להזיז אותו · לחצו על צומת כדי לבחור אותו (מחלקה: שיוך מוצרים) · גררו על שטח ריק כדי לסמן כמה צמתים · Ctrl+לחיצה לבחירה מרובה · Esc לביטול בחירה"
+                : "לחצו על המפה להוספת נקודת ציון · כשצומת נבחר, לחיצה על המפה מוסיפה נקודה ומחברת אליה (לחיצות ברצף = מסדרון) · לחצו על צומת ואז על צומת נוסף כדי לחבר ביניהם · \"הוספת מחלקה\" ואז לחיצה על המפה מוסיפה מחלקה/כניסה/קופה · Esc לביטול בחירה"}
+            </p>
+
+            {!hasEntrance && nodes.length > 0 && (
+              <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">
+                אין כניסה במפה - בלי כניסה אי אפשר לבנות מסלול. הוסיפו צומת מסוג כניסה.
+              </p>
+            )}
+            {disconnectedNodeIds.size > 0 && (
+              <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">
+                {disconnectedNodeIds.size === 1 ? "צומת אחד לא מחובר" : `${disconnectedNodeIds.size} צמתים לא מחוברים`}{" "}
+                לכניסה, ולכן מסלול לא יכול להגיע אליהם. הם מסומנים באדום - חברו אותם במצב &quot;הוספה וחיבור&quot;.
+              </p>
+            )}
 
             <div ref={containerRef} className="relative">
               <svg
@@ -576,10 +679,22 @@ export function StoreLayoutEditor({
                           {isSelected && <circle cx={x} cy={y} r={radius + 6} fill="none" stroke="#059669" strokeWidth={3} />}
                           {/* Invisible, larger hit area so the small dot is still easy to click and drag. */}
                           <circle cx={x} cy={y} r={14} fill="transparent" />
-                          <circle cx={x} cy={y} r={radius} fill={NODE_COLORS[node.type]} />
+                          <circle
+                            cx={x}
+                            cy={y}
+                            r={disconnectedNodeIds.has(node.id) ? radius + 2 : radius}
+                            fill={disconnectedNodeIds.has(node.id) ? DISCONNECTED_COLOR : NODE_COLORS[node.type]}
+                          />
                         </>
                       ) : (
-                        <NodeLabel x={x} y={y} text={node.label} color={NODE_COLORS[node.type]} selected={isSelected} />
+                        <NodeLabel
+                          x={x}
+                          y={y}
+                          text={node.label}
+                          color={NODE_COLORS[node.type]}
+                          selected={isSelected}
+                          disconnected={disconnectedNodeIds.has(node.id)}
+                        />
                       )}
                     </g>
                   );

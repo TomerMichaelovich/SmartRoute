@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import type { RouteStop } from "@smartroute/core/domain/entities/route";
 import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
@@ -13,10 +13,8 @@ interface ChecklistProps {
   stopViews: ChecklistStopView[];
   checkedItemIds: Set<string>;
   notFoundItemIds: Set<string>;
-  selectedStopOrder: number | null;
   onToggleItem: (itemId: string) => void;
   onNotFoundItem: (itemId: string) => void;
-  onSelectStop: (order: number) => void;
 }
 
 // RN port of the web's Checklist.tsx (promotions omitted - not built on mobile yet).
@@ -24,23 +22,16 @@ export function Checklist({
   stopViews,
   checkedItemIds,
   notFoundItemIds,
-  selectedStopOrder,
   onToggleItem,
   onNotFoundItem,
-  onSelectStop,
 }: ChecklistProps) {
   return (
     <View style={styles.list}>
       {stopViews.map(({ stop, items }) => {
         const allChecked = items.length > 0 && items.every((item) => checkedItemIds.has(item.id));
-        const isSelected = selectedStopOrder === stop.order;
-
+        // Stop cards aren't selectable - only their items are tappable.
         return (
-          <Pressable
-            key={stop.nodeId}
-            onPress={() => onSelectStop(stop.order)}
-            style={[styles.card, isSelected && styles.cardSelected]}
-          >
+          <View key={stop.nodeId} style={styles.card}>
             <View style={styles.header}>
               <View style={[styles.badge, allChecked && styles.badgeChecked]}>
                 <Text style={styles.badgeText}>{stop.order}</Text>
@@ -66,7 +57,7 @@ export function Checklist({
                 />
               ))}
             </View>
-          </Pressable>
+          </View>
         );
       })}
     </View>
@@ -90,10 +81,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 1,
-  },
-  cardSelected: {
-    borderColor: "#22d3ee",
-    backgroundColor: COLORS.cyan50,
   },
   header: {
     flexDirection: "row",

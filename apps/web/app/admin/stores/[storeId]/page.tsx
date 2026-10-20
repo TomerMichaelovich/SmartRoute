@@ -48,6 +48,10 @@ export default async function AdminStoreDetailPage({
     walkableMapRepository.findMask(storeId),
   ]);
   const nodeLabelById = new Map(nodes.map((n) => [n.id, n.label]));
+  // Waypoints are just path geometry - the table only lists the store's departments.
+  const departments = nodes
+    .filter((n) => n.type === "department")
+    .sort((a, b) => a.label.localeCompare(b.label, "he"));
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
   const productById = new Map(products.map((p) => [p.id, p]));
   const storeInventory = listings
@@ -154,26 +158,20 @@ export default async function AdminStoreDetailPage({
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-base font-semibold text-neutral-900">צמתים ({nodes.length})</h2>
+        <h2 className="text-base font-semibold text-neutral-900">מחלקות ({departments.length})</h2>
         <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white">
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 text-neutral-500">
               <tr>
-                <th className="p-2 text-start">תווית</th>
-                <th className="p-2 text-start">סוג</th>
-                <th className="p-2 text-start">X</th>
-                <th className="p-2 text-start">Y</th>
+                <th className="p-2 text-start">מחלקה</th>
                 <th className="p-2 text-start">אזור</th>
                 <th className="p-2" />
               </tr>
             </thead>
             <tbody>
-              {nodes.map((node) => (
+              {departments.map((node) => (
                 <tr key={node.id} className="border-t border-neutral-100">
                   <td className="whitespace-pre-line p-2">{node.label}</td>
-                  <td className="p-2">{NODE_TYPE_LABELS[node.type]}</td>
-                  <td className="p-2">{node.position.x}</td>
-                  <td className="p-2">{node.position.y}</td>
                   <td className="p-2">{node.zone ?? "—"}</td>
                   <td className="p-2">
                     <form action={deleteNode.bind(null, storeId, node.id)}>

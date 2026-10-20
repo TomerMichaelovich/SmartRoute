@@ -121,14 +121,10 @@ interface StoreMapProps {
   pathNodeIds: string[];
   stops: RouteStop[];
   checkedStopOrders: Set<number>;
-  selectedStopOrder: number | null;
-  onSelectStop?: (order: number) => void;
-  /** Full-screen mode: the map fills its parent (flex: 1) instead of using frameHeight. */
+  /** Full-screen mode: the map fills its parent (flex: 1), zoomed in to cover it and centered
+   * on the current stop. Inline, the whole map shows at its own proportions. */
   expanded: boolean;
   onToggleExpanded: () => void;
-  /** Inline height. Taller than the map's own aspect allows, the map is zoomed in to fill it
-   * (centered on the current stop) and can be dragged to see the rest. */
-  frameHeight: number;
 }
 
 /**
@@ -145,29 +141,24 @@ export function StoreMap({
   pathNodeIds,
   stops,
   checkedStopOrders,
-  selectedStopOrder,
-  onSelectStop,
   expanded,
   onToggleExpanded,
-  frameHeight,
 }: StoreMapProps) {
   // Marker/label sizes are fractions of the map's width, so they read the same on a phone
   // whatever resolution the store's floor photo has.
   const scale = mapWidth / 1000;
-  const markerRadius = mapWidth * 0.03;
-  const markerFontSize = mapWidth * 0.034;
-  const labelFontSize = mapWidth * 0.036;
-  const minorLabelFontSize = mapWidth * 0.026;
+  const markerRadius = mapWidth * 0.022;
+  const markerFontSize = mapWidth * 0.025;
+  const labelFontSize = mapWidth * 0.025;
+  const minorLabelFontSize = mapWidth * 0.019;
 
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
   const stopByNodeId = new Map(stops.map((s) => [s.nodeId, s]));
 
-  // Only where to go now and right after that (plus a stop picked from the
-  // list) - every stop at once crowds the map.
+  // Only where to go now and right after that - every stop at once crowds the map.
   const upcoming = [...stops].sort((a, b) => a.order - b.order).filter((s) => !checkedStopOrders.has(s.order));
   const currentStop = upcoming[0];
   const visibleStopOrders = new Set(upcoming.slice(0, 2).map((s) => s.order));
-  if (selectedStopOrder !== null && !checkedStopOrders.has(selectedStopOrder)) visibleStopOrders.add(selectedStopOrder);
 
   const currentNode = currentStop ? nodeById.get(currentStop.nodeId) : undefined;
 
@@ -179,8 +170,8 @@ export function StoreMap({
   const footsteps = computeFootstepPlacements(routePathPoints, 40 * scale, 10 * scale);
 
   return (
-    <View style={[styles.frame, expanded ? styles.frameExpanded : { height: frameHeight }]}>
-      <ZoomableView contentAspect={mapWidth / mapHeight} cover focus={currentNode?.position}>
+    <View style={[styles.frame, expanded ? styles.frameExpanded : { aspectRatio: mapWidth / mapHeight }]}>
+      <ZoomableView contentAspect={mapWidth / mapHeight} cover={expanded} focus={currentNode?.position}>
         <Svg width="100%" height="100%" viewBox={`0 0 ${mapWidth} ${mapHeight}`}>
           {mapImageUrl && (
             <SvgImage href={mapImageUrl} x={0} y={0} width={mapWidth} height={mapHeight} preserveAspectRatio="xMidYMid slice" />
@@ -215,14 +206,10 @@ export function StoreMap({
 
             const isCurrent = stop.order === currentStop?.order;
             const isChecked = checkedStopOrders.has(stop.order);
-            const isSelected = selectedStopOrder === stop.order;
             const accent = isChecked ? "#9ca3af" : COLORS.brandDark;
 
             return (
-              <G key={node.id} onPress={onSelectStop ? () => onSelectStop(stop.order) : undefined}>
-                {isSelected && (
-                  <Circle cx={cx} cy={cy} r={markerRadius + 7 * scale} fill="none" stroke={accent} strokeWidth={3 * scale} strokeOpacity={0.6} />
-                )}
+              <G key={node.id}>
                 <Circle
                   cx={cx}
                   cy={cy}
