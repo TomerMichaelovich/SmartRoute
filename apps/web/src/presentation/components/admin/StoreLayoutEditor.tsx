@@ -9,6 +9,7 @@ import { distanceBetweenNodes } from "@smartroute/core/domain/value-objects/geo-
 import { NODE_TYPE_LABELS } from "@/src/presentation/node-type-labels";
 import type { StoredWalkableMask } from "@smartroute/core/map/walkable/mask";
 import type { WalkableMapSaveResult } from "@/src/presentation/actions/admin-store-actions";
+import { ProductAutocomplete } from "./ProductAutocomplete";
 import { WalkableAreaEditor } from "./WalkableAreaEditor";
 
 interface StoreLayoutEditorProps {
@@ -468,10 +469,6 @@ export function StoreLayoutEditor({
         .filter((p) => !listedProductIdsInStore.has(p.id))
         .sort((a, b) => a.canonicalName.localeCompare(b.canonicalName, "he"))
     : [];
-  // The catalog has hundreds of products, so the picker groups them by department.
-  const availableProductsByDepartment = Array.from(
-    Map.groupBy(availableProducts, (p) => p.department),
-  ).sort(([a], [b]) => a.localeCompare(b, "he"));
 
   return (
     <section className="flex flex-col gap-3">
@@ -835,25 +832,15 @@ export function StoreLayoutEditor({
               </div>
 
               {availableProducts.length > 0 && (
-                <form action={addProductToNode.bind(null, storeId, singleSelectedNode.id)} className="flex gap-2">
-                  <select name="productId" required className="flex-1 rounded-lg border border-neutral-300 p-1.5 text-sm">
-                    {availableProductsByDepartment.map(([department, departmentProducts]) => (
-                      <optgroup key={department} label={department}>
-                        {departmentProducts.map((product) => (
-                          <option key={product.id} value={product.id}>
-                            {product.canonicalName}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
-                  <button
-                    type="submit"
-                    className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700"
-                  >
-                    הוסף
-                  </button>
-                </form>
+                <ProductAutocomplete
+                  key={singleSelectedNode.id}
+                  products={availableProducts}
+                  onAdd={async (productId) => {
+                    const formData = new FormData();
+                    formData.set("productId", productId);
+                    await addProductToNode(storeId, singleSelectedNode.id, formData);
+                  }}
+                />
               )}
 
               <form action={deleteNode.bind(null, storeId, singleSelectedNode.id)}>
