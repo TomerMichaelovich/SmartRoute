@@ -15,7 +15,7 @@ import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
 import { clearMyListCode, getMyListCode } from "@/lib/my-list-storage";
 import { loadCheckedItemIds, saveCheckedItemIds } from "@/lib/route-storage";
-import { useSharedListAdditions } from "@/lib/use-shared-list-additions";
+import { useSharedListUpdates } from "@/lib/use-shared-list-updates";
 import { refreshMyListWidget } from "@/widgets/refresh-my-list-widget";
 
 interface RoutePayload {
@@ -84,7 +84,7 @@ export default function RouteScreen() {
   }, [checkedItemIds, hydratedRouteId, routeId]);
 
   const stopViews = state.status === "ready" ? state.data.stopViews : [];
-  const sharedAdditions = useSharedListAdditions(
+  const sharedUpdates = useSharedListUpdates(
     state.status === "ready" ? state.data.route : null,
     state.status === "ready" ? state.data.store.id : null,
     checkedItemIds,
@@ -253,12 +253,15 @@ export default function RouteScreen() {
       </ScrollView>
 
       <SharedListUpdateModal
-        adderName={sharedAdditions.pending?.adderName ?? null}
-        entries={sharedAdditions.pending?.entries ?? []}
-        busy={sharedAdditions.busy}
-        onChoose={sharedAdditions.choose}
-        onConfirm={sharedAdditions.confirm}
-        onLater={sharedAdditions.later}
+        visible={sharedUpdates.pending !== null}
+        adderName={sharedUpdates.pending?.adderName ?? ""}
+        removerName={sharedUpdates.pending?.removerName ?? ""}
+        additions={sharedUpdates.pending?.additions ?? []}
+        removals={sharedUpdates.pending?.removals ?? []}
+        busy={sharedUpdates.busy}
+        onChoose={sharedUpdates.choose}
+        onConfirm={sharedUpdates.confirm}
+        onLater={sharedUpdates.later}
       />
     </View>
   );

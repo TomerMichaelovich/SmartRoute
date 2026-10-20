@@ -28,6 +28,12 @@ export interface BuildRouteParams {
   completedItemIds?: string[];
   /** Items the shopper decided not to buy here - left out of the route like unresolved ones. */
   skippedItemIds?: string[];
+  /**
+   * Re-planning mid-shop: the stop the shopper is currently walking to. It stays the next
+   * stop, and everything else still to do is optimized from there - so an item added at a
+   * department already passed is fitted in after it, never as a sudden U-turn.
+   */
+  nextStopNodeId?: string;
 }
 
 /**
@@ -48,6 +54,7 @@ export function buildRoute(params: BuildRouteParams): Route {
     mapHeight,
     completedItemIds = [],
     skippedItemIds = [],
+    nextStopNodeId,
   } = params;
   const skipped = new Set(skippedItemIds);
   const graph = buildGraph(nodes, edges, mapWidth, mapHeight);
@@ -114,11 +121,18 @@ export function buildRoute(params: BuildRouteParams): Route {
     .filter((nodeId) => itemsByNode.get(nodeId)!.every((id) => tickOrder.has(id)))
     .sort((a, b) => lastTick(a) - lastTick(b));
   const doneSet = new Set(doneNodeIds);
-  const remainingNodeIds = stopNodeIds.filter((nodeId) => !doneSet.has(nodeId));
-  const start = doneNodeIds.at(-1) ?? entrance.id;
+  // The stop being walked to (if still to do) is kept next and the rest is planned from it;
+  // otherwise planning starts where the shopper last finished.
+  const heading = nextStopNodeId && !doneSet.has(nextStopNodeId) && itemsByNode.has(nextStopNodeId) ? nextStopNodeId : null;
+  const remainingNodeIds = stopNodeIds.filter((nodeId) => !doneSet.has(nodeId) && nodeId !== heading);
+  const start = heading ?? doneNodeIds.at(-1) ?? entrance.id;
 
   const initialOrder = nearestNeighborOrder(start, remainingNodeIds, distanceBetween);
-  const optimizedOrder = [...doneNodeIds, ...twoOptImprove(start, checkout.id, initialOrder, distanceBetween)];
+  const optimizedOrder = [
+    ...doneNodeIds,
+    ...(heading ? [heading] : []),
+    ...twoOptImprove(start, checkout.id, initialOrder, distanceBetween),
+  ];
 
   const fullSequence = [entrance.id, ...optimizedOrder, checkout.id];
   const pathNodeIds: string[] = [];

@@ -14,10 +14,20 @@ export interface SharedAdditionEntry {
   chosenProductId: string | null;
 }
 
+export interface SharedRemovalEntry {
+  itemId: string;
+  name: string;
+  /** Already ticked off - it may be in the cart and need putting back. */
+  collected: boolean;
+}
+
 interface SharedListUpdateModalProps {
-  /** Who added the items (a name, or a generic "a participant"); null hides the dialog. */
-  adderName: string | null;
-  entries: SharedAdditionEntry[];
+  visible: boolean;
+  /** Who added / removed the items (a name, or a generic "a participant"). */
+  adderName: string;
+  removerName: string;
+  additions: SharedAdditionEntry[];
+  removals: SharedRemovalEntry[];
   busy: boolean;
   onChoose: (itemId: string, productId: string | null) => void;
   onConfirm: () => void;
@@ -25,63 +35,91 @@ interface SharedListUpdateModalProps {
 }
 
 /**
- * Mid-shop notice that another participant added items to the shared list. Each item is
- * matched to what this branch actually carries - an ambiguous one ("נס") offers the branch's
- * options to pick from - and confirming re-plans the route with them.
+ * Mid-shop notice that another participant changed the shared list. Added items are matched
+ * to what this branch actually carries - an ambiguous one ("נס") offers the branch's options
+ * to pick from - removed ones are listed, and confirming re-plans the route accordingly.
  */
-export function SharedListUpdateModal({ adderName, entries, busy, onChoose, onConfirm, onLater }: SharedListUpdateModalProps) {
+export function SharedListUpdateModal({
+  visible,
+  adderName,
+  removerName,
+  additions,
+  removals,
+  busy,
+  onChoose,
+  onConfirm,
+  onLater,
+}: SharedListUpdateModalProps) {
   const t = he.route.sharedUpdate;
-  const anyChosen = entries.some((e) => e.chosenProductId !== null);
+  const changesRoute = removals.length > 0 || additions.some((e) => e.chosenProductId !== null);
   return (
-    <Modal visible={adderName !== null} transparent animationType="fade" onRequestClose={onLater}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onLater}>
       <View style={styles.backdrop}>
         <View style={styles.dialog}>
           <Text style={styles.title}>🔔 {t.title}</Text>
-          {adderName !== null && <Text style={styles.body}>{t.body(adderName, entries.length)}</Text>}
 
-          <ScrollView style={styles.entries} contentContainerStyle={styles.entriesContent}>
-            {entries.map((entry) => (
-              <View key={entry.itemId} style={styles.entry}>
-                <Text style={styles.entryName}>{entry.rawText}</Text>
-                {entry.options.length === 0 ? (
-                  <Text style={styles.notCarried}>{t.notCarried}</Text>
-                ) : (
-                  <>
-                    {entry.options.length > 1 && <Text style={styles.hint}>{t.chooseHint}</Text>}
-                    <View style={styles.chips}>
-                      {entry.options.map((product) => {
-                        const selected = entry.chosenProductId === product.id;
-                        return (
+          <ScrollView style={styles.sections} contentContainerStyle={styles.sectionsContent}>
+            {additions.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.body}>{t.body(adderName, additions.length)}</Text>
+                {additions.map((entry) => (
+                  <View key={entry.itemId} style={styles.entry}>
+                    <Text style={styles.entryName}>{entry.rawText}</Text>
+                    {entry.options.length === 0 ? (
+                      <Text style={styles.warning}>{t.notCarried}</Text>
+                    ) : (
+                      <>
+                        {entry.options.length > 1 && <Text style={styles.hint}>{t.chooseHint}</Text>}
+                        <View style={styles.chips}>
+                          {entry.options.map((product) => {
+                            const selected = entry.chosenProductId === product.id;
+                            return (
+                              <Pressable
+                                key={product.id}
+                                onPress={() => onChoose(entry.itemId, product.id)}
+                                style={[styles.chip, selected && styles.chipSelected]}
+                                accessibilityRole="button"
+                                accessibilityState={{ selected }}
+                              >
+                                <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                                  {product.canonicalName}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
                           <Pressable
-                            key={product.id}
-                            onPress={() => onChoose(entry.itemId, product.id)}
-                            style={[styles.chip, selected && styles.chipSelected]}
+                            onPress={() => onChoose(entry.itemId, null)}
+                            style={[styles.chip, entry.chosenProductId === null && styles.chipSkipSelected]}
                             accessibilityRole="button"
-                            accessibilityState={{ selected }}
                           >
-                            <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{product.canonicalName}</Text>
+                            <Text style={styles.chipSkipText}>{t.skip}</Text>
                           </Pressable>
-                        );
-                      })}
-                      <Pressable
-                        onPress={() => onChoose(entry.itemId, null)}
-                        style={[styles.chip, entry.chosenProductId === null && styles.chipSkipSelected]}
-                        accessibilityRole="button"
-                      >
-                        <Text style={styles.chipSkipText}>{t.skip}</Text>
-                      </Pressable>
-                    </View>
-                  </>
-                )}
+                        </View>
+                      </>
+                    )}
+                  </View>
+                ))}
               </View>
-            ))}
+            )}
+
+            {removals.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.body}>{t.removedBody(removerName, removals.length)}</Text>
+                {removals.map((entry) => (
+                  <View key={entry.itemId} style={[styles.entry, styles.removedEntry]}>
+                    <Text style={[styles.entryName, styles.removedName]}>{entry.name}</Text>
+                    {entry.collected && <Text style={styles.warning}>{t.alreadyCollected}</Text>}
+                  </View>
+                ))}
+              </View>
+            )}
           </ScrollView>
 
           <View style={styles.actions}>
-            <Button onPress={anyChosen ? onConfirm : onLater} disabled={busy} fullWidth>
-              {busy ? he.common.loading : anyChosen ? t.confirm : t.later}
+            <Button onPress={changesRoute ? onConfirm : onLater} disabled={busy} fullWidth>
+              {busy ? he.common.loading : changesRoute ? t.confirm : t.later}
             </Button>
-            {anyChosen && (
+            {changesRoute && (
               <Pressable onPress={onLater} disabled={busy} hitSlop={8} accessibilityRole="button">
                 <Text style={styles.later}>{t.later}</Text>
               </Pressable>
@@ -119,16 +157,19 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.bold,
     color: COLORS.neutral900,
   },
+  sections: {
+    flexGrow: 0,
+  },
+  sectionsContent: {
+    gap: 16,
+  },
+  section: {
+    gap: 8,
+  },
   body: {
     fontSize: 15,
     fontFamily: FONTS.regular,
     color: COLORS.neutral700,
-  },
-  entries: {
-    flexGrow: 0,
-  },
-  entriesContent: {
-    gap: 12,
   },
   entry: {
     gap: 6,
@@ -136,17 +177,24 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.neutral50,
     padding: 12,
   },
+  removedEntry: {
+    backgroundColor: "#fef2f2",
+  },
   entryName: {
     fontSize: 16,
     fontFamily: FONTS.semiBold,
     color: COLORS.neutral900,
+  },
+  removedName: {
+    color: "#991b1b",
+    textDecorationLine: "line-through",
   },
   hint: {
     fontSize: 12,
     fontFamily: FONTS.regular,
     color: COLORS.neutral500,
   },
-  notCarried: {
+  warning: {
     fontSize: 13,
     fontFamily: FONTS.regular,
     color: "#b45309",

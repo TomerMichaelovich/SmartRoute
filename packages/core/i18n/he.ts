@@ -440,6 +440,10 @@ export const he = {
       body(name: string, count: number): string {
         return `${name} עדכן/ה את הרשימה והוסיף/ה ${count === 1 ? "פריט" : `${count} פריטים`}:`;
       },
+      removedBody(name: string, count: number): string {
+        return `${name} הסיר/ה מהרשימה ${count === 1 ? "פריט" : `${count} פריטים`}:`;
+      },
+      alreadyCollected: "כבר אספתם - אפשר להחזיר למדף",
       chooseHint: "בחרו איזה מוצר לקנות בסניף הזה",
       notCarried: "לא נמכר בסניף הזה",
       skip: "לא לקנות",

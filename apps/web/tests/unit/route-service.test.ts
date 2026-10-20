@@ -177,6 +177,35 @@ describe("buildRoute", () => {
     );
   });
 
+  it("keeps heading to the current stop when an item is added at a department already passed", () => {
+    // Walked produce (1) -> dairy (2) -> beverages (3), now on the way to personal care (4);
+    // meanwhile someone adds cottage cheese, which is at dairy.
+    const route = buildRoute({
+      routeId: "r-8",
+      storeId: "store-ramat-gan-1",
+      shoppingListId: "sl-8",
+      items: [
+        itemFor("item-0", "עגבניות"),
+        itemFor("item-1", "חלב 3% תנובה 1 ליטר"),
+        itemFor("item-2", "קוקה קולה 1.5 ליטר"),
+        itemFor("item-3", "שמפו"),
+        itemFor("item-new", "קוטג'"),
+      ],
+      listings: demoProductListings,
+      nodes: demoNodes,
+      edges: demoEdges,
+      mapWidth: demoStore.mapWidth,
+      mapHeight: demoStore.mapHeight,
+      completedItemIds: ["item-0", "item-1", "item-2"],
+      nextStopNodeId: "n-personal-care",
+    });
+
+    // Personal care stays next; dairy is fitted in after it, planned from there.
+    expect(route.stops.map((s) => s.nodeId)).toEqual(["n-produce", "n-beverages", "n-personal-care", "n-dairy"]);
+    expect(route.stops[2].pathFromPrevious[0]).toBe("n-beverages");
+    expect(route.stops[3].pathFromPrevious[0]).toBe("n-personal-care");
+  });
+
   it("leaves items the shopper chose not to buy off the route", () => {
     const route = buildRoute({
       routeId: "r-7",

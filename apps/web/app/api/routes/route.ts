@@ -24,6 +24,7 @@ const requestSchema = z.object({
   // Re-planning mid-shop: item ids already collected, in tick order (see buildRoute).
   completedItemIds: z.array(z.string()).optional(),
   skippedItemIds: z.array(z.string()).optional(),
+  nextStopNodeId: z.string().optional(),
 });
 
 export async function POST(request: Request) {
@@ -84,6 +85,7 @@ export async function POST(request: Request) {
       mapHeight: store.mapHeight,
       completedItemIds: parsed.data.completedItemIds,
       skippedItemIds: parsed.data.skippedItemIds,
+      nextStopNodeId: parsed.data.nextStopNodeId,
     });
   } catch (err) {
     // buildRoute() throws when the store's node graph has no entrance and/or checkout - a data
