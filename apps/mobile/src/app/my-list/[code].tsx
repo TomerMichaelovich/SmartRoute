@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, AppState, ScrollView, Share, StyleSheet, Text, TextInput, View } from "react-native";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, AppState, Keyboard, type ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { resolveBeforeBranch } from "@smartroute/core/application/classification/resolve-before-branch";
 import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ShoppingList, ShoppingListItem } from "@smartroute/core/domain/entities/shopping-list";
 import type { Store } from "@smartroute/core/domain/entities/store";
@@ -8,8 +9,10 @@ import { he } from "@smartroute/core/i18n/he";
 import { apiFetch } from "@/lib/api";
 import { siteUrl } from "@/lib/app-links";
 import { Button } from "@/components/Button";
+import { KeyboardAwareScrollView } from "@/components/KeyboardAwareScrollView";
+import { ShoppingListInput } from "@/components/ShoppingListInput";
 import { ClassificationReviewRow } from "@/components/ClassificationReviewRow";
-import { ListSharingPanel } from "@/components/ListSharingPanel";
+import { ListParticipantsBar } from "@/components/ListParticipantsBar";
 import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
 import { useAuth } from "@/lib/auth-context";
@@ -47,6 +50,8 @@ export default function MyListScreen() {
   const [isShared, setIsShared] = useState(false);
   const { status: authStatus } = useAuth();
 
+  const scrollRef = useRef<ScrollView>(null);
+  const addInputFocusedRef = useRef(false);
   const updatedAtRef = useRef(updatedAt);
   const hasUnsavedChangesRef = useRef(hasUnsavedChanges);
   useEffect(() => {
@@ -72,7 +77,9 @@ export default function MyListScreen() {
       setItems(data.list.items);
       setUpdatedAt(data.list.updatedAt);
 
-      const productsRes = await apiFetch(`/api/shopping-lists/${data.list.id}`).catch(() => null);
+      // No branch is picked yet on this screen, so offer the whole catalog
+      // rather than only what the list's placeholder store carries.
+      const productsRes = await apiFetch(`/api/shopping-lists/${data.list.id}?scope=catalog`).catch(() => null);
       if (!cancelled && productsRes?.ok) {
         const productsData: { products: Product[] } = await productsRes.json();
         setProducts(productsData.products);
@@ -84,6 +91,15 @@ export default function MyListScreen() {
       cancelled = true;
     };
   }, [code]);
+
+  // The add-items input sits below the whole list, so bring it (and the
+  // buttons under it) above the keyboard when it opens.
+  useEffect(() => {
+    const sub = Keyboard.addListener("keyboardDidShow", () => {
+      if (addInputFocusedRef.current) scrollRef.current?.scrollToEnd({ animated: true });
+    });
+    return () => sub.remove();
+  }, []);
 
   // A shared list is edited by several people - poll for their changes
   // (refetchIfStale never overwrites unsaved local edits; it flags them).
@@ -126,9 +142,12 @@ export default function MyListScreen() {
     }
   }
 
+  // The picker offers generic products only: a chain's own products wait until
+  // a branch of that chain is picked (see resolveBeforeBranch).
   const productsByDepartment = useMemo(() => {
     const map = new Map<string, Product[]>();
     for (const p of products) {
+      if (p.chainId) continue;
       const list = map.get(p.department) ?? [];
       list.push(p);
       map.set(p.department, list);
@@ -139,6 +158,13 @@ export default function MyListScreen() {
     }));
   }, [products]);
   const productById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+  const displayItems = useMemo(
+    () =>
+      items.map((item) =>
+        item.classification ? { ...item, classification: resolveBeforeBranch(item.classification, products) } : item,
+      ),
+    [items, products],
+  );
 
   function handleChangeProduct(itemId: string, productId: string | null) {
     setHasUnsavedChanges(true);
@@ -255,14 +281,14 @@ export default function MyListScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.page}>
+    <KeyboardAwareScrollView ref={scrollRef} contentContainerStyle={styles.page}>
       <View style={styles.header}>
         <Text style={styles.title}>{listName ?? he.myList.editor.title}</Text>
         <Text style={styles.subtitle}>{he.myList.editor.subtitle}</Text>
       </View>
 
       {authStatus === "authenticated" ? (
-        <ListSharingPanel code={code} />
+        <ListParticipantsBar code={code} />
       ) : (
         <View style={styles.shareBlock}>
           <Button variant="secondary" onPress={handleShare} fullWidth>
@@ -285,29 +311,43 @@ export default function MyListScreen() {
         </View>
       )}
 
-      <View style={styles.rows}>
-        {items.map((item) => (
-          <ClassificationReviewRow
-            key={item.id}
-            item={item}
-            productsByDepartment={productsByDepartment}
-            productById={productById}
-            onChangeProduct={handleChangeProduct}
-            onRemove={handleRemove}
-            showAvailability={false}
-          />
-        ))}
-      </View>
+      {items.length > 0 && (
+        <View style={styles.itemsSection}>
+          <Text style={styles.sectionLabel}>{he.list.itemCount(items.length)}</Text>
+          <View style={styles.rows}>
+            {displayItems.map((item, index) => (
+              <Fragment key={item.id}>
+                {index > 0 && <View style={styles.divider} />}
+                <ClassificationReviewRow
+                  item={item}
+                  productsByDepartment={productsByDepartment}
+                  productById={productById}
+                  onChangeProduct={handleChangeProduct}
+                  onRemove={handleRemove}
+                  showAvailability={false}
+                  compact
+                />
+              </Fragment>
+            ))}
+          </View>
+        </View>
+      )}
 
-      <TextInput
+      <ShoppingListInput
         value={newLinesText}
         onChangeText={(text) => {
           setNewLinesText(text);
           setHasUnsavedChanges(true);
         }}
+        onFocus={() => {
+          addInputFocusedRef.current = true;
+          if (Keyboard.isVisible()) scrollRef.current?.scrollToEnd({ animated: true });
+        }}
+        onBlur={() => {
+          addInputFocusedRef.current = false;
+        }}
         placeholder={he.myList.editor.addItemsPlaceholder}
         placeholderTextColor={COLORS.neutral500}
-        multiline
         numberOfLines={3}
         style={styles.textarea}
       />
@@ -330,7 +370,7 @@ export default function MyListScreen() {
       >
         {he.review.continueToRoute}
       </Button>
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }
 
@@ -347,21 +387,22 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 448,
     alignSelf: "center",
-    gap: 16,
-    paddingHorizontal: 20,
-    paddingVertical: 32,
+    gap: 14,
+    paddingHorizontal: 16,
+    paddingTop: 20,
+    paddingBottom: 32,
   },
   header: {
     gap: 4,
   },
   title: {
-    fontSize: 24,
+    fontSize: 22,
     fontFamily: FONTS.bold,
     color: COLORS.neutral900,
     textAlign: "center",
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: FONTS.regular,
     color: COLORS.neutral600,
     textAlign: "center",
@@ -385,8 +426,27 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
   },
+  itemsSection: {
+    gap: 6,
+  },
+  sectionLabel: {
+    fontSize: 13,
+    fontFamily: FONTS.medium,
+    color: COLORS.neutral500,
+    paddingHorizontal: 4,
+  },
   rows: {
-    gap: 12,
+    borderRadius: 16,
+    backgroundColor: COLORS.white,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: COLORS.neutral200,
+    marginHorizontal: 14,
   },
   textarea: {
     width: "100%",

@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/auth-context";
 
 /**
  * One list's sharing panel, opened from the home card's participants button
- * (the list screen shows the same panel inline).
+ * and from the list screen's participants bar.
  */
 export default function ListSharingScreen() {
   const { code } = useLocalSearchParams<{ code: string }>();

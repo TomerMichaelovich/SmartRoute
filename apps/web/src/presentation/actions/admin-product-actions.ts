@@ -14,6 +14,11 @@ function parseAliases(raw: string): string[] {
     .filter(Boolean);
 }
 
+// "" (the form's "generic" option) => null: a product every chain may carry.
+function parseChainId(formData: FormData): string | null {
+  return String(formData.get("chainId") ?? "").trim() || null;
+}
+
 function computeNormalizedAliases(canonicalName: string, aliases: string[]): string[] {
   return Array.from(new Set([canonicalName, ...aliases].map(normalizeHebrewText)));
 }
@@ -39,6 +44,7 @@ export async function createProduct(formData: FormData): Promise<void> {
     department,
     imageUrl: saved?.url,
     isActive: true,
+    chainId: parseChainId(formData),
   });
 
   revalidatePath("/admin/products");
@@ -64,6 +70,7 @@ export async function updateProduct(productId: string, formData: FormData): Prom
     aliases,
     normalizedAliases: computeNormalizedAliases(canonicalName, aliases),
     isActive,
+    chainId: parseChainId(formData),
     // Only touch imageUrl when a new file was actually uploaded - update()
     // merges partials, so omitting the key here (rather than setting it to
     // undefined) leaves an existing image alone when the admin just edits

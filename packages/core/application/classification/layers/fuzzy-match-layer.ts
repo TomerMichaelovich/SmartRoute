@@ -2,9 +2,9 @@ import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ClassificationLayer } from "../classification-layer.interface";
 import { diceCoefficient } from "../dice-coefficient";
 
-const HIGH_CONFIDENCE_THRESHOLD = 0.85;
-const MIN_THRESHOLD = 0.6;
-const MAX_ALTERNATIVES = 3;
+export const HIGH_CONFIDENCE_THRESHOLD = 0.85;
+export const MIN_THRESHOLD = 0.6;
+export const MAX_ALTERNATIVES = 3;
 
 /**
  * Scores every product against the normalized input regardless of threshold, sorted best

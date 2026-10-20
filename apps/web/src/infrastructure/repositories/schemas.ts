@@ -100,6 +100,7 @@ export const productSchema = z.object({
   department: z.string(),
   imageUrl: z.string().optional(),
   isActive: z.boolean(),
+  chainId: z.string().nullable().optional(),
 });
 
 export const productListingSchema = z.object({

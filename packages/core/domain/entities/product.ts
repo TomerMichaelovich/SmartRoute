@@ -21,4 +21,10 @@ export interface Product {
   department: string;
   imageUrl?: string;
   isActive: boolean;
+  /**
+   * The chain this product is exclusive to (a Store.chainId - e.g. a private
+   * label sold only there). Unset = a generic product any chain may carry.
+   * Before a branch is picked, only generic products are offered.
+   */
+  chainId?: string | null;
 }

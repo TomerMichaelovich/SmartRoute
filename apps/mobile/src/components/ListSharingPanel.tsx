@@ -31,7 +31,7 @@ interface ListSharingPanelProps {
  * One list's participants and sharing controls: who takes part, and - for
  * the list's owner - inviting people (the list's one invite link, joining
  * waits for approval) and approving/removing them. A participant can leave
- * the list from here. Shown on the list screen and on the sharing screen.
+ * the list from here. Shown on the sharing screen.
  */
 export function ListSharingPanel({ code, showIntro = false }: ListSharingPanelProps) {
   const router = useRouter();

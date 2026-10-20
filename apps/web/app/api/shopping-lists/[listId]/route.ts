@@ -7,14 +7,26 @@ import { resolveListAccess } from "@/src/presentation/auth/list-access";
 // shopping list plus only the products this store actually carries (matches what
 // classify()/buildRoute() can route to - offering the rest in the manual-pick list
 // would let a shopper "fix" an item to something the store doesn't even stock).
-export async function GET(_request: Request, { params }: { params: Promise<{ listId: string }> }) {
+//
+// ?scope=catalog returns the whole active catalog instead: the app's list screen
+// edits a list before any branch is picked, while the list is only filed under a
+// placeholder store - limiting it to that store would hide products that other
+// branches carry (and that classification already matched against). The app
+// itself keeps chain-exclusive products (chainId) out of picks and suggestions
+// until a branch is chosen - see resolveBeforeBranch.
+export async function GET(request: Request, { params }: { params: Promise<{ listId: string }> }) {
   const { listId } = await params;
+  const wholeCatalog = new URL(request.url).searchParams.get("scope") === "catalog";
   const shoppingList = await shoppingListRepository.findById(listId);
   if (!shoppingList) {
     return NextResponse.json({ error: `Shopping list not found: ${listId}` }, { status: 404 });
   }
   if (!(await resolveListAccess(shoppingList))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+
+  if (wholeCatalog) {
+    return NextResponse.json({ shoppingList, products: await productRepository.findAllActive() });
   }
 
   const [allProducts, listings] = await Promise.all([

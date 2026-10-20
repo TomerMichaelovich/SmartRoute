@@ -21,6 +21,10 @@ interface ClassificationReviewRowProps {
   /** False where no branch has been picked yet (the home list) - availability there is
    * only against the placeholder store the list is filed under, so it would mislead. */
   showAvailability?: boolean;
+  /** Dense single row for the list screen, meant to sit inside a shared card:
+   * item name, matched product as a tappable line, and suggestion chips only
+   * while the match still needs a look. */
+  compact?: boolean;
 }
 
 function confidenceBadge(
@@ -51,6 +55,7 @@ export function ClassificationReviewRow({
   onChangeProduct,
   onRemove,
   showAvailability = true,
+  compact = false,
 }: ClassificationReviewRowProps) {
   const badge = confidenceBadge(item, showAvailability);
   const selectedProductId = item.classification?.matchedProductId ?? "";
@@ -61,6 +66,74 @@ export function ClassificationReviewRow({
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const selectedProductName = selectedProductId ? productById.get(selectedProductId)?.canonicalName : undefined;
+
+  const picker = (
+    <ProductPickerModal
+      visible={pickerOpen}
+      productsByDepartment={productsByDepartment}
+      selectedProductId={selectedProductId}
+      onSelect={(productId) => onChangeProduct(item.id, productId)}
+      onClose={() => setPickerOpen(false)}
+    />
+  );
+
+  if (compact) {
+    return (
+      <View style={styles.compactRow}>
+        <View style={styles.compactHeader}>
+          <View style={styles.compactMain}>
+            <Text style={styles.compactRawText} numberOfLines={1}>
+              {item.rawText}
+            </Text>
+            <Pressable onPress={() => setPickerOpen(true)} hitSlop={6} style={styles.compactProduct}>
+              <Text style={[styles.compactProductText, !selectedProductName && styles.compactProductMissing]} numberOfLines={1}>
+                {selectedProductName ?? he.review.chooseProduct}
+              </Text>
+              <Text style={styles.compactCaret}>▾</Text>
+            </Pressable>
+          </View>
+          {badge && (
+            <View style={[styles.badge, { backgroundColor: badge.background }]}>
+              <Text style={[styles.badgeText, { color: badge.color }]}>{badge.label}</Text>
+            </View>
+          )}
+          {onRemove && (
+            <Pressable
+              onPress={() => onRemove(item.id)}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel={he.myList.editor.removeItem}
+              style={styles.compactRemove}
+            >
+              <Text style={styles.compactRemoveText}>✕</Text>
+            </Pressable>
+          )}
+        </View>
+
+        {badge && suggestions.length > 0 && (
+          <View style={styles.chipRow}>
+            {suggestions.map((alt) => {
+              const product = productById.get(alt.productId)!;
+              const isSelected = selectedProductId === alt.productId;
+              return (
+                <Pressable
+                  key={alt.productId}
+                  onPress={() => onChangeProduct(item.id, alt.productId)}
+                  style={[styles.chip, styles.compactChip, isSelected && styles.chipSelected]}
+                >
+                  <Text style={[styles.compactChipText, isSelected && styles.chipTextSelected]} numberOfLines={1}>
+                    {product.canonicalName}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+
+        {picker}
+      </View>
+    );
+  }
 
   return (
     <View style={styles.card}>
@@ -111,13 +184,7 @@ export function ClassificationReviewRow({
         </Pressable>
       )}
 
-      <ProductPickerModal
-        visible={pickerOpen}
-        productsByDepartment={productsByDepartment}
-        selectedProductId={selectedProductId}
-        onSelect={(productId) => onChangeProduct(item.id, productId)}
-        onClose={() => setPickerOpen(false)}
-      />
+      {picker}
     </View>
   );
 }
@@ -213,6 +280,62 @@ const styles = StyleSheet.create({
   pickerText: {
     fontSize: 14,
     fontFamily: FONTS.regular,
+    color: COLORS.neutral900,
+  },
+  compactRow: {
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  compactHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  compactMain: {
+    flex: 1,
+    gap: 1,
+  },
+  compactRawText: {
+    fontSize: 15,
+    fontFamily: FONTS.medium,
+    color: COLORS.neutral900,
+  },
+  compactProduct: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  compactProductText: {
+    flexShrink: 1,
+    fontSize: 13,
+    fontFamily: FONTS.regular,
+    color: COLORS.neutral500,
+  },
+  compactProductMissing: {
+    color: "#b91c1c",
+  },
+  compactCaret: {
+    fontSize: 10,
+    color: COLORS.neutral500,
+  },
+  compactRemove: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  compactRemoveText: {
+    fontSize: 14,
+    color: COLORS.neutral500,
+  },
+  compactChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  compactChipText: {
+    fontSize: 13,
+    fontFamily: FONTS.medium,
     color: COLORS.neutral900,
   },
 });

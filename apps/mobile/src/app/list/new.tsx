@@ -1,9 +1,11 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { StyleSheet, Text, TextInput, View } from "react-native";
 import { he } from "@smartroute/core/i18n/he";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/Button";
+import { KeyboardAwareScrollView } from "@/components/KeyboardAwareScrollView";
+import { ShoppingListInput } from "@/components/ShoppingListInput";
 import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
 import { useAuth } from "@/lib/auth-context";
@@ -53,7 +55,7 @@ export default function NewListScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
+    <KeyboardAwareScrollView contentContainerStyle={styles.page}>
       <View style={styles.header}>
         <Text style={styles.title}>{canName ? he.myList.manage.newList : he.list.title}</Text>
         <Text style={styles.subtitle}>{he.list.subtitle}</Text>
@@ -75,12 +77,11 @@ export default function NewListScreen() {
         </View>
       )}
 
-      <TextInput
+      <ShoppingListInput
         value={text}
         onChangeText={setText}
         placeholder={he.list.placeholder}
         placeholderTextColor={COLORS.neutral500}
-        multiline
         numberOfLines={10}
         textAlign="right"
         style={styles.input}
@@ -90,7 +91,7 @@ export default function NewListScreen() {
       <Button onPress={handleSubmit} disabled={rawItems.length === 0 || isSubmitting} fullWidth>
         {isSubmitting ? he.common.loading : he.home.createList}
       </Button>
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }
 

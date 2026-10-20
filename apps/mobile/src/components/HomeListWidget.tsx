@@ -2,6 +2,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Path } from "react-native-svg";
+import { resolveBeforeBranch } from "@smartroute/core/application/classification/resolve-before-branch";
 import { normalizeShareCode } from "@smartroute/core/application/shopping-list/generate-share-code";
 import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ShoppingList } from "@smartroute/core/domain/entities/shopping-list";
@@ -220,7 +221,7 @@ export function HomeListWidget({
       return;
     }
     let cancelled = false;
-    apiFetch(`/api/shopping-lists/${listId}`)
+    apiFetch(`/api/shopping-lists/${listId}?scope=catalog`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data: { products: Product[] } | null) => {
         if (!cancelled && data) setProducts(data.products);
@@ -482,9 +483,10 @@ export function HomeListWidget({
           <>
             <View style={styles.itemsList}>
               {visibleItems.map((item) => {
-                const product = item.classification?.matchedProductId
-                  ? productById.get(item.classification.matchedProductId)
+                const matchedId = item.classification
+                  ? resolveBeforeBranch(item.classification, products).matchedProductId
                   : undefined;
+                const product = matchedId ? productById.get(matchedId) : undefined;
                 const name = product?.canonicalName ?? item.rawText;
                 const icon = CATEGORY_ICON[product?.category ?? "other"];
                 // No checkbox: the list is for writing only - items are marked

@@ -183,6 +183,8 @@ export const products = pgTable("products", {
   department: text("department").notNull(),
   imageUrl: text("image_url"),
   isActive: boolean("is_active").notNull(),
+  // Null = generic product; otherwise the one chain (stores.chain_id) selling it.
+  chainId: text("chain_id"),
 });
 
 export const productListings = pgTable(

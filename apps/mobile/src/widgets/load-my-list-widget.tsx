@@ -1,3 +1,4 @@
+import { resolveBeforeBranch } from "@smartroute/core/application/classification/resolve-before-branch";
 import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ShoppingList } from "@smartroute/core/domain/entities/shopping-list";
 import { he } from "@smartroute/core/i18n/he";
@@ -44,7 +45,7 @@ export async function loadMyListWidget() {
     }
 
     let products: Product[] = [];
-    const productsRes = await apiFetch(`/api/shopping-lists/${data.list.id}`).catch(() => null);
+    const productsRes = await apiFetch(`/api/shopping-lists/${data.list.id}?scope=catalog`).catch(() => null);
     if (productsRes?.ok) {
       const productsData: { products: Product[] } = await productsRes.json();
       products = productsData.products;
@@ -52,7 +53,9 @@ export async function loadMyListWidget() {
     const productById = new Map(products.map((p) => [p.id, p]));
 
     const items: MyListWidgetItem[] = data.list.items.map((item) => {
-      const product = item.classification?.matchedProductId ? productById.get(item.classification.matchedProductId) : undefined;
+      // Same reading as the in-app list: no branch picked yet.
+      const matchedId = item.classification ? resolveBeforeBranch(item.classification, products).matchedProductId : undefined;
+      const product = matchedId ? productById.get(matchedId) : undefined;
       return {
         id: item.id,
         name: product?.canonicalName ?? item.rawText,

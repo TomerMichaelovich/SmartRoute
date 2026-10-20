@@ -1,5 +1,5 @@
 import type { ProductCategory } from "@smartroute/core/domain/entities/product";
-import { productRepository } from "@/src/infrastructure/container";
+import { productRepository, storeRepository } from "@/src/infrastructure/container";
 import { createProduct, updateProduct } from "@/src/presentation/actions/admin-product-actions";
 import { PRODUCT_CATEGORY_LABELS } from "@/src/presentation/product-category-labels";
 
@@ -17,13 +17,33 @@ const CATEGORIES: ProductCategory[] = [
   "other",
 ];
 
+function ChainSelect({ chains, defaultValue }: { chains: string[]; defaultValue: string }) {
+  return (
+    <label className="flex flex-col gap-1 text-sm text-neutral-700">
+      רשת
+      <select name="chainId" defaultValue={defaultValue} className="rounded-lg border border-neutral-300 p-2">
+        <option value="">כללי - נמכר בכל הרשתות</option>
+        {chains.map((c) => (
+          <option key={c} value={c}>
+            בלעדי לרשת {c}
+          </option>
+        ))}
+      </select>
+      <span className="text-xs text-neutral-500">
+        מוצר בלעדי לרשת (למשל מותג פרטי) לא יוצע ללקוח לפני שבחר סניף של אותה רשת.
+      </span>
+    </label>
+  );
+}
+
 export default async function AdminProductsPage({
   searchParams,
 }: {
   searchParams: Promise<{ department?: string }>;
 }) {
   const { department } = await searchParams;
-  const allProducts = await productRepository.findAll();
+  const [allProducts, stores] = await Promise.all([productRepository.findAll(), storeRepository.findAll()]);
+  const chains = Array.from(new Set(stores.map((s) => s.chainId))).sort();
   const products = department ? allProducts.filter((p) => p.department === department) : allProducts;
   const departments = Array.from(new Set(allProducts.map((p) => p.department))).sort();
 
@@ -100,6 +120,7 @@ export default async function AdminProductsPage({
           placeholder="כינויים, מופרדים בפסיק"
           className="rounded-lg border border-neutral-300 p-2"
         />
+        <ChainSelect chains={chains} defaultValue="" />
         <label className="flex flex-col gap-1 text-sm text-neutral-700">
           תמונת מוצר (אופציונלי)
           <input
@@ -134,6 +155,9 @@ export default async function AdminProductsPage({
                 )}
                 {product.canonicalName}
                 {!product.isActive && <span className="ms-2 text-xs text-red-500">(לא פעיל)</span>}
+                {product.chainId && (
+                  <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">{product.chainId}</span>
+                )}
               </span>
               <span className="text-sm text-neutral-400">{product.department}</span>
             </summary>
@@ -168,6 +192,7 @@ export default async function AdminProductsPage({
                 placeholder="כינויים, מופרדים בפסיק"
                 className="rounded-lg border border-neutral-300 p-2"
               />
+              <ChainSelect chains={chains} defaultValue={product.chainId ?? ""} />
               <label className="flex flex-col gap-1 text-sm text-neutral-700">
                 תמונת מוצר{product.imageUrl ? " (החלפה)" : " (אופציונלי)"}
                 <input

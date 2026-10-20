@@ -247,6 +247,11 @@ export const he = {
         return `כל המשתתפים ב"${name}" יכולים להוסיף ולערוך מוצרים, והשינויים מתעדכנים אצל כולם.`;
       },
       buttonLabel: "משתתפים ושיתוף",
+      inviteShort: "שתפו את הרשימה",
+      manage: "ניהול",
+      pendingShort(n: number): string {
+        return n === 1 ? "בקשה ממתינה" : `${n} בקשות ממתינות`;
+      },
       membersHeading: "משתתפים",
       you: "את/ה",
       owner: "מנהל/ת הרשימה",
@@ -330,6 +335,7 @@ export const he = {
     namePlaceholder: "לדוגמה: קניות שבועיות, ערב עם חברים",
     placeholder: "לדוגמה:\nחלב\nלחם\nעגבניות",
     continueToReview: "המשך לבדיקת הפריטים",
+    nextLine: "סיום פריט, מעבר לשורה הבאה",
     itemCount(n: number): string {
       if (n === 0) return "אין פריטים ברשימה";
       if (n === 1) return "פריט אחד ברשימה";
