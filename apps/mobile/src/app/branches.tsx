@@ -1,6 +1,6 @@
 import { Link, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { ShoppingList } from "@smartroute/core/domain/entities/shopping-list";
 import type { Store } from "@smartroute/core/domain/entities/store";
 import { he } from "@smartroute/core/i18n/he";
@@ -73,11 +73,25 @@ export default function BranchesScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.page}>
+    <ScrollView style={styles.scroll} contentContainerStyle={styles.page} persistentScrollbar>
       <View style={styles.header}>
         <Text style={styles.title}>{he.branches.title}</Text>
         <Text style={styles.subtitle}>{he.branches.subtitle}</Text>
       </View>
+
+      {/* With a list in hand, shopping without a map/route is always an
+          option - and it doesn't depend on the branches loading. */}
+      {listCode && (
+        <Pressable
+          onPress={() => router.push(`/checklist/${listCode}`)}
+          style={({ pressed }) => [styles.listModeRow, pressed && styles.listModeRowPressed]}
+          accessibilityRole="button"
+        >
+          <Text style={styles.listModeIcon}>📝</Text>
+          <Text style={styles.listModeText}>{he.branches.useAsList}</Text>
+          <Text style={styles.listModeChevron}>‹</Text>
+        </Pressable>
+      )}
 
       {state.status === "loading" && (
         <View style={styles.center}>
@@ -125,6 +139,9 @@ export default function BranchesScreen() {
 }
 
 const styles = StyleSheet.create({
+  scroll: {
+    flex: 1,
+  },
   page: {
     width: "100%",
     maxWidth: 448,
@@ -177,6 +194,33 @@ const styles = StyleSheet.create({
   storeAddress: {
     fontSize: 14,
     fontFamily: FONTS.regular,
+    color: COLORS.neutral500,
+  },
+  listModeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.neutral200,
+    backgroundColor: COLORS.white,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  listModeRowPressed: {
+    backgroundColor: COLORS.neutral100,
+  },
+  listModeIcon: {
+    fontSize: 16,
+  },
+  listModeText: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: FONTS.medium,
+    color: COLORS.neutral700,
+  },
+  listModeChevron: {
+    fontSize: 20,
     color: COLORS.neutral500,
   },
 });

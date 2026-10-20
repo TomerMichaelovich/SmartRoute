@@ -32,6 +32,19 @@ export const he = {
     emptyBody: "רשמו מה צריך לקנות, ו־NAVIO יבנה לכם מסלול קצר בסניף.",
     emptyCta: "צרו רשימת קניות",
     guestSaveHint: "הירשמו כדי לשמור כמה רשימות ולגשת אליהן מכל מכשיר",
+    guestLimits: {
+      title: "שימו לב: כניסה כאורח",
+      intro: "כאורחים לא תוכלו:",
+      items: [
+        "לשמור יותר מרשימת קניות אחת",
+        "לגשת לרשימה מטלפון אחר - היא שמורה רק במכשיר הזה, ותאבד אם האפליקציה תימחק",
+        "לשתף רשימה עם בני הבית ולערוך אותה יחד, כשהשינויים מתעדכנים אצל כולם",
+        "לשמור היסטוריית קניות ולחזור על קנייה קודמת בלחיצה",
+      ],
+      footer: "ההרשמה בחינם ולוקחת פחות מדקה.",
+      register: "הרשמה בחינם",
+      continueAnyway: "המשך כאורח בכל זאת",
+    },
   },
   landing: {
     googlePlay: "הורדה מ־Google Play",
@@ -205,6 +218,14 @@ export const he = {
       micAccessibilityLabel: "הוספת מוצרים בדיבור (בקרוב)",
       showLess: "הצג פחות",
       addProductPlaceholder: "הוסיפו מוצר…",
+      didYouMean: {
+        title: "האם התכוונתם ל...?",
+        typed(text: string): string {
+          return `כתבתם: "${text}"`;
+        },
+        keepAsTyped: "להוסיף כמו שכתבתי",
+        backToEdit: "חזרה לעריכה",
+      },
       menuAccessibilityLabel: "אפשרויות הרשימה",
       emptyListHint: "הוסיפו מוצרים כדי לצאת לקנות",
       noActiveList: "אין רשימה פעילה",
@@ -327,6 +348,11 @@ export const he = {
     noBranches: "אין כרגע סניפים זמינים",
     loadFailed: "לא הצלחנו לטעון את הסניפים. בדקו את החיבור לאינטרנט ונסו שוב.",
     retry: "נסו שוב",
+    useAsList: "השתמשו כרשימה",
+  },
+  listMode: {
+    otherDepartment: "שונות",
+    empty: "הרשימה ריקה",
   },
   list: {
     title: "רשימת קניות",

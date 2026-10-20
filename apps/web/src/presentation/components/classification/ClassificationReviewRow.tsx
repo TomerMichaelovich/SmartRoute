@@ -18,7 +18,9 @@ interface ClassificationReviewRowProps {
 
 function confidenceBadge(item: ShoppingListItem): { label: string; className: string } | null {
   const c = item.classification;
-  if (!c || !c.matchedProductId || c.source === "unresolved") {
+  // Only a missing product means "not found": a hand-picked product keeps the
+  // item's original source, which may well be "unresolved" (e.g. a typo).
+  if (!c?.matchedProductId) {
     return { label: he.review.notFound, className: "bg-red-50 text-red-700" };
   }
   if (c.availableAtStore === false) {

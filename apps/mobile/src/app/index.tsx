@@ -1,10 +1,12 @@
-import { Link } from "expo-router";
+import { Link, useRouter } from "expo-router";
 import { useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { he } from "@smartroute/core/i18n/he";
 import { Button } from "@/components/Button";
+import { GuestLimitsModal } from "@/components/GuestLimitsModal";
 import { HomeListWidget } from "@/components/HomeListWidget";
+import { KeyboardAwareScrollView } from "@/components/KeyboardAwareScrollView";
 import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
 import { useAuth } from "@/lib/auth-context";
@@ -20,13 +22,15 @@ export default function HomeScreen() {
   // 75% of the screen width, capped so it stays modest on tablets.
   const logoWidth = Math.min(useWindowDimensions().width * 0.75, 320);
   const [guestHasList, setGuestHasList] = useState(false);
+  const [showGuestLimits, setShowGuestLimits] = useState(false);
+  const router = useRouter();
 
   if (loggedIn) {
     // App-style home: compact brand header, then the lists - whose card
     // carries the screen's single primary action.
     return (
       <SafeAreaView style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.appPage} keyboardShouldPersistTaps="handled">
+        <KeyboardAwareScrollView contentContainerStyle={styles.appPage}>
           <View style={styles.topBar}>
             <Image
               source={require("../../assets/images/navio-brand.png")}
@@ -56,14 +60,14 @@ export default function HomeScreen() {
               <Text style={styles.historyChevron}>›</Text>
             </Pressable>
           </Link>
-        </ScrollView>
+        </KeyboardAwareScrollView>
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollView contentContainerStyle={styles.page}>
         <Image
           source={require("../../assets/images/navio-brand.png")}
           style={{ width: logoWidth, height: logoWidth / LOGO_ASPECT }}
@@ -93,13 +97,27 @@ export default function HomeScreen() {
                   {he.home.login}
                 </Button>
               </Link>
-              <Link href="/branches" asChild>
+              {/* Guest mode stays available, but first spells out what it gives up. */}
+              <Pressable onPress={() => setShowGuestLimits(true)} accessibilityRole="button">
                 <Text style={styles.guestLink}>{he.home.continueAsGuest}</Text>
-              </Link>
+              </Pressable>
             </>
           )}
         </View>
-      </ScrollView>
+      </KeyboardAwareScrollView>
+
+      <GuestLimitsModal
+        visible={showGuestLimits}
+        onRegister={() => {
+          setShowGuestLimits(false);
+          router.push("/register");
+        }}
+        onContinueAsGuest={() => {
+          setShowGuestLimits(false);
+          router.push("/branches");
+        }}
+        onClose={() => setShowGuestLimits(false)}
+      />
     </SafeAreaView>
   );
 }

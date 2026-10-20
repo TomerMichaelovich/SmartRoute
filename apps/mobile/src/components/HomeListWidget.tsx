@@ -1,14 +1,16 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, AppState, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, AppState, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Path } from "react-native-svg";
 import { resolveBeforeBranch } from "@smartroute/core/application/classification/resolve-before-branch";
+import { suggestBeforeAdding } from "@smartroute/core/application/classification/suggest-before-adding";
 import { normalizeShareCode } from "@smartroute/core/application/shopping-list/generate-share-code";
 import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ShoppingList } from "@smartroute/core/domain/entities/shopping-list";
 import { he } from "@smartroute/core/i18n/he";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/Button";
+import { DidYouMeanModal } from "@/components/DidYouMeanModal";
 import { RenameListModal } from "@/components/RenameListModal";
 import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
@@ -31,6 +33,14 @@ function MicIcon() {
     <Svg viewBox="0 0 24 24" width={20} height={20} fill="none" stroke={COLORS.white} strokeWidth={2}>
       <Path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z" strokeLinejoin="round" />
       <Path d="M6 11a6 6 0 0 0 12 0M12 17v3" strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <Svg viewBox="0 0 24 24" width={22} height={22} fill="none" stroke={COLORS.white} strokeWidth={2.6}>
+      <Path d="M5 12.5l4.2 4.2L19 7" strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }
@@ -103,6 +113,9 @@ export function HomeListWidget({
   const [expanded, setExpanded] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [sharing, setSharing] = useState<Record<string, ListSharingSummary>>({});
+  const [addText, setAddText] = useState("");
+  const [didYouMean, setDidYouMean] = useState<{ typed: string; suggestions: Product[] } | null>(null);
+  const addInputRef = useRef<TextInput>(null);
   const lastMineSignature = useRef("");
 
   // Oldest first, so chips keep their place instead of jumping around every
@@ -266,6 +279,58 @@ export function HomeListWidget({
 
   function openFullList() {
     if (selected?.shareCode) router.push(`/my-list/${selected.shareCode}`);
+  }
+
+  // A typo or an unclear name gets a "did you mean...?" first; anything that
+  // clearly matches a product (or resembles nothing at all) goes straight in.
+  async function handleSubmitAdd() {
+    const rawText = addText.trim();
+    if (!rawText || !selected?.shareCode) return;
+    const suggestions = (await suggestBeforeAdding(rawText, products))
+      .map((s) => productById.get(s.productId))
+      .filter((p): p is Product => p !== undefined);
+    if (suggestions.length === 0) {
+      void addItem(rawText);
+      return;
+    }
+    Keyboard.dismiss();
+    setDidYouMean({ typed: rawText, suggestions });
+  }
+
+  function resolveDidYouMean(rawText: string | null) {
+    setDidYouMean(null);
+    if (rawText) void addItem(rawText);
+    // Back to typing either way - the next item, or fixing this one.
+    setTimeout(() => addInputRef.current?.focus(), 250);
+  }
+
+  // Adds straight from the home card. The item shows at once (unclassified,
+  // so by its typed text) and is swapped for the server's classified copy;
+  // the keyboard stays up for the next one.
+  async function addItem(rawText: string) {
+    const shareCode = selected?.shareCode;
+    if (!shareCode) return;
+    setAddText("");
+    setExpanded(true);
+    const tempId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const isOtherPending = (id: string) => id.startsWith("pending-") && id !== tempId;
+    patchList(shareCode, (l) => ({ ...l, items: [...l.items, { id: tempId, rawText }] }));
+    try {
+      const res = await apiFetch(`/api/lists/${shareCode}/items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lines: [{ rawText }] }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { list }: { list: ShoppingList } = await res.json();
+      // Keep any other add that's still on its way.
+      patchList(shareCode, (l) => ({ ...list, items: [...list.items, ...l.items.filter((i) => isOtherPending(i.id))] }));
+      refreshMyListWidget();
+    } catch {
+      patchList(shareCode, (l) => ({ ...l, items: l.items.filter((i) => i.id !== tempId) }));
+      setAddText((current) => current || rawText);
+      Alert.alert(he.common.error);
+    }
   }
 
   function openSharing() {
@@ -461,20 +526,42 @@ export function HomeListWidget({
           </Pressable>
         )}
 
-        {/* Styled as an input, not a button, so it doesn't compete with the
-            card's one primary action ("go shopping") below. */}
+        {/* Typed into right here; while there's text the mic turns into a
+            green "add" check (Enter adds too). */}
         <View style={styles.actionRow}>
-          <Pressable style={styles.addField} onPress={openFullList} accessibilityRole="button">
+          <View style={styles.addField}>
             <Text style={styles.addFieldPlus}>+</Text>
-            <Text style={styles.addFieldText}>{he.myList.widget.addProductPlaceholder}</Text>
-          </Pressable>
-          <Pressable
-            style={styles.micButton}
-            onPress={() => Alert.alert(he.myList.widget.micComingSoon)}
-            accessibilityLabel={he.myList.widget.micAccessibilityLabel}
-          >
-            <MicIcon />
-          </Pressable>
+            <TextInput
+              ref={addInputRef}
+              value={addText}
+              onChangeText={setAddText}
+              onSubmitEditing={handleSubmitAdd}
+              submitBehavior="submit"
+              returnKeyType="done"
+              placeholder={he.myList.widget.addProductPlaceholder}
+              placeholderTextColor={COLORS.neutral500}
+              maxLength={80}
+              style={styles.addFieldInput}
+            />
+          </View>
+          {addText.trim() ? (
+            <Pressable
+              style={[styles.micButton, styles.addButton]}
+              onPress={handleSubmitAdd}
+              accessibilityRole="button"
+              accessibilityLabel={he.myList.widget.addProduct}
+            >
+              <CheckIcon />
+            </Pressable>
+          ) : (
+            <Pressable
+              style={styles.micButton}
+              onPress={() => Alert.alert(he.myList.widget.micComingSoon)}
+              accessibilityLabel={he.myList.widget.micAccessibilityLabel}
+            >
+              <MicIcon />
+            </Pressable>
+          )}
         </View>
 
         {items.length === 0 ? (
@@ -519,6 +606,14 @@ export function HomeListWidget({
           {he.home.goShopping}
         </Button>
       </View>
+
+      <DidYouMeanModal
+        typedText={didYouMean?.typed ?? null}
+        suggestions={didYouMean?.suggestions ?? []}
+        onPick={(product) => resolveDidYouMean(product.canonicalName)}
+        onKeepAsTyped={() => resolveDidYouMean(didYouMean?.typed ?? null)}
+        onBackToEdit={() => resolveDidYouMean(null)}
+      />
 
       <RenameListModal
         visible={renaming}
@@ -721,10 +816,14 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.semiBold,
     color: COLORS.cyan600,
   },
-  addFieldText: {
+  addFieldInput: {
+    flex: 1,
+    height: "100%",
+    padding: 0,
     fontSize: 15,
     fontFamily: FONTS.regular,
-    color: COLORS.neutral500,
+    color: COLORS.neutral900,
+    textAlign: "right",
   },
   micButton: {
     width: 48,
@@ -733,6 +832,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.cyan600,
     alignItems: "center",
     justifyContent: "center",
+  },
+  addButton: {
+    backgroundColor: COLORS.green600,
   },
   itemsList: {
     gap: 2,

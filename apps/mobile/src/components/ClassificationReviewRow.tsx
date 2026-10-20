@@ -32,7 +32,9 @@ function confidenceBadge(
   showAvailability: boolean,
 ): { label: string; color: string; background: string } | null {
   const c = item.classification;
-  if (!c || !c.matchedProductId || c.source === "unresolved") {
+  // Only a missing product means "not found": a hand-picked product keeps the
+  // item's original source, which may well be "unresolved" (e.g. a typo).
+  if (!c?.matchedProductId) {
     return { label: he.review.notFound, color: "#b91c1c", background: "#fef2f2" };
   }
   if (showAvailability && c.availableAtStore === false) {
@@ -81,17 +83,27 @@ export function ClassificationReviewRow({
     return (
       <View style={styles.compactRow}>
         <View style={styles.compactHeader}>
-          <View style={styles.compactMain}>
-            <Text style={styles.compactRawText} numberOfLines={1}>
-              {item.rawText}
-            </Text>
-            <Pressable onPress={() => setPickerOpen(true)} hitSlop={6} style={styles.compactProduct}>
-              <Text style={[styles.compactProductText, !selectedProductName && styles.compactProductMissing]} numberOfLines={1}>
-                {selectedProductName ?? he.review.chooseProduct}
+          {/* The whole name area opens the picker. Once the item is named after
+              its product (picked by hand), the product line would only repeat it. */}
+          <Pressable onPress={() => setPickerOpen(true)} hitSlop={6} style={styles.compactMain}>
+            <View style={styles.compactProduct}>
+              <Text style={[styles.compactRawText, styles.compactTitle]} numberOfLines={1}>
+                {item.rawText}
               </Text>
-              <Text style={styles.compactCaret}>▾</Text>
-            </Pressable>
-          </View>
+              {selectedProductName === item.rawText && <Text style={styles.compactCaret}>▾</Text>}
+            </View>
+            {selectedProductName !== item.rawText && (
+              <View style={styles.compactProduct}>
+                <Text
+                  style={[styles.compactProductText, !selectedProductName && styles.compactProductMissing]}
+                  numberOfLines={1}
+                >
+                  {selectedProductName ?? he.review.chooseProduct}
+                </Text>
+                <Text style={styles.compactCaret}>▾</Text>
+              </View>
+            )}
+          </Pressable>
           {badge && (
             <View style={[styles.badge, { backgroundColor: badge.background }]}>
               <Text style={[styles.badgeText, { color: badge.color }]}>{badge.label}</Text>
@@ -300,6 +312,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: FONTS.medium,
     color: COLORS.neutral900,
+  },
+  compactTitle: {
+    flexShrink: 1,
   },
   compactProduct: {
     flexDirection: "row",

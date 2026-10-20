@@ -174,10 +174,15 @@ export default function MyListScreen() {
         if (!productId) {
           return { ...item, classification: { rawText: item.rawText, confidence: 0, source: "unresolved" } };
         }
+        // Picking a product is a correction of what was typed (often a typo),
+        // so the item takes the product's name - the typo shouldn't linger
+        // here, on the home card or in the widget.
+        const rawText = productById.get(productId)?.canonicalName ?? item.rawText;
         return {
           ...item,
+          rawText,
           classification: {
-            rawText: item.rawText,
+            rawText,
             matchedProductId: productId,
             confidence: 1,
             source: item.classification?.source ?? "unresolved",
