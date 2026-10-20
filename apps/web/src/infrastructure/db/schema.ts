@@ -72,6 +72,17 @@ export const sessions = pgTable(
  * list's other participants. One row per device; a device that signs into
  * another account moves its row to that user.
  */
+/** One row per photo read by the OCR endpoint - counts against the user's daily quota. */
+export const ocrRequests = pgTable(
+  "ocr_requests",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    createdAt: timestamp("created_at", { mode: "string" }).notNull(),
+  },
+  (table) => [index("ocr_requests_user_created_idx").on(table.userId, table.createdAt)],
+);
+
 export const pushTokens = pgTable(
   "push_tokens",
   {

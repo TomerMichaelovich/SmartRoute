@@ -9,6 +9,7 @@ import { PgClassificationCacheRepository } from "./repositories/postgres/pg-clas
 import { PgEdgeRepository } from "./repositories/postgres/pg-edge-repository";
 import { PgHouseholdRepository } from "./repositories/postgres/pg-household-repository";
 import { PgNodeRepository } from "./repositories/postgres/pg-node-repository";
+import { PgOcrUsageRepository } from "./repositories/postgres/pg-ocr-usage-repository";
 import { PgProductListingRepository } from "./repositories/postgres/pg-product-listing-repository";
 import { PgProductRepository } from "./repositories/postgres/pg-product-repository";
 import { PgPromotionRepository } from "./repositories/postgres/pg-promotion-repository";
@@ -45,6 +46,7 @@ export const householdRepository = new PgHouseholdRepository();
 export const userAdminRepository = new PgUserAdminRepository();
 export const pushTokenRepository = new PgPushTokenRepository();
 export const walkableMapRepository = new PgWalkableMapRepository();
+export const ocrUsageRepository = new PgOcrUsageRepository();
 
 const llmClassifier = new AnthropicClassifier();
 

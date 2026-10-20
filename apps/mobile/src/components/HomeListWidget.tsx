@@ -16,7 +16,7 @@ import { RenameListModal } from "@/components/RenameListModal";
 import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
 import { CATEGORY_ICON, COLLAPSED_ITEM_COUNT } from "@/lib/list-widget-shared";
-import { pickListPhoto, recognizeListPhoto } from "@/lib/list-photo";
+import { ListPhotoError, pickListPhoto, recognizeListPhoto } from "@/lib/list-photo";
 import { clearMyListCode, getMyListCode, setMyListCode } from "@/lib/my-list-storage";
 import { refreshMyListWidget } from "@/widgets/refresh-my-list-widget";
 
@@ -144,6 +144,7 @@ export function HomeListWidget({
   const [photoStage, setPhotoStage] = useState<PhotoListStage | null>(null);
   const [photoText, setPhotoText] = useState("");
   const [photoAdding, setPhotoAdding] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
   const lastMineSignature = useRef("");
 
   // Pinned lists first, then oldest first, so chips keep their place instead of
@@ -366,6 +367,20 @@ export function HomeListWidget({
 
   // A photo of a written list -> recognized lines -> a quick review -> added to the list.
   function openPhotoPicker() {
+    // Reading a photo is a paid call, so it's for registered users - a guest is offered to sign up.
+    if (!loggedIn) {
+      Alert.alert(
+        he.list.photo.title,
+        he.list.photo.loginRequired,
+        [
+          { text: he.home.register, onPress: () => router.push("/register") },
+          { text: he.home.login, onPress: () => router.push("/login") },
+          { text: he.myList.manage.cancel, style: "cancel" },
+        ],
+        { cancelable: true },
+      );
+      return;
+    }
     Alert.alert(
       he.list.photo.title,
       undefined,
@@ -388,12 +403,18 @@ export function HomeListWidget({
     }
     if (!uri) return;
     setPhotoText("");
+    setPhotoError(null);
     setPhotoStage("recognizing");
     try {
       const lines = await recognizeListPhoto(uri);
       setPhotoText(lines.join("\n"));
       setPhotoStage(lines.length > 0 ? "review" : "error");
-    } catch {
+    } catch (error) {
+      if (error instanceof ListPhotoError && error.reason === "limit") {
+        setPhotoError(he.list.photo.dailyLimit(error.limit ?? 5));
+      } else if (error instanceof ListPhotoError && error.reason === "login") {
+        setPhotoError(he.list.photo.loginRequired);
+      }
       setPhotoStage("error");
     }
   }
@@ -801,6 +822,7 @@ export function HomeListWidget({
         text={photoText}
         onChangeText={setPhotoText}
         busy={photoAdding}
+        errorMessage={photoError}
         onAdd={addPhotoLines}
         onRetry={() => {
           setPhotoStage(null);

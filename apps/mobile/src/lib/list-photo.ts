@@ -30,13 +30,31 @@ export async function pickListPhoto(source: "camera" | "gallery"): Promise<strin
   return saved.uri;
 }
 
-/** Reads the list's lines from a photo (server OCR - see apps/web/app/api/ocr). */
+/** Why a photo couldn't be read: not signed in, the daily quota is used up, or anything else. */
+export class ListPhotoError extends Error {
+  constructor(
+    readonly reason: "login" | "limit" | "failed",
+    readonly limit?: number,
+  ) {
+    super(reason);
+  }
+}
+
+/**
+ * Reads the list's lines from a photo (server OCR - see apps/web/app/api/ocr). Signed-in
+ * users only, with a daily quota; throws ListPhotoError otherwise.
+ */
 export async function recognizeListPhoto(uri: string): Promise<string[]> {
   const form = new FormData();
   // React Native's FormData takes a { uri, name, type } file descriptor.
   form.append("image", { uri, name: "list.jpg", type: "image/jpeg" } as unknown as Blob);
   const res = await apiFetch("/api/ocr", { method: "POST", body: form });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (res.status === 401) throw new ListPhotoError("login");
+  if (res.status === 429) {
+    const body: { limit?: number } | null = await res.json().catch(() => null);
+    throw new ListPhotoError("limit", body?.limit);
+  }
+  if (!res.ok) throw new ListPhotoError("failed");
   const { text }: { text: string } = await res.json();
   return text
     .split("\n")

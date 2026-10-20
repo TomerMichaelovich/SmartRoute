@@ -14,6 +14,8 @@ interface PhotoListModalProps {
   text: string;
   onChangeText: (text: string) => void;
   busy: boolean;
+  /** Shown in the error stage instead of the generic "couldn't read it" (e.g. the daily quota). */
+  errorMessage?: string | null;
   onAdd: () => void;
   onRetry: () => void;
   onClose: () => void;
@@ -23,7 +25,16 @@ interface PhotoListModalProps {
  * Adding items from a photo of a shopping list: waits for the text recognition, then shows
  * the recognized items for a quick fix-up before they're added to the list.
  */
-export function PhotoListModal({ stage, text, onChangeText, busy, onAdd, onRetry, onClose }: PhotoListModalProps) {
+export function PhotoListModal({
+  stage,
+  text,
+  onChangeText,
+  busy,
+  errorMessage,
+  onAdd,
+  onRetry,
+  onClose,
+}: PhotoListModalProps) {
   const t = he.list.photo;
   const lineCount = text.split("\n").filter((l) => l.trim()).length;
   return (
@@ -41,10 +52,12 @@ export function PhotoListModal({ stage, text, onChangeText, busy, onAdd, onRetry
 
           {stage === "error" && (
             <>
-              <Text style={styles.error}>{t.recognizeError}</Text>
-              <Button onPress={onRetry} fullWidth>
-                {t.retake}
-              </Button>
+              <Text style={styles.error}>{errorMessage ?? t.recognizeError}</Text>
+              {!errorMessage && (
+                <Button onPress={onRetry} fullWidth>
+                  {t.retake}
+                </Button>
+              )}
             </>
           )}
 
