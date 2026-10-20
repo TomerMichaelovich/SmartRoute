@@ -216,6 +216,7 @@ export const he = {
       addProduct: "הוסף מוצר",
       micComingSoon: "בקרוב",
       micAccessibilityLabel: "הוספת מוצרים בדיבור (בקרוב)",
+      cameraAccessibilityLabel: "הוספת מוצרים מתמונה של רשימה",
       showLess: "הצג פחות",
       addProductPlaceholder: "הוסיפו מוצר…",
       didYouMean: {
@@ -250,6 +251,8 @@ export const he = {
       rename: "שינוי שם",
       pin: "נעיצה במסך הבית",
       unpin: "ביטול נעיצה",
+      pinShort: "נעיצה",
+      pinned: "נעוצה",
       pinTitle: "רשימה נעוצה",
       pinExplain:
         "רשימה נעוצה נשארת במסך הבית גם אחרי שמסיימים לקנות, משותפת עם כל המשתתפים - בלי לשלוח קישור מחדש. בסיום קנייה יוסרו ממנה רק הפריטים שנקנו.",
@@ -288,8 +291,8 @@ export const he = {
       removeConfirm: "להסיר את המשתתף/ת? הגישה לרשימה תיפסק מיד.",
       invite: "הזמנת חברים לרשימה",
       inviteHint: "שלחו קישור למי שתרצו לצרף. הקישור תקף ל־7 ימים, ומי שנכנס דרכו ימתין לאישורכם.",
-      inviteMessage(listName: string, url: string): string {
-        return `הצטרפו לרשימת הקניות "${listName}" שלי ב־NAVIO:\n${url}`;
+      inviteMessage(inviterName: string, listName: string, url: string): string {
+        return `${inviterName} הזמין/ה אותך להצטרף לרשימת הקניות "${listName}" ב־NAVIO:\n${url}`;
       },
       leave: "עזיבת הרשימה",
       leaveConfirm: "לעזוב את הרשימה? היא תוסר ממסך הבית שלכם.",
@@ -391,6 +394,12 @@ export const he = {
       recognizing: "מזהים טקסט בתמונה...",
       recognizeError: "לא הצלחנו לזהות טקסט בתמונה. נסו תמונה ברורה יותר או עברו לרשימה ידנית.",
       reviewHint: "בדקו ותקנו את הפריטים שזיהינו לפני שממשיכים",
+      takePhoto: "צילום",
+      fromGallery: "בחירה מהגלריה",
+      addToList(n: number): string {
+        if (n === 1) return "הוספת פריט אחד לרשימה";
+        return `הוספת ${n} פריטים לרשימה`;
+      },
     },
   },
   review: {

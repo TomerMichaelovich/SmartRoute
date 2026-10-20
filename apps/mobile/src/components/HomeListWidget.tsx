@@ -11,10 +11,12 @@ import { he } from "@smartroute/core/i18n/he";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/Button";
 import { DidYouMeanModal } from "@/components/DidYouMeanModal";
+import { PhotoListModal, type PhotoListStage } from "@/components/PhotoListModal";
 import { RenameListModal } from "@/components/RenameListModal";
 import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
 import { CATEGORY_ICON, COLLAPSED_ITEM_COUNT } from "@/lib/list-widget-shared";
+import { pickListPhoto, recognizeListPhoto } from "@/lib/list-photo";
 import { clearMyListCode, getMyListCode, setMyListCode } from "@/lib/my-list-storage";
 import { refreshMyListWidget } from "@/widgets/refresh-my-list-widget";
 
@@ -41,6 +43,26 @@ function CheckIcon() {
   return (
     <Svg viewBox="0 0 24 24" width={22} height={22} fill="none" stroke={COLORS.white} strokeWidth={2.6}>
       <Path d="M5 12.5l4.2 4.2L19 7" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+function CameraIcon() {
+  return (
+    <Svg viewBox="0 0 24 24" width={20} height={20} fill="none" stroke={COLORS.white} strokeWidth={2}>
+      <Path
+        d="M4 8a2 2 0 0 1 2-2h1.5l1-1.5h7l1 1.5H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"
+        strokeLinejoin="round"
+      />
+      <Circle cx={12} cy={13} r={3.5} />
+    </Svg>
+  );
+}
+
+function PinIcon({ color }: { color: string }) {
+  return (
+    <Svg viewBox="0 0 24 24" width={17} height={17} fill={color}>
+      <Path d="M16 9V4h1a1 1 0 0 0 0-2H7a1 1 0 0 0 0 2h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z" />
     </Svg>
   );
 }
@@ -119,6 +141,9 @@ export function HomeListWidget({
   const [addText, setAddText] = useState("");
   const [didYouMean, setDidYouMean] = useState<{ typed: string; suggestions: Product[] } | null>(null);
   const addInputRef = useRef<TextInput>(null);
+  const [photoStage, setPhotoStage] = useState<PhotoListStage | null>(null);
+  const [photoText, setPhotoText] = useState("");
+  const [photoAdding, setPhotoAdding] = useState(false);
   const lastMineSignature = useRef("");
 
   // Pinned lists first, then oldest first, so chips keep their place instead of
@@ -339,6 +364,67 @@ export function HomeListWidget({
     }
   }
 
+  // A photo of a written list -> recognized lines -> a quick review -> added to the list.
+  function openPhotoPicker() {
+    Alert.alert(
+      he.list.photo.title,
+      undefined,
+      [
+        { text: he.list.photo.takePhoto, onPress: () => void addFromPhoto("camera") },
+        { text: he.list.photo.fromGallery, onPress: () => void addFromPhoto("gallery") },
+        { text: he.myList.manage.cancel, style: "cancel" },
+      ],
+      { cancelable: true },
+    );
+  }
+
+  async function addFromPhoto(source: "camera" | "gallery") {
+    let uri: string | null;
+    try {
+      uri = await pickListPhoto(source);
+    } catch {
+      Alert.alert(he.common.error);
+      return;
+    }
+    if (!uri) return;
+    setPhotoText("");
+    setPhotoStage("recognizing");
+    try {
+      const lines = await recognizeListPhoto(uri);
+      setPhotoText(lines.join("\n"));
+      setPhotoStage(lines.length > 0 ? "review" : "error");
+    } catch {
+      setPhotoStage("error");
+    }
+  }
+
+  async function addPhotoLines() {
+    const shareCode = selected?.shareCode;
+    const lines = photoText
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (!shareCode || lines.length === 0) return;
+    setPhotoAdding(true);
+    try {
+      const res = await apiFetch(`/api/lists/${shareCode}/items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lines: lines.map((rawText) => ({ rawText })) }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { list }: { list: ShoppingList } = await res.json();
+      patchList(shareCode, () => list);
+      setExpanded(true);
+      setPhotoStage(null);
+      refreshMyListWidget();
+    } catch {
+      Alert.alert(he.common.error);
+    } finally {
+      setPhotoAdding(false);
+    }
+  }
+
   function openSharing() {
     if (selected?.shareCode) router.push(`/sharing/${selected.shareCode}`);
   }
@@ -403,21 +489,75 @@ export function HomeListWidget({
     refreshMyListWidget();
   }
 
+  async function handleLeave(list: ShoppingList) {
+    const shareCode = list.shareCode;
+    if (!shareCode) return;
+    try {
+      const res = await apiFetch(`/api/lists/${shareCode}/leave`, { method: "POST" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if ((await getMyListCode()) === shareCode) await clearMyListCode();
+      patchList(shareCode, () => null);
+      refreshMyListWidget();
+      await loadLists();
+    } catch {
+      Alert.alert(he.common.error);
+    }
+  }
+
+  // A participant who isn't the owner can't rename or delete the list (the server allows
+  // neither) - their menu is about their own part in it: who's in it, and leaving.
+  function openMemberMenu(list: ShoppingList) {
+    Alert.alert(
+      listDisplayName(list),
+      undefined,
+      [
+        { text: he.myList.sharing.buttonLabel, onPress: openSharing },
+        {
+          text: he.myList.sharing.leave,
+          style: "destructive",
+          onPress: () =>
+            Alert.alert(
+              he.myList.sharing.leave,
+              he.myList.sharing.leaveConfirm,
+              [
+                { text: he.myList.manage.cancel, style: "cancel" },
+                { text: he.myList.sharing.leave, style: "destructive", onPress: () => handleLeave(list) },
+              ],
+              { cancelable: true },
+            ),
+        },
+        { text: he.myList.manage.cancel, style: "cancel" },
+      ],
+      { cancelable: true },
+    );
+  }
+
   function openListMenu(list: ShoppingList) {
-    Alert.alert(listDisplayName(list), undefined, [
-      { text: list.isPinned ? he.myList.manage.unpin : he.myList.manage.pin, onPress: () => handleTogglePin(list) },
-      { text: he.myList.manage.rename, onPress: () => setRenaming(true) },
-      {
-        text: he.myList.manage.delete,
-        style: "destructive",
-        onPress: () =>
-          Alert.alert(he.myList.manage.delete, he.myList.manage.deleteConfirm, [
-            { text: he.myList.manage.cancel, style: "cancel" },
-            { text: he.myList.manage.delete, style: "destructive", onPress: () => handleDelete(list) },
-          ]),
-      },
-      { text: he.myList.manage.cancel, style: "cancel" },
-    ]);
+    // At most three buttons: Android's Alert drops any beyond that (it once hid "cancel").
+    // Tapping outside closes it too.
+    Alert.alert(
+      listDisplayName(list),
+      undefined,
+      [
+        { text: he.myList.manage.rename, onPress: () => setRenaming(true) },
+        {
+          text: he.myList.manage.delete,
+          style: "destructive",
+          onPress: () =>
+            Alert.alert(
+              he.myList.manage.delete,
+              he.myList.manage.deleteConfirm,
+              [
+                { text: he.myList.manage.cancel, style: "cancel" },
+                { text: he.myList.manage.delete, style: "destructive", onPress: () => handleDelete(list) },
+              ],
+              { cancelable: true },
+            ),
+        },
+        { text: he.myList.manage.cancel, style: "cancel" },
+      ],
+      { cancelable: true },
+    );
   }
 
   // Avoid a layout flash while the AsyncStorage/fetch check is in flight.
@@ -511,7 +651,7 @@ export function HomeListWidget({
         <View style={styles.headerRow}>
           <Pressable style={styles.headerStart} onPress={openFullList} hitSlop={6}>
             <Text style={styles.cardTitle} numberOfLines={1}>
-              {selected.isPinned ? "📌 " : ""}
+              {selected.isPinned && selectedSharing.role !== "owner" ? "📌 " : ""}
               {listDisplayName(selected)}
             </Text>
             <Text style={styles.cardCount}>{he.myList.widget.productCount(items.length)}</Text>
@@ -532,16 +672,30 @@ export function HomeListWidget({
                 )}
                 {selectedSharing.pendingCount > 0 && <View style={styles.pendingDot} />}
               </Pressable>
+              {/* Pinning is a first-class action on the card, not buried in the menu. */}
               {selectedSharing.role === "owner" && (
                 <Pressable
-                  onPress={() => openListMenu(selected)}
-                  hitSlop={10}
-                  style={styles.menuButton}
-                  accessibilityLabel={he.myList.widget.menuAccessibilityLabel}
+                  onPress={() => handleTogglePin(selected)}
+                  hitSlop={8}
+                  style={[styles.pinButton, selected.isPinned && styles.pinButtonActive]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: Boolean(selected.isPinned) }}
+                  accessibilityLabel={selected.isPinned ? he.myList.manage.unpin : he.myList.manage.pin}
                 >
-                  <MoreIcon />
+                  <PinIcon color={selected.isPinned ? COLORS.white : COLORS.cyan700} />
+                  <Text style={[styles.pinButtonText, selected.isPinned && styles.pinButtonTextActive]}>
+                    {selected.isPinned ? he.myList.manage.pinned : he.myList.manage.pinShort}
+                  </Text>
                 </Pressable>
               )}
+              <Pressable
+                onPress={() => (selectedSharing.role === "owner" ? openListMenu(selected) : openMemberMenu(selected))}
+                hitSlop={10}
+                style={styles.menuButton}
+                accessibilityLabel={he.myList.widget.menuAccessibilityLabel}
+              >
+                <MoreIcon />
+              </Pressable>
             </View>
           )}
         </View>
@@ -571,6 +725,14 @@ export function HomeListWidget({
               style={styles.addFieldInput}
             />
           </View>
+          <Pressable
+            style={styles.micButton}
+            onPress={openPhotoPicker}
+            accessibilityRole="button"
+            accessibilityLabel={he.myList.widget.cameraAccessibilityLabel}
+          >
+            <CameraIcon />
+          </Pressable>
           {addText.trim() ? (
             <Pressable
               style={[styles.micButton, styles.addButton]}
@@ -633,6 +795,19 @@ export function HomeListWidget({
           {he.home.goShopping}
         </Button>
       </View>
+
+      <PhotoListModal
+        stage={photoStage}
+        text={photoText}
+        onChangeText={setPhotoText}
+        busy={photoAdding}
+        onAdd={addPhotoLines}
+        onRetry={() => {
+          setPhotoStage(null);
+          openPhotoPicker();
+        }}
+        onClose={() => setPhotoStage(null)}
+      />
 
       <DidYouMeanModal
         typedText={didYouMean?.typed ?? null}
@@ -780,6 +955,28 @@ const styles = StyleSheet.create({
   },
   peopleButtonShared: {
     backgroundColor: COLORS.cyan50,
+  },
+  pinButton: {
+    height: 32,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: COLORS.cyan500,
+    paddingHorizontal: 10,
+  },
+  pinButtonActive: {
+    backgroundColor: COLORS.cyan600,
+    borderColor: COLORS.cyan600,
+  },
+  pinButtonText: {
+    fontSize: 13,
+    fontFamily: FONTS.semiBold,
+    color: COLORS.cyan700,
+  },
+  pinButtonTextActive: {
+    color: COLORS.white,
   },
   peopleCount: {
     fontSize: 13,

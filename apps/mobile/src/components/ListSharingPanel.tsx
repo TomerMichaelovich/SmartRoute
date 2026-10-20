@@ -83,7 +83,7 @@ export function ListSharingPanel({ code, showIntro = false }: ListSharingPanelPr
       const res = await apiFetch(`/api/lists/${code}/invites`, { method: "POST" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const { invite }: { invite: HouseholdInvite } = await res.json();
-      await shareInvite(listName, invite.code);
+      await shareInvite(user?.displayName ?? "", listName, invite.code);
     } catch {
       Alert.alert(he.common.error);
     } finally {

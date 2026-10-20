@@ -30,7 +30,13 @@ interface PendingUpdate {
  * ambiguous one, like "נס", gets the branch's options); confirming re-plans the route -
  * a new route that keeps what's been ticked and continues from where the shopper is.
  */
-export function useSharedListUpdates(route: Route | null, storeId: string | null, checkedItemIds: Set<string>) {
+export function useSharedListUpdates(
+  route: Route | null,
+  storeId: string | null,
+  checkedItemIds: Set<string>,
+  /** False once the shopper finishes - from then on list changes are their own doing. */
+  enabled = true,
+) {
   const router = useRouter();
   const { user } = useAuth();
   const [watched, setWatched] = useState<{ shareCode: string; storeProducts: Product[] } | null>(null);
@@ -66,7 +72,11 @@ export function useSharedListUpdates(route: Route | null, storeId: string | null
   }, [route, storeId]);
 
   useEffect(() => {
-    if (!route || !watched) return;
+    if (!enabled) setPending(null);
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!route || !watched || !enabled) return;
     const inRoute = new Set([...route.stops.flatMap((s) => s.itemIds), ...route.unresolvedItemIds]);
     const onStops = route.stops.flatMap((s) => s.itemIds);
     const someone = he.route.sharedUpdate.someone;
@@ -137,7 +147,7 @@ export function useSharedListUpdates(route: Route | null, storeId: string | null
 
     const interval = setInterval(() => void check(), SHARED_POLL_MS);
     return () => clearInterval(interval);
-  }, [route, watched, user]);
+  }, [route, watched, user, enabled]);
 
   function choose(itemId: string, productId: string | null) {
     setPending(

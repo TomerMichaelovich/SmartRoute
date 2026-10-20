@@ -47,6 +47,9 @@ export default function RouteScreen() {
   // re-planned route (shared-list additions) never writes the old route's ticks over it.
   const [hydratedRouteId, setHydratedRouteId] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
+  // Set once "finish" is tapped and never cleared: finishing a pinned list removes the bought
+  // items on the server, which the shared-list watcher must not report as someone's removal.
+  const [finished, setFinished] = useState(false);
   const [mapExpanded, setMapExpanded] = useState(false);
 
   useEffect(() => {
@@ -88,6 +91,7 @@ export default function RouteScreen() {
     state.status === "ready" ? state.data.route : null,
     state.status === "ready" ? state.data.store.id : null,
     checkedItemIds,
+    !finished,
   );
 
   const totalItems = useMemo(() => stopViews.reduce((sum, s) => sum + s.items.length, 0), [stopViews]);
@@ -146,6 +150,7 @@ export default function RouteScreen() {
   // guests and lists that aren't theirs). Best-effort: a failed save still
   // lets them finish, it just doesn't claim anything was saved.
   async function handleFinish() {
+    setFinished(true);
     setFinishing(true);
     let saved = false;
     try {

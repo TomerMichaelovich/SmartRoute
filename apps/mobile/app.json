@@ -2,7 +2,7 @@
   "expo": {
     "name": "NAVIO",
     "slug": "smartroute-mobile",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "smartroute",
@@ -45,9 +45,13 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "backgroundColor": "#FFFFFF",
+          "image": "./assets/images/splash-navio.png",
+          "imageWidth": 200,
+          "dark": {
+            "backgroundColor": "#FFFFFF",
+            "image": "./assets/images/splash-navio.png"
+          }
         }
       ],
       "expo-font",
@@ -68,6 +72,13 @@
       ],
       "expo-secure-store",
       "expo-image",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "NAVIO צריכה גישה לתמונות כדי לקרוא רשימת קניות מתמונה.",
+          "cameraPermission": "NAVIO צריכה גישה למצלמה כדי לצלם רשימת קניות."
+        }
+      ],
       "expo-notifications",
       [
         "expo-navigation-bar",

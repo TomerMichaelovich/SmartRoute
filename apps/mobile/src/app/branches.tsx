@@ -1,5 +1,5 @@
-import { Link, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { Link, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { ShoppingList } from "@smartroute/core/domain/entities/shopping-list";
 import type { Store } from "@smartroute/core/domain/entities/store";
@@ -20,6 +20,14 @@ export default function BranchesScreen() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [routingStoreId, setRoutingStoreId] = useState<string | null>(null);
   const [routeError, setRouteError] = useState<string | null>(null);
+
+  // The branch buttons stay locked while a route is being built; coming back to this
+  // screen (e.g. "back" from the route) has to unlock them again.
+  useFocusEffect(
+    useCallback(() => {
+      setRoutingStoreId(null);
+    }, []),
+  );
 
   // Bumped by the retry button to re-run the fetch.
   const [attempt, setAttempt] = useState(0);
