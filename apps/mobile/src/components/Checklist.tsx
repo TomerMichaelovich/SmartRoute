@@ -45,7 +45,12 @@ export function Checklist({
               <View style={[styles.badge, allChecked && styles.badgeChecked]}>
                 <Text style={styles.badgeText}>{stop.order}</Text>
               </View>
-              <Text style={styles.stopLabel}>{stop.label}</Text>
+              <Text style={styles.stopLabel} numberOfLines={1}>
+                {stop.label.replace(/\s*\n\s*/g, " ")}
+              </Text>
+              <Text style={styles.stopCount}>
+                {items.filter((item) => checkedItemIds.has(item.id)).length}/{items.length}
+              </Text>
             </View>
             <View style={styles.items}>
               {items.map((item) => (
@@ -70,15 +75,17 @@ export function Checklist({
 
 const styles = StyleSheet.create({
   list: {
-    gap: 12,
+    gap: 8,
   },
   card: {
-    gap: 8,
-    borderRadius: 16,
+    gap: 2,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: "transparent",
     backgroundColor: COLORS.white,
-    padding: 16,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 4,
     shadowColor: "#000",
     shadowOpacity: 0.05,
     shadowRadius: 4,
@@ -91,12 +98,12 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 10,
   },
   badge: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: COLORS.cyan600,
@@ -107,14 +114,20 @@ const styles = StyleSheet.create({
   badgeText: {
     color: COLORS.white,
     fontFamily: FONTS.bold,
-    fontSize: 14,
+    fontSize: 12,
   },
   stopLabel: {
-    fontSize: 16,
+    flex: 1,
+    fontSize: 15,
     fontFamily: FONTS.semiBold,
     color: COLORS.neutral900,
   },
+  stopCount: {
+    fontSize: 12,
+    fontFamily: FONTS.medium,
+    color: COLORS.neutral500,
+  },
   items: {
-    paddingStart: 44,
+    paddingStart: 34,
   },
 });

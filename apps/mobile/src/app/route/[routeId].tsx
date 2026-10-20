@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import type { MapNode } from "@smartroute/core/domain/entities/map-node";
 import type { Route } from "@smartroute/core/domain/entities/route";
 import type { Store } from "@smartroute/core/domain/entities/store";
@@ -44,6 +44,9 @@ export default function RouteScreen() {
   const [selectedStopOrder, setSelectedStopOrder] = useState<number | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [finishing, setFinishing] = useState(false);
+  const [mapExpanded, setMapExpanded] = useState(false);
+  // The inline map gets a good share of the screen; the list scrolls below it.
+  const mapFrameHeight = Math.round(useWindowDimensions().height * 0.42);
 
   useEffect(() => {
     let cancelled = false;
@@ -204,9 +207,11 @@ export default function RouteScreen() {
 
   const { route, store, nodes, mapImageUrl } = state.data;
 
+  // Full-screen map: just the store name, progress and the map - the expand
+  // button on the map brings the list back.
   return (
     <View style={styles.screen}>
-      <View style={styles.top}>
+      <View style={[styles.top, mapExpanded && styles.topExpanded]}>
         <Text style={styles.title}>{store.name}</Text>
         <ProgressBar value={progress} />
         <Text style={styles.progressText}>{he.route.progress(checkedCount, totalItems)}</Text>
@@ -221,10 +226,13 @@ export default function RouteScreen() {
           checkedStopOrders={checkedStopOrders}
           selectedStopOrder={selectedStopOrder}
           onSelectStop={setSelectedStopOrder}
+          expanded={mapExpanded}
+          onToggleExpanded={() => setMapExpanded((v) => !v)}
+          frameHeight={mapFrameHeight}
         />
       </View>
 
-      <ScrollView contentContainerStyle={styles.bottom}>
+      <ScrollView contentContainerStyle={styles.bottom} style={mapExpanded && styles.hidden}>
         <Checklist
           stopViews={stopViews}
           checkedItemIds={checkedItemIds}
@@ -264,10 +272,16 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.neutral50,
   },
   top: {
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingTop: 24,
-    paddingBottom: 16,
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingTop: 16,
+    paddingBottom: 12,
+  },
+  topExpanded: {
+    flex: 1,
+  },
+  hidden: {
+    display: "none",
   },
   title: {
     fontSize: 20,

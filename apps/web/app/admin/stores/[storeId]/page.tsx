@@ -19,7 +19,6 @@ import {
   deleteStore,
   removeProductFromNode,
   saveWalkableMap,
-  updateNodeIcon,
   updateNodeLabel,
   updateNodePosition,
   updateStore,
@@ -29,7 +28,6 @@ import { DeleteStoreButton } from "@/src/presentation/components/admin/DeleteSto
 import { StoreDetailsForm } from "@/src/presentation/components/admin/StoreDetailsForm";
 import { StoreLayoutEditor } from "@/src/presentation/components/admin/StoreLayoutEditor";
 import { NODE_TYPE_LABELS } from "@/src/presentation/node-type-labels";
-import { PRODUCT_ICONS } from "@smartroute/core/map/product-icons";
 
 const NODE_TYPES: MapNodeType[] = ["entrance", "checkout", "waypoint", "department"];
 
@@ -64,7 +62,6 @@ export default async function AdminStoreDetailPage({
   const boundCreateNode = createNode.bind(null, storeId);
   const boundCreateEdge = createEdge.bind(null, storeId);
   const boundUpdateNodePosition = updateNodePosition.bind(null, storeId);
-  const boundUpdateNodeIcon = updateNodeIcon.bind(null, storeId);
   const boundUploadStoreImage = uploadStoreImage.bind(null, storeId);
   const mapImageUrl = store.mapImageUrl ? `${store.mapImageUrl}?v=${encodeURIComponent(store.updatedAt)}` : "";
   // Blob-hosted images are proxied through our origin so the walkable-area editor can read pixels.
@@ -97,7 +94,6 @@ export default async function AdminStoreDetailPage({
         nodes={nodes}
         edges={edges}
         nodeTypes={NODE_TYPES}
-        productIcons={PRODUCT_ICONS}
         products={products}
         listings={listings}
         createNode={boundCreateNode}
@@ -105,7 +101,6 @@ export default async function AdminStoreDetailPage({
         deleteNode={deleteNode}
         deleteEdge={deleteEdge}
         updateNodePosition={boundUpdateNodePosition}
-        updateNodeIcon={boundUpdateNodeIcon}
         updateNodeLabel={updateNodeLabel}
         addProductToNode={addProductToNode}
         removeProductFromNode={removeProductFromNode}

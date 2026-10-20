@@ -39,8 +39,8 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    paddingVertical: 8,
+    gap: 10,
+    paddingVertical: 5,
     borderTopWidth: 1,
     borderTopColor: COLORS.neutral100,
   },
@@ -48,7 +48,7 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 10,
   },
   checkbox: {
     width: 20,
@@ -70,15 +70,15 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
   },
   image: {
-    width: 40,
-    height: 40,
+    width: 30,
+    height: 30,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: COLORS.neutral200,
   },
   name: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 15,
     fontFamily: FONTS.regular,
     color: COLORS.neutral900,
   },
@@ -88,8 +88,8 @@ const styles = StyleSheet.create({
   },
   notFoundButton: {
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
   notFoundButtonActive: {
     backgroundColor: "#fef3c7",

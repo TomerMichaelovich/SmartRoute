@@ -7,11 +7,8 @@ import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ProductListing } from "@smartroute/core/domain/entities/product-listing";
 import { distanceBetweenNodes } from "@smartroute/core/domain/value-objects/geo-point";
 import { NODE_TYPE_LABELS } from "@/src/presentation/node-type-labels";
-import { findProductIcon, type ProductIcon } from "@smartroute/core/map/product-icons";
 import type { StoredWalkableMask } from "@smartroute/core/map/walkable/mask";
 import type { WalkableMapSaveResult } from "@/src/presentation/actions/admin-store-actions";
-import { MultilineSvgText } from "../map/MultilineSvgText";
-import { ProductIconSidebar } from "./ProductIconSidebar";
 import { WalkableAreaEditor } from "./WalkableAreaEditor";
 
 interface StoreLayoutEditorProps {
@@ -22,7 +19,6 @@ interface StoreLayoutEditorProps {
   nodes: MapNode[];
   edges: MapEdge[];
   nodeTypes: MapNodeType[];
-  productIcons: ProductIcon[];
   products: Product[];
   listings: ProductListing[];
   createNode: (formData: FormData) => Promise<void>;
@@ -30,7 +26,6 @@ interface StoreLayoutEditorProps {
   deleteNode: (storeId: string, nodeId: string) => Promise<void>;
   deleteEdge: (storeId: string, edgeId: string) => Promise<void>;
   updateNodePosition: (nodeId: string, x: number, y: number) => Promise<void>;
-  updateNodeIcon: (nodeId: string, iconKey: string) => Promise<void>;
   updateNodeLabel: (storeId: string, nodeId: string, formData: FormData) => Promise<void>;
   addProductToNode: (storeId: string, nodeId: string, formData: FormData) => Promise<void>;
   removeProductFromNode: (storeId: string, nodeId: string, productId: string) => Promise<void>;
@@ -40,8 +35,6 @@ interface StoreLayoutEditorProps {
   walkableMask: StoredWalkableMask | null;
   saveWalkableMap: (mask: StoredWalkableMask) => Promise<WalkableMapSaveResult>;
 }
-
-const ICON_DROP_HIT_RADIUS_PX = 26;
 
 const NODE_COLORS: Record<MapNodeType, string> = {
   entrance: "#2563eb",
@@ -56,9 +49,42 @@ function nodeRadius(type: MapNodeType): number {
   return 21;
 }
 
-/** x/y/width/height/rx for a rounded-square icon container of "radius" r centered at cx/cy. */
-function squareAttrs(cx: number, cy: number, r: number) {
-  return { x: cx - r, y: cy - r, width: r * 2, height: r * 2, rx: r * 0.28 };
+const LABEL_FONT_SIZE = 18;
+// Rough Heebo width per Hebrew letter, to size the label's box without measuring.
+const LABEL_CHAR_WIDTH_EM = 0.6;
+
+/**
+ * A named node (department/entrance/checkout) as its name on a white box - the
+ * same look the app's route map uses - centered on the node's position, with a
+ * type-colored border (green ring when selected).
+ */
+function NodeLabel({ x, y, text, color, selected }: { x: number; y: number; text: string; color: string; selected: boolean }) {
+  const lines = (text || "?").split("\n").map((l) => l.trim()).filter(Boolean);
+  const lineHeight = LABEL_FONT_SIZE * 1.2;
+  const width = Math.max(...lines.map((l) => l.length)) * LABEL_FONT_SIZE * LABEL_CHAR_WIDTH_EM + LABEL_FONT_SIZE;
+  const height = lines.length * lineHeight + LABEL_FONT_SIZE * 0.5;
+  const top = y - height / 2;
+  return (
+    <>
+      {selected && (
+        <rect x={x - width / 2 - 5} y={top - 5} width={width + 10} height={height + 10} rx={12} fill="none" stroke="#059669" strokeWidth={3} />
+      )}
+      <rect x={x - width / 2} y={top} width={width} height={height} rx={8} fill="#ffffff" stroke={color} strokeWidth={2} />
+      {lines.map((line, i) => (
+        <text
+          key={i}
+          x={x}
+          y={top + LABEL_FONT_SIZE * 0.25 + lineHeight * i + LABEL_FONT_SIZE * 0.95}
+          textAnchor="middle"
+          fontSize={LABEL_FONT_SIZE}
+          fontWeight={700}
+          fill="#111827"
+        >
+          {line}
+        </text>
+      ))}
+    </>
+  );
 }
 
 const DRAG_THRESHOLD_PX = 6;
@@ -68,8 +94,6 @@ interface AddNodePopup {
   screenTop: number;
   normX: number;
   normY: number;
-  presetLabel?: string;
-  presetIconKey?: string;
   presetType?: MapNodeType;
 }
 
@@ -87,7 +111,6 @@ export function StoreLayoutEditor({
   nodes,
   edges,
   nodeTypes,
-  productIcons,
   products,
   listings,
   createNode,
@@ -95,7 +118,6 @@ export function StoreLayoutEditor({
   deleteNode,
   deleteEdge,
   updateNodePosition,
-  updateNodeIcon,
   updateNodeLabel,
   addProductToNode,
   removeProductFromNode,
@@ -115,6 +137,8 @@ export function StoreLayoutEditor({
 
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [addPopup, setAddPopup] = useState<AddNodePopup | null>(null);
+  // "Add department" armed: the next click on the map places a named node there.
+  const [placingNode, setPlacingNode] = useState(false);
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<Set<string>>(new Set());
   const marqueeStartRef = useRef<{ clientX: number; clientY: number; active: boolean } | null>(null);
@@ -127,6 +151,7 @@ export function StoreLayoutEditor({
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
       setAddPopup(null);
+      setPlacingNode(false);
       setSelectedNodeIds(new Set());
       setSelectedEdgeIds(new Set());
     }
@@ -149,62 +174,10 @@ export function StoreLayoutEditor({
     };
   }
 
-  function normalizedToScreen(normX: number, normY: number): { x: number; y: number } {
-    const svg = svgRef.current;
-    if (!svg) return { x: 0, y: 0 };
-    const point = svg.createSVGPoint();
-    point.x = normX * mapWidth;
-    point.y = normY * mapHeight;
-    const ctm = svg.getScreenCTM();
-    if (!ctm) return { x: 0, y: 0 };
-    const transformed = point.matrixTransform(ctm);
-    return { x: transformed.x, y: transformed.y };
-  }
-
   function containerOffset(clientX: number, clientY: number): { left: number; top: number } {
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return { left: 0, top: 0 };
     return { left: clientX - rect.left, top: clientY - rect.top };
-  }
-
-  function handleIconDropped(icon: ProductIcon, clientX: number, clientY: number) {
-    const svg = svgRef.current;
-    if (!svg) return;
-    const svgRect = svg.getBoundingClientRect();
-    const isOverCanvas =
-      clientX >= svgRect.left && clientX <= svgRect.right && clientY >= svgRect.top && clientY <= svgRect.bottom;
-    if (!isOverCanvas) return;
-
-    let nearestNode: MapNode | null = null;
-    let nearestDist = Infinity;
-    for (const node of nodes) {
-      const screen = normalizedToScreen(node.position.x, node.position.y);
-      const dist = Math.hypot(screen.x - clientX, screen.y - clientY);
-      if (dist < nearestDist) {
-        nearestDist = dist;
-        nearestNode = node;
-      }
-    }
-
-    if (nearestNode && nearestDist <= ICON_DROP_HIT_RADIUS_PX) {
-      void updateNodeIcon(nearestNode.id, icon.key);
-      return;
-    }
-
-    const { x, y } = screenToNormalized(clientX, clientY);
-    const { left, top } = containerOffset(clientX, clientY);
-    closePopups();
-    setSelectedNodeIds(new Set());
-    setSelectedEdgeIds(new Set());
-    setAddPopup({
-      screenLeft: left,
-      screenTop: top,
-      normX: x,
-      normY: y,
-      presetLabel: icon.labelHe,
-      presetIconKey: icon.key,
-      presetType: icon.defaultNodeType,
-    });
   }
 
   function closePopups() {
@@ -226,7 +199,9 @@ export function StoreLayoutEditor({
 
   // A click on empty map space drops a waypoint right there - no popup. If exactly one node is
   // selected, the new waypoint is also connected to it and becomes the selection, so clicking
-  // along an aisle lays out the whole corridor. Named nodes are added by dragging an icon.
+  // along an aisle lays out the whole corridor. Named nodes (departments, entrance, checkout) are
+  // added with the "add department" button: it arms placingNode, and the next click opens the
+  // label popup there instead.
   function handleBackgroundClick(e: React.MouseEvent) {
     if (justMarqueedRef.current) {
       justMarqueedRef.current = false;
@@ -234,6 +209,14 @@ export function StoreLayoutEditor({
     }
     closePopups();
     const { x, y } = screenToNormalized(e.clientX, e.clientY);
+    if (placingNode) {
+      const { left, top } = containerOffset(e.clientX, e.clientY);
+      setPlacingNode(false);
+      setSelectedNodeIds(new Set());
+      setSelectedEdgeIds(new Set());
+      setAddPopup({ screenLeft: left, screenTop: top, normX: x, normY: y, presetType: "department" });
+      return;
+    }
     const newNodeId = crypto.randomUUID();
     const formData = new FormData();
     formData.set("id", newNodeId);
@@ -474,13 +457,27 @@ export function StoreLayoutEditor({
         <>
           <p className="text-xs text-neutral-500">
             לחצו על המפה להוספת נקודת ציון · כשצומת נבחר, לחיצה על המפה מוסיפה נקודה ומחברת אליה (לחיצות ברצף = מסדרון)
-            · לחצו על צומת ואז על צומת נוסף כדי לחבר ביניהם · גררו צומת כדי להזיז אותו · גררו אייקון מהרשימה כדי
-            להוסיף/לעדכן צומת · גררו על שטח ריק כדי לסמן ריבוע ולבחור את כל הצמתים שבתוכו · Esc לביטול בחירה ·
+            · לחצו על צומת ואז על צומת נוסף כדי לחבר ביניהם · גררו צומת כדי להזיז אותו · &quot;הוספת מחלקה&quot; ואז
+            לחיצה על המפה מוסיפה מחלקה/כניסה/קופה · גררו על שטח ריק כדי לסמן ריבוע ולבחור את כל הצמתים שבתוכו · Esc לביטול בחירה ·
             Ctrl+לחיצה לבחירה מרובה
           </p>
 
           <div className="flex flex-col gap-3">
-            <ProductIconSidebar icons={productIcons} onIconDropped={handleIconDropped} />
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  closePopups();
+                  setPlacingNode((v) => !v);
+                }}
+                className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                  placingNode ? "bg-cyan-600 text-white" : "border border-neutral-300 bg-white text-neutral-700"
+                }`}
+              >
+                {placingNode ? "ביטול הוספה" : "+ הוספת מחלקה"}
+              </button>
+              {placingNode && <span className="text-sm text-cyan-700">לחצו על המפה במיקום המחלקה</span>}
+            </div>
 
             <div ref={containerRef} className="relative">
               <svg
@@ -563,7 +560,6 @@ export function StoreLayoutEditor({
                   const y = (isDragging ? dragState!.y : node.position.y) * mapHeight;
                   const radius = nodeRadius(node.type);
                   const isSelected = selectedNodeIds.has(node.id);
-                  const icon = findProductIcon(node.iconKey);
                   const isWaypoint = node.type === "waypoint";
 
                   return (
@@ -575,51 +571,16 @@ export function StoreLayoutEditor({
                       onPointerUp={(e) => void handleNodePointerUp(e, node)}
                       onClick={(e) => handleNodeClick(e, node)}
                     >
-                      {isSelected && (isWaypoint ? (
-                        <circle cx={x} cy={y} r={radius + 6} fill="none" stroke="#059669" strokeWidth={3} />
-                      ) : (
-                        <rect {...squareAttrs(x, y, radius + 6)} fill="none" stroke="#059669" strokeWidth={3} />
-                      ))}
-                      {icon ? (
+                      {isWaypoint ? (
                         <>
-                          <clipPath id={`node-clip-${node.id}`}>
-                            <rect {...squareAttrs(x, y, radius)} />
-                          </clipPath>
-                          <rect {...squareAttrs(x, y, radius)} fill="#f3f4f6" />
-                          <image
-                            href={icon.src}
-                            x={x - radius}
-                            y={y - radius}
-                            width={radius * 2}
-                            height={radius * 2}
-                            clipPath={`url(#node-clip-${node.id})`}
-                            preserveAspectRatio="xMidYMid slice"
-                          />
-                          <rect {...squareAttrs(x, y, radius)} fill="none" stroke="#ffffff" strokeWidth={2} />
-                        </>
-                      ) : isWaypoint ? (
-                        <>
+                          {isSelected && <circle cx={x} cy={y} r={radius + 6} fill="none" stroke="#059669" strokeWidth={3} />}
                           {/* Invisible, larger hit area so the small dot is still easy to click and drag. */}
                           <circle cx={x} cy={y} r={14} fill="transparent" />
                           <circle cx={x} cy={y} r={radius} fill={NODE_COLORS[node.type]} />
                         </>
                       ) : (
-                        <rect {...squareAttrs(x, y, radius)} fill={NODE_COLORS[node.type]} />
+                        <NodeLabel x={x} y={y} text={node.label} color={NODE_COLORS[node.type]} selected={isSelected} />
                       )}
-                      {!isWaypoint && <MultilineSvgText
-                        text={node.label}
-                        x={x}
-                        y={y + radius + 18}
-                        lineHeight={21}
-                        textAnchor="middle"
-                        fontSize={18}
-                        fontWeight={600}
-                        fill="#111827"
-                        stroke="white"
-                        strokeWidth={3.5}
-                        strokeLinejoin="round"
-                        paintOrder="stroke"
-                      />}
                     </g>
                   );
                 })}
@@ -655,25 +616,15 @@ export function StoreLayoutEditor({
                   >
                     <input type="hidden" name="x" value={addPopup.normX} />
                     <input type="hidden" name="y" value={addPopup.normY} />
-                    <input type="hidden" name="iconKey" value={addPopup.presetIconKey ?? ""} />
-                    {addPopup.presetIconKey && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={findProductIcon(addPopup.presetIconKey)?.src}
-                        alt=""
-                        className="mx-auto h-10 w-10 rounded-full object-cover"
-                      />
-                    )}
                     <input
                       name="label"
                       placeholder="תווית (חובה למחלקה בלבד)"
                       autoFocus
-                      defaultValue={addPopup.presetLabel ?? ""}
                       className="rounded-lg border border-neutral-300 p-1.5 text-sm"
                     />
                     <select
                       name="type"
-                      defaultValue={addPopup.presetType ?? (addPopup.presetIconKey ? "department" : undefined)}
+                      defaultValue={addPopup.presetType}
                       className="rounded-lg border border-neutral-300 p-1.5 text-sm"
                     >
                       {nodeTypes.map((t) => (

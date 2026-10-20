@@ -168,12 +168,6 @@ export async function updateNodePosition(
   revalidatePath(`/admin/stores/${storeId}`);
 }
 
-export async function updateNodeIcon(storeId: string, nodeId: string, iconKey: string): Promise<void> {
-  await requireAdmin();
-  await nodeRepository.update(nodeId, { iconKey });
-  revalidatePath(`/admin/stores/${storeId}`);
-}
-
 export async function updateNodeLabel(storeId: string, nodeId: string, formData: FormData): Promise<void> {
   await requireAdmin();
   // Textareas normalize line breaks to \r\n on submit in some browsers - collapse to a

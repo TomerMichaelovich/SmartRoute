@@ -1,8 +1,7 @@
-import { View } from "react-native";
-import Svg, { ClipPath, Ellipse, G, Image as SvgImage, Path, Rect, Circle, Text as SvgText } from "react-native-svg";
+import { Pressable, StyleSheet, View } from "react-native";
+import Svg, { Circle, Ellipse, G, Image as SvgImage, Path, Rect, Text as SvgText } from "react-native-svg";
 import type { MapNode } from "@smartroute/core/domain/entities/map-node";
 import type { RouteStop } from "@smartroute/core/domain/entities/route";
-import { findProductIcon } from "@smartroute/core/map/product-icons";
 import {
   computeFootstepPlacements,
   FOOTPRINT_SOLE_PATH,
@@ -10,15 +9,90 @@ import {
   footprintTransform,
   type FootstepPlacement,
 } from "@smartroute/core/map/footstep-trail";
-import { apiUrl } from "@/lib/api";
+import { he } from "@smartroute/core/i18n/he";
 import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
-import { MultilineSvgText } from "./MultilineSvgText";
 import { ZoomableView } from "./ZoomableView";
 
-/** x/y/width/height/rx for a rounded-square icon container of "radius" r centered at cx/cy. */
-function squareAttrs(cx: number, cy: number, r: number) {
-  return { x: cx - r, y: cy - r, width: r * 2, height: r * 2, rx: r * 0.28 };
+// Heebo Bold averages a bit over half an em per Hebrew letter; SVG text can't
+// be measured here, so the label's white box is sized from this estimate.
+const CHAR_WIDTH_EM = 0.6;
+
+/**
+ * A map label as dark text on a white rounded box, readable over any floor
+ * photo. Centered on x; `above` puts the box's bottom edge at y (over a
+ * marker), otherwise it's centered on y. Kept inside the map horizontally.
+ */
+function LabelPill({
+  text,
+  x,
+  y,
+  fontSize,
+  color,
+  mapWidth,
+  scale,
+  above = false,
+}: {
+  text: string;
+  x: number;
+  y: number;
+  fontSize: number;
+  color: string;
+  mapWidth: number;
+  scale: number;
+  above?: boolean;
+}) {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (lines.length === 0) return null;
+  const lineHeight = fontSize * 1.2;
+  const padX = fontSize * 0.5;
+  const padY = fontSize * 0.25;
+  const width = Math.max(...lines.map((l) => l.length)) * fontSize * CHAR_WIDTH_EM + padX * 2;
+  const height = lines.length * lineHeight + padY * 2;
+  const left = Math.min(Math.max(x - width / 2, 2 * scale), mapWidth - width - 2 * scale);
+  const top = above ? Math.max(y - height, 2 * scale) : y - height / 2;
+  const centerX = left + width / 2;
+  return (
+    <G>
+      <Rect
+        x={left}
+        y={top}
+        width={width}
+        height={height}
+        rx={Math.min(height / 2, fontSize * 0.6)}
+        fill="#ffffff"
+        fillOpacity={0.95}
+        stroke="#000000"
+        strokeOpacity={0.12}
+        strokeWidth={1.5 * scale}
+      />
+      {lines.map((line, i) => (
+        <SvgText
+          key={i}
+          x={centerX}
+          y={top + padY + lineHeight * i + fontSize * 0.95}
+          textAnchor="middle"
+          fontSize={fontSize}
+          fontFamily={FONTS.bold}
+          fill={color}
+        >
+          {line}
+        </SvgText>
+      ))}
+    </G>
+  );
+}
+
+function ExpandIcon({ expanded }: { expanded: boolean }) {
+  // Arrows pointing out of the corners to enlarge, into the center to shrink back.
+  const d = expanded
+    ? "M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"
+    : "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5";
+  return (
+    <Svg viewBox="0 0 24 24" width={20} height={20} fill="none" stroke={COLORS.neutral900} strokeWidth={2.2}>
+      <Path d={d} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
 }
 
 function Footprint({ size, ...step }: FootstepPlacement & { size: number }) {
@@ -49,12 +123,19 @@ interface StoreMapProps {
   checkedStopOrders: Set<number>;
   selectedStopOrder: number | null;
   onSelectStop?: (order: number) => void;
+  /** Full-screen mode: the map fills its parent (flex: 1) instead of using frameHeight. */
+  expanded: boolean;
+  onToggleExpanded: () => void;
+  /** Inline height. Taller than the map's own aspect allows, the map is zoomed in to fill it
+   * (centered on the current stop) and can be dragged to see the rest. */
+  frameHeight: number;
 }
 
 /**
- * React Native port of apps/web's StoreMap.tsx (react-native-svg instead of DOM <svg>) - kept
- * structurally identical (same marker sizing/scale math, same footstep trail, same node-type
- * branches) so the two stay easy to diff against each other as the web version evolves.
+ * The shopping route's map. Started as a port of apps/web's StoreMap.tsx but now
+ * deliberately lighter, so the floor photo stays visible: no department images,
+ * only the stop the shopper is heading to and the one after it (numbered
+ * circles with a white name label), plus small entrance/checkout labels.
  */
 export function StoreMap({
   mapWidth,
@@ -66,17 +147,29 @@ export function StoreMap({
   checkedStopOrders,
   selectedStopOrder,
   onSelectStop,
+  expanded,
+  onToggleExpanded,
+  frameHeight,
 }: StoreMapProps) {
+  // Marker/label sizes are fractions of the map's width, so they read the same on a phone
+  // whatever resolution the store's floor photo has.
   const scale = mapWidth / 1000;
-  const stopRadius = 32 * scale;
-  const minorNodeRadius = 17 * scale;
-  const badgeRadius = 15 * scale;
-  const labelFontSize = 18 * scale;
-  const minorLabelFontSize = 14 * scale;
-  const badgeFontSize = 16 * scale;
+  const markerRadius = mapWidth * 0.03;
+  const markerFontSize = mapWidth * 0.034;
+  const labelFontSize = mapWidth * 0.036;
+  const minorLabelFontSize = mapWidth * 0.026;
 
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
   const stopByNodeId = new Map(stops.map((s) => [s.nodeId, s]));
+
+  // Only where to go now and right after that (plus a stop picked from the
+  // list) - every stop at once crowds the map.
+  const upcoming = [...stops].sort((a, b) => a.order - b.order).filter((s) => !checkedStopOrders.has(s.order));
+  const currentStop = upcoming[0];
+  const visibleStopOrders = new Set(upcoming.slice(0, 2).map((s) => s.order));
+  if (selectedStopOrder !== null && !checkedStopOrders.has(selectedStopOrder)) visibleStopOrders.add(selectedStopOrder);
+
+  const currentNode = currentStop ? nodeById.get(currentStop.nodeId) : undefined;
 
   const routePathPoints = pathNodeIds
     .map((id) => nodeById.get(id))
@@ -86,8 +179,8 @@ export function StoreMap({
   const footsteps = computeFootstepPlacements(routePathPoints, 40 * scale, 10 * scale);
 
   return (
-    <View style={{ width: "100%", aspectRatio: mapWidth / mapHeight, borderRadius: 16, overflow: "hidden", backgroundColor: "#ffffff" }}>
-      <ZoomableView>
+    <View style={[styles.frame, expanded ? styles.frameExpanded : { height: frameHeight }]}>
+      <ZoomableView contentAspect={mapWidth / mapHeight} cover focus={currentNode?.position}>
         <Svg width="100%" height="100%" viewBox={`0 0 ${mapWidth} ${mapHeight}`}>
           {mapImageUrl && (
             <SvgImage href={mapImageUrl} x={0} y={0} width={mapWidth} height={mapHeight} preserveAspectRatio="xMidYMid slice" />
@@ -100,153 +193,107 @@ export function StoreMap({
           {nodes.map((node) => {
             const cx = node.position.x * mapWidth;
             const cy = node.position.y * mapHeight;
-            const icon = findProductIcon(node.iconKey);
 
-            if (node.type === "waypoint") {
-              return null;
-            }
-
+            // Entrance/checkout: a small label for orientation, nothing more.
             if (node.type === "entrance" || node.type === "checkout") {
-              const ringColor = node.type === "entrance" ? "#2563eb" : "#7c3aed";
               return (
-                <G key={node.id}>
-                  {icon ? (
-                    <>
-                      <ClipPath id={`node-clip-${node.id}`}>
-                        <Rect {...squareAttrs(cx, cy, stopRadius)} />
-                      </ClipPath>
-                      <Rect {...squareAttrs(cx, cy, stopRadius)} fill="#ffffff" />
-                      <SvgImage
-                        href={apiUrl(icon.src)}
-                        x={cx - stopRadius}
-                        y={cy - stopRadius}
-                        width={stopRadius * 2}
-                        height={stopRadius * 2}
-                        clipPath={`url(#node-clip-${node.id})`}
-                        preserveAspectRatio="xMidYMid slice"
-                      />
-                      <Rect {...squareAttrs(cx, cy, stopRadius)} fill="none" stroke={ringColor} strokeWidth={4 * scale} />
-                    </>
-                  ) : (
-                    <Rect {...squareAttrs(cx, cy, stopRadius)} fill={ringColor} />
-                  )}
-                  <MultilineSvgText
-                    text={node.label}
-                    x={cx}
-                    y={cy + stopRadius + labelFontSize * 0.9}
-                    lineHeight={labelFontSize * 1.15}
-                    textAnchor="middle"
-                    fontSize={labelFontSize}
-                    fontFamily={FONTS.bold}
-                    fill="#ffffff"
-                    outlineColor="#000000"
-                    outlineWidth={labelFontSize * 0.3}
-                  />
-                </G>
+                <LabelPill
+                  key={node.id}
+                  text={node.label}
+                  x={cx}
+                  y={cy}
+                  fontSize={minorLabelFontSize}
+                  color={node.type === "entrance" ? "#1d4ed8" : "#6d28d9"}
+                  mapWidth={mapWidth}
+                  scale={scale}
+                />
               );
             }
 
             const stop = stopByNodeId.get(node.id);
-            if (!stop) {
-              return (
-                <G key={node.id}>
-                  {icon ? (
-                    <>
-                      <ClipPath id={`node-clip-${node.id}`}>
-                        <Rect {...squareAttrs(cx, cy, minorNodeRadius)} />
-                      </ClipPath>
-                      <Rect {...squareAttrs(cx, cy, minorNodeRadius)} fill="#f3f4f6" />
-                      <SvgImage
-                        href={apiUrl(icon.src)}
-                        x={cx - minorNodeRadius}
-                        y={cy - minorNodeRadius}
-                        width={minorNodeRadius * 2}
-                        height={minorNodeRadius * 2}
-                        clipPath={`url(#node-clip-${node.id})`}
-                        preserveAspectRatio="xMidYMid slice"
-                        opacity={0.6}
-                      />
-                      <Rect {...squareAttrs(cx, cy, minorNodeRadius)} fill="none" stroke="#d1d5db" strokeWidth={2 * scale} />
-                    </>
-                  ) : (
-                    <Rect {...squareAttrs(cx, cy, minorNodeRadius)} fill="#f3f4f6" stroke="#d1d5db" strokeWidth={2 * scale} />
-                  )}
-                  <MultilineSvgText
-                    text={node.label}
-                    x={cx}
-                    y={cy + minorNodeRadius + minorLabelFontSize * 0.75}
-                    lineHeight={minorLabelFontSize * 1.15}
-                    textAnchor="middle"
-                    fontSize={minorLabelFontSize}
-                    fontFamily={FONTS.regular}
-                    fill="#ffffff"
-                    outlineColor="#000000"
-                    outlineWidth={minorLabelFontSize * 0.3}
-                  />
-                </G>
-              );
-            }
+            if (!stop || !visibleStopOrders.has(stop.order)) return null;
 
+            const isCurrent = stop.order === currentStop?.order;
             const isChecked = checkedStopOrders.has(stop.order);
             const isSelected = selectedStopOrder === stop.order;
-            const ringColor = isChecked ? "#9ca3af" : "#059669";
-            const badgeX = cx + stopRadius * 0.75;
-            const badgeY = cy - stopRadius * 0.75;
+            const accent = isChecked ? "#9ca3af" : COLORS.brandDark;
 
             return (
               <G key={node.id} onPress={onSelectStop ? () => onSelectStop(stop.order) : undefined}>
                 {isSelected && (
-                  <Rect {...squareAttrs(cx, cy, stopRadius + 8 * scale)} fill="none" stroke="#059669" strokeWidth={4 * scale} />
+                  <Circle cx={cx} cy={cy} r={markerRadius + 7 * scale} fill="none" stroke={accent} strokeWidth={3 * scale} strokeOpacity={0.6} />
                 )}
-                {icon ? (
-                  <>
-                    <ClipPath id={`node-clip-${node.id}`}>
-                      <Rect {...squareAttrs(cx, cy, stopRadius)} />
-                    </ClipPath>
-                    <Rect {...squareAttrs(cx, cy, stopRadius)} fill="#ffffff" />
-                    <SvgImage
-                      href={apiUrl(icon.src)}
-                      x={cx - stopRadius}
-                      y={cy - stopRadius}
-                      width={stopRadius * 2}
-                      height={stopRadius * 2}
-                      clipPath={`url(#node-clip-${node.id})`}
-                      preserveAspectRatio="xMidYMid slice"
-                      opacity={isChecked ? 0.5 : 1}
-                    />
-                    <Rect {...squareAttrs(cx, cy, stopRadius)} fill="none" stroke={ringColor} strokeWidth={4 * scale} />
-                    <Circle cx={badgeX} cy={badgeY} r={badgeRadius} fill={ringColor} stroke="white" strokeWidth={2 * scale} />
-                    {/* react-native-svg's <Text> has no dominantBaseline; nudge y by ~0.35*fontSize to
-                        approximate vertical centering on the default alphabetic baseline. */}
-                    <SvgText x={badgeX} y={badgeY + badgeFontSize * 0.35} textAnchor="middle" fontSize={badgeFontSize} fontFamily={FONTS.bold} fill="white">
-                      {stop.order}
-                    </SvgText>
-                  </>
-                ) : (
-                  <>
-                    <Rect {...squareAttrs(cx, cy, stopRadius)} fill={ringColor} />
-                    <SvgText x={cx} y={cy + labelFontSize * 0.75 * 0.35} textAnchor="middle" fontSize={labelFontSize * 0.75} fontFamily={FONTS.bold} fill="white">
-                      {stop.order}
-                    </SvgText>
-                  </>
-                )}
-                <MultilineSvgText
-                  text={node.label}
+                <Circle
+                  cx={cx}
+                  cy={cy}
+                  r={markerRadius}
+                  fill={isCurrent ? accent : "#ffffff"}
+                  stroke={isCurrent ? "#ffffff" : accent}
+                  strokeWidth={3 * scale}
+                />
+                {/* react-native-svg's <Text> has no dominantBaseline; nudge y by ~0.35*fontSize to
+                    approximate vertical centering on the default alphabetic baseline. */}
+                <SvgText
                   x={cx}
-                  y={cy + stopRadius + labelFontSize * 0.9}
-                  lineHeight={labelFontSize * 1.15}
+                  y={cy + markerFontSize * 0.35}
                   textAnchor="middle"
+                  fontSize={markerFontSize}
+                  fontFamily={FONTS.bold}
+                  fill={isCurrent ? "#ffffff" : accent}
+                >
+                  {stop.order}
+                </SvgText>
+                <LabelPill
+                  text={stop.label}
+                  x={cx}
+                  y={cy - markerRadius - 6 * scale}
                   fontSize={labelFontSize}
-                  fontWeight={700}
-                  fill="#ffffff"
-                  outlineColor="#000000"
-                  outlineWidth={labelFontSize * 0.3}
+                  color={isCurrent ? COLORS.neutral900 : COLORS.neutral600}
+                  mapWidth={mapWidth}
+                  scale={scale}
+                  above
                 />
               </G>
             );
           })}
         </Svg>
       </ZoomableView>
+      <Pressable
+        onPress={onToggleExpanded}
+        style={styles.expandButton}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={expanded ? he.route.shrinkMap : he.route.expandMap}
+      >
+        <ExpandIcon expanded={expanded} />
+      </Pressable>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  frame: {
+    width: "100%",
+    borderRadius: 16,
+    overflow: "hidden",
+    backgroundColor: "#ffffff",
+  },
+  frameExpanded: {
+    flex: 1,
+  },
+  expandButton: {
+    position: "absolute",
+    top: 8,
+    end: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.92)",
+    shadowColor: "#000",
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+});
