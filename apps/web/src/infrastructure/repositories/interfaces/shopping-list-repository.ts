@@ -49,5 +49,6 @@ export interface IShoppingListRepository {
   /** Take a list off its owner's home screen (e.g. once shopping with it is finished). */
   deactivate(listId: string): Promise<void>;
   rename(listId: string, name: string): Promise<void>;
+  setPinned(listId: string, pinned: boolean): Promise<void>;
   softDelete(listId: string, deletedAt: string): Promise<void>;
 }

@@ -31,6 +31,9 @@ export interface ShoppingList {
   name: string | null;
   // The single list surfaced as "active" for its owner.
   isActive: boolean;
+  // Pinned: a standing list (typically a household's) that stays on the home screen after
+  // shopping - finishing clears what was bought instead of retiring the list.
+  isPinned?: boolean;
   // Soft-delete marker; deleted lists are hidden but never hard-removed.
   deletedAt: string | null;
   createdAt: string;

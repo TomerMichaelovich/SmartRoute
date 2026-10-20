@@ -154,6 +154,7 @@ export const shoppingListSchema = z.object({
   householdId: z.string().nullable().default(null),
   name: z.string().nullable().default(null),
   isActive: z.boolean().default(false),
+  isPinned: z.boolean().default(false),
   deletedAt: z.string().nullable().default(null),
   createdAt: z.string(),
   updatedAt: z.string(),

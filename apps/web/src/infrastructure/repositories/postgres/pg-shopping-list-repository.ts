@@ -195,6 +195,14 @@ export class PgShoppingListRepository implements IShoppingListRepository {
     await db.update(shoppingLists).set({ isActive: false }).where(eq(shoppingLists.id, listId));
   }
 
+  async setPinned(listId: string, pinned: boolean): Promise<void> {
+    // A pinned list is always on the home screen, so pinning also re-activates it.
+    await db
+      .update(shoppingLists)
+      .set(pinned ? { isPinned: true, isActive: true } : { isPinned: false })
+      .where(eq(shoppingLists.id, listId));
+  }
+
   async rename(listId: string, name: string): Promise<void> {
     await db.update(shoppingLists).set({ name }).where(eq(shoppingLists.id, listId));
   }

@@ -11,6 +11,7 @@ import {
   storeRepository,
 } from "@/src/infrastructure/container";
 import { getCurrentUser } from "@/src/presentation/auth/dal";
+import { notifyListChanged } from "@/src/presentation/lib/list-push";
 
 const requestSchema = z.object({
   routeId: z.string().min(1),
@@ -23,7 +24,8 @@ const requestSchema = z.object({
  * the Summary screen. A no-op (204) for guests and for lists that aren't the
  * caller's - history only exists for a registered owner. Idempotent per route.
  * Finishing also takes the list off its participants' home screens (it stays in the
- * DB - the trip keeps its own snapshot).
+ * DB - the trip keeps its own snapshot) - unless it's pinned: a standing household list
+ * stays, and only what was bought is cleared from it, ready for the next trip.
  */
 export async function POST(request: Request) {
   const parsed = requestSchema.safeParse(await request.json());
@@ -56,12 +58,21 @@ export async function POST(request: Request) {
     return new NextResponse(null, { status: 204 });
   }
 
-  // A shared list is done for everyone once any participant finishes with it.
-  if (list.isActive) {
+  const alreadyRecorded = await shoppingTripRepository.existsForRoute(routeId);
+  if (list.isPinned) {
+    // Once per trip: drop the bought items, keep what wasn't found or wasn't picked up.
+    if (!alreadyRecorded) {
+      const collected = new Set(collectedItemIds);
+      const remaining = list.items.filter((item) => !collected.has(item.id));
+      await shoppingListRepository.updateItems(list.id, remaining, new Date().toISOString());
+      notifyListChanged(list, user.id);
+    }
+  } else if (list.isActive) {
+    // A shared list is done for everyone once any participant finishes with it.
     await shoppingListRepository.deactivate(list.id);
   }
 
-  if (await shoppingTripRepository.existsForRoute(routeId)) {
+  if (alreadyRecorded) {
     return new NextResponse(null, { status: 200 });
   }
 

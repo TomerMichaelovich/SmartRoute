@@ -76,7 +76,7 @@ interface MineResponse {
 
 /** What the home screen shows of the account's lists - a change means someone edited something. */
 function mineSignature(data: MineResponse): string {
-  const lists = (data.lists ?? []).map((l) => `${l.id}:${l.updatedAt}:${l.name ?? ""}`).sort();
+  const lists = (data.lists ?? []).map((l) => `${l.id}:${l.updatedAt}:${l.name ?? ""}:${l.isPinned ? 1 : 0}`).sort();
   return JSON.stringify([lists, data.sharing ?? {}, data.awaitingApproval ?? 0]);
 }
 
@@ -121,11 +121,12 @@ export function HomeListWidget({
   const addInputRef = useRef<TextInput>(null);
   const lastMineSignature = useRef("");
 
-  // Oldest first, so chips keep their place instead of jumping around every
-  // time a list is edited. Keeps the stored selection while it's still open.
+  // Pinned lists first, then oldest first, so chips keep their place instead of
+  // jumping around every time a list is edited. Keeps the stored selection while
+  // it's still open.
   const applyMine = useCallback(async (data: MineResponse, storedCode: string | null) => {
-    const open = (data.lists ?? (data.list ? [data.list] : [])).sort((a, b) =>
-      a.createdAt.localeCompare(b.createdAt),
+    const open = (data.lists ?? (data.list ? [data.list] : [])).sort(
+      (a, b) => Number(Boolean(b.isPinned)) - Number(Boolean(a.isPinned)) || a.createdAt.localeCompare(b.createdAt),
     );
     const selected =
       open.find((l) => l.shareCode === storedCode) ??
@@ -364,6 +365,24 @@ export function HomeListWidget({
     }
   }
 
+  async function handleTogglePin(list: ShoppingList) {
+    const shareCode = list.shareCode;
+    if (!shareCode) return;
+    const pinned = !list.isPinned;
+    try {
+      const res = await apiFetch(`/api/lists/${shareCode}/pin`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pinned }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      patchList(shareCode, (l) => ({ ...l, isPinned: pinned }));
+      if (pinned) Alert.alert(he.myList.manage.pinTitle, he.myList.manage.pinExplain);
+    } catch {
+      Alert.alert(he.common.error);
+    }
+  }
+
   async function handleDelete(list: ShoppingList) {
     const shareCode = list.shareCode;
     if (!shareCode) return;
@@ -386,6 +405,7 @@ export function HomeListWidget({
 
   function openListMenu(list: ShoppingList) {
     Alert.alert(listDisplayName(list), undefined, [
+      { text: list.isPinned ? he.myList.manage.unpin : he.myList.manage.pin, onPress: () => handleTogglePin(list) },
       { text: he.myList.manage.rename, onPress: () => setRenaming(true) },
       {
         text: he.myList.manage.delete,
@@ -470,6 +490,7 @@ export function HomeListWidget({
                   accessibilityState={{ selected: isSelected }}
                 >
                   <Text style={[styles.chipText, isSelected && styles.chipTextSelected]} numberOfLines={1}>
+                    {list.isPinned ? "📌 " : ""}
                     {(sharing[list.id]?.memberCount ?? 1) > 1 ? `👥 ${listDisplayName(list)}` : listDisplayName(list)}
                   </Text>
                 </Pressable>
@@ -490,6 +511,7 @@ export function HomeListWidget({
         <View style={styles.headerRow}>
           <Pressable style={styles.headerStart} onPress={openFullList} hitSlop={6}>
             <Text style={styles.cardTitle} numberOfLines={1}>
+              {selected.isPinned ? "📌 " : ""}
               {listDisplayName(selected)}
             </Text>
             <Text style={styles.cardCount}>{he.myList.widget.productCount(items.length)}</Text>

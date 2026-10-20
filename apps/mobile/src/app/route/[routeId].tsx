@@ -185,8 +185,9 @@ export default function RouteScreen() {
     try {
       const res = await apiFetch(`/api/lists/${code}`);
       if (!res.ok) return;
-      const { list }: { list: { id: string } } = await res.json();
-      if (list.id !== state.data.route.shoppingListId) return;
+      const { list }: { list: { id: string; isPinned?: boolean } } = await res.json();
+      // A pinned list stays on the home screen (the server only clears what was bought).
+      if (list.id !== state.data.route.shoppingListId || list.isPinned) return;
       await clearMyListCode();
       refreshMyListWidget();
     } catch {

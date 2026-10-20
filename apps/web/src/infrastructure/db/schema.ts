@@ -220,6 +220,8 @@ export const shoppingLists = pgTable(
     // The one list surfaced as "active" for its owner/household. At most one
     // active per owner is enforced in the repository, not by a DB constraint.
     isActive: boolean("is_active").notNull().default(false),
+    // A standing list that survives finishing a trip (see ShoppingList.isPinned).
+    isPinned: boolean("is_pinned").notNull().default(false),
     // Soft delete - rows are never hard-deleted so completed shopping trips
     // that reference a list id stay resolvable.
     deletedAt: timestamp("deleted_at", { mode: "string" }),
