@@ -129,6 +129,14 @@ export const classificationResultSchema = z.object({
   availableAtStore: z.boolean().optional(),
 });
 
+export const shoppingListItemVariantSchema = z.object({
+  kind: z.enum(["sku", "any"]),
+  productId: z.string().optional(),
+  itemKey: z.string().max(64).optional(),
+  name: z.string().max(120).optional(),
+  chosenAt: z.string(),
+});
+
 export const shoppingListItemSchema = z.object({
   id: z.string(),
   rawText: z.string(),
@@ -140,6 +148,9 @@ export const shoppingListItemSchema = z.object({
   checkedAt: z.string().optional(),
   notFound: z.boolean().optional(),
   addedByUserId: z.string().optional(),
+  // Must be listed: zod strips unknown keys, so without it every read and every
+  // full-list save would silently drop the shopper's refinement choice.
+  variant: shoppingListItemVariantSchema.optional(),
 });
 
 export const shoppingListSchema = z.object({

@@ -1,5 +1,9 @@
 import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
-import type { ShoppingList, ShoppingListItem } from "@smartroute/core/domain/entities/shopping-list";
+import type {
+  ShoppingList,
+  ShoppingListItem,
+  ShoppingListItemVariant,
+} from "@smartroute/core/domain/entities/shopping-list";
 import { db } from "../../db/client";
 import { householdMembers, shoppingLists } from "../../db/schema";
 import type {
@@ -156,6 +160,11 @@ export class PgShoppingListRepository implements IShoppingListRepository {
       itemId,
       sql`(e || ${JSON.stringify({ notFound })}::jsonb)`,
     );
+  }
+
+  async setItemVariant(listId: string, itemId: string, variant: ShoppingListItemVariant | null): Promise<void> {
+    const patch = variant === null ? sql`(e - 'variant')` : sql`(e || ${JSON.stringify({ variant })}::jsonb)`;
+    await this.mapMatchingItem(listId, itemId, patch);
   }
 
   /** Atomic: rebuilds the items array applying `patchExpr` to the one matching element. */

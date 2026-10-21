@@ -9,3 +9,10 @@ if (!process.env.DATABASE_URL) {
 const sql = neon(process.env.DATABASE_URL);
 
 export const db = drizzle(sql, { schema });
+
+/**
+ * The raw Neon client, for the few queries that pass whole arrays as single
+ * parameters (unnest / ANY) — drizzle's `sql` template expands an array into a
+ * list of separate parameters instead.
+ */
+export const rawSql = sql;

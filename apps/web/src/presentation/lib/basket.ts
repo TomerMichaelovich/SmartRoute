@@ -1,0 +1,147 @@
+import "server-only";
+import {
+  computeBasketQuotes,
+  type BasketRequirement,
+  type PricedLine,
+} from "@smartroute/core/application/basket/compute-basket-quotes";
+import { effectiveVariant } from "@smartroute/core/application/basket/effective-variant";
+import { needsVariantChoice } from "@smartroute/core/application/basket/needs-variant-choice";
+import type { ShoppingList, ShoppingListItem, ShoppingListItemVariant } from "@smartroute/core/domain/entities/shopping-list";
+import { priceRepository } from "@/src/infrastructure/container";
+import { MAX_PRICE_FILE_AGE_HOURS } from "@/src/infrastructure/prices/pilot-config";
+import { cityName } from "@/src/infrastructure/prices/settlements";
+import type { PriceBranch, SkuOption } from "@/src/infrastructure/repositories/interfaces/price-repository";
+
+/** Items still to buy: what the comparison is about. */
+const openItems = (list: ShoppingList) => list.items.filter((i) => !i.checked);
+
+const MAX_OPTIONS = 12;
+
+export async function variantOptionsFor(list: ShoppingList) {
+  const items = openItems(list);
+  const productIds = [...new Set(items.map((i) => i.classification?.matchedProductId).filter((id): id is string => !!id))];
+  const options = await priceRepository.findSkuOptions(productIds);
+  return items
+    .map((item) => {
+      const itemOptions = options.get(item.classification?.matchedProductId ?? "") ?? [];
+      return { item, itemOptions };
+    })
+    .filter(({ item, itemOptions }) => needsVariantChoice(item, itemOptions))
+    .map(({ item, itemOptions }) => ({
+      itemId: item.id,
+      rawText: item.rawText,
+      productId: item.classification!.matchedProductId!,
+      options: itemOptions.slice(0, MAX_OPTIONS).map((o) => ({
+        itemKey: o.itemKey,
+        name: o.name,
+        label: o.label,
+        manufacturer: o.manufacturer,
+        isTypical: o.isTypical,
+        branchCount: o.branchCount,
+      })),
+    }));
+}
+
+type Requirement = BasketRequirement & { itemKeys: string[] };
+
+/**
+ * List items -> what to price. A chosen product is priced exactly; otherwise
+ * ("any, cheapest", or nothing chosen yet) the cheapest typical product of the
+ * item's generic product. Items with no linked products can't be priced.
+ */
+function buildRequirements(
+  items: ShoppingListItem[],
+  options: Map<string, SkuOption[]>,
+  overrides: Map<string, ShoppingListItemVariant>,
+) {
+  const requirements: Requirement[] = [];
+  const unpriceable: { itemId: string; rawText: string }[] = [];
+  for (const item of items) {
+    const override = overrides.get(item.id);
+    const variant = override ? effectiveVariant({ ...item, variant: override }) : effectiveVariant(item);
+    const quantity = item.quantity && item.quantity > 0 ? item.quantity : 1;
+    if (variant?.kind === "sku" && variant.itemKey) {
+      requirements.push({ itemId: item.id, rawText: item.rawText, quantity, estimated: false, itemKeys: [variant.itemKey] });
+      continue;
+    }
+    const productOptions = options.get(item.classification?.matchedProductId ?? "") ?? [];
+    const typical = productOptions.filter((o) => o.isTypical);
+    if (typical.length === 0) {
+      unpriceable.push({ itemId: item.id, rawText: item.rawText });
+      continue;
+    }
+    const weighted = typical.every((o) => o.isWeighted);
+    requirements.push({
+      itemId: item.id,
+      rawText: item.rawText,
+      // Weighted produce is priced per kg; a list quantity ("3 עגבניות") isn't kilos.
+      quantity: weighted ? 1 : quantity,
+      estimated: weighted,
+      itemKeys: typical.map((o) => o.itemKey),
+    });
+  }
+  return { requirements, unpriceable };
+}
+
+function distanceKm(from: { lat: number; lng: number } | null, branch: PriceBranch): number | null {
+  if (!from || branch.lat === null || branch.lng === null) return null;
+  const rad = Math.PI / 180;
+  const dLat = (branch.lat - from.lat) * rad;
+  const dLng = (branch.lng - from.lng) * rad;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(from.lat * rad) * Math.cos(branch.lat * rad) * Math.sin(dLng / 2) ** 2;
+  return Math.round(6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) * 10) / 10;
+}
+
+export async function quoteBasket(
+  list: ShoppingList,
+  input: {
+    cityCode: number;
+    location: { lat: number; lng: number } | null;
+    limit: number;
+    overrides: Map<string, ShoppingListItemVariant>;
+  },
+) {
+  const items = openItems(list);
+  const branches = (await priceRepository.findBranchesInCity(input.cityCode, MAX_PRICE_FILE_AGE_HOURS)).map((b) => ({
+    ...b,
+    distanceKm: distanceKm(input.location, b),
+  }));
+  const productIds = [...new Set(items.map((i) => i.classification?.matchedProductId).filter((id): id is string => !!id))];
+  const options = await priceRepository.findSkuOptions(productIds);
+  const { requirements, unpriceable } = buildRequirements(items, options, input.overrides);
+
+  const rows = await priceRepository.findCheapestPrices(
+    branches.map((b) => b.id),
+    requirements.map((r) => ({ id: r.itemId, itemKeys: r.itemKeys })),
+  );
+  const prices = new Map<number, Map<string, PricedLine>>();
+  for (const row of rows) {
+    const byItem = prices.get(row.branchId) ?? new Map<string, PricedLine>();
+    byItem.set(row.requirementId, { itemKey: row.itemKey, name: row.name, priceAgorot: row.priceAgorot });
+    prices.set(row.branchId, byItem);
+  }
+
+  const { quotes, unavailableEverywhere } = computeBasketQuotes({ requirements, branches, prices, limit: input.limit });
+  return {
+    city: { code: input.cityCode, name: cityName(input.cityCode) },
+    comparedBranchCount: branches.length,
+    itemCount: items.length,
+    quotes: quotes.map((q) => ({
+      branch: {
+        id: q.branch.id,
+        chainName: q.branch.chainName,
+        name: q.branch.name,
+        address: q.branch.address,
+        distanceKm: q.branch.distanceKm,
+        navioStoreId: q.branch.navioStoreId,
+        pricesAt: q.branch.priceFileAt,
+      },
+      totalAgorot: q.totalAgorot,
+      estimated: q.estimated,
+      missingItems: q.missingItems,
+      lines: q.lines,
+    })),
+    // Not counted against any branch: no linked products, or no branch in the city sells them.
+    unpricedItems: [...unpriceable, ...unavailableEverywhere],
+  };
+}

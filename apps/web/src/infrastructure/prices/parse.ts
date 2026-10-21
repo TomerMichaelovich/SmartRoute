@@ -54,7 +54,8 @@ export function normalizeStoreCode(code: string): string {
 /** Meaningless placeholder values chains put in optional fields. */
 function meaningful(value: string | undefined): string | null {
   if (!value) return null;
-  const v = value.trim();
+  // Some chains leak escapes into values: 'מעדני יחיעם\n', 'בע\"מ'.
+  const v = value.replace(/\\[nrt]/g, " ").replace(/\\/g, "").trim();
   if (!v || v === "---" || v === "undefined" || v === "לא ידוע" || v.toLowerCase() === "unknown") return null;
   return v;
 }

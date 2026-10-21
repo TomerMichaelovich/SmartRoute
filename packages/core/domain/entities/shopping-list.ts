@@ -14,6 +14,23 @@ export interface ShoppingListItem {
   checkedAt?: string;
   notFound?: boolean;
   addedByUserId?: string;
+  // Which concrete product the shopper meant, chosen in the cheapest-basket
+  // refinement popup ("חלב" -> "תנובה 3% 1 ל'"). Shared like the rest of the item.
+  variant?: ShoppingListItemVariant;
+}
+
+export interface ShoppingListItemVariant {
+  // "sku": one specific product. "any": "לא משנה לי – הכי זול" — the cheapest typical
+  // product in each branch.
+  kind: "sku" | "any";
+  // The generic product the choice was made for. If the item is later edited or
+  // reclassified to another product, the choice no longer applies (see effectiveVariant).
+  productId?: string;
+  // The retail item key (barcode, or "<chain>:<code>") for kind "sku".
+  itemKey?: string;
+  // Display snapshot, e.g. "חלב בקרטון 3% שומן 1 ל".
+  name?: string;
+  chosenAt: string;
 }
 
 export interface ShoppingList {

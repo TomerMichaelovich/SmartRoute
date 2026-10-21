@@ -1,4 +1,8 @@
-import type { ShoppingList, ShoppingListItem } from "@smartroute/core/domain/entities/shopping-list";
+import type {
+  ShoppingList,
+  ShoppingListItem,
+  ShoppingListItemVariant,
+} from "@smartroute/core/domain/entities/shopping-list";
 
 export interface CheckedBy {
   userId: string;
@@ -41,6 +45,8 @@ export interface IShoppingListRepository {
   setItemQuantity(listId: string, itemId: string, quantity: number | null): Promise<void>;
   setItemChecked(listId: string, itemId: string, checked: boolean, by: CheckedBy | null): Promise<void>;
   setItemNotFound(listId: string, itemId: string, notFound: boolean): Promise<void>;
+  /** The cheapest-basket refinement choice; null clears it. */
+  setItemVariant(listId: string, itemId: string, variant: ShoppingListItemVariant | null): Promise<void>;
 
   /** Claim a currently-ownerless (guest) list for a user. */
   attachToOwner(listId: string, userId: string, options?: AttachToOwnerOptions): Promise<void>;

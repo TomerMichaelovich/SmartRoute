@@ -50,18 +50,22 @@ function toBase(amount: number, unit: string): Size | null {
 }
 
 function candidateSize(c: ScoredCandidate): Size | null {
-  if (c.quantity && c.unitQty) {
-    const size = toBase(c.quantity, c.unitQty.trim());
-    if (size) return size;
-  }
-  return sizeFromName(c.normalizedName);
+  // The name is more specific: files describe a 12-egg tray as quantity "1 יחידות".
+  const fromName = sizeFromName(c.normalizedName);
+  if (fromName) return fromName;
+  return c.quantity && c.unitQty ? toBase(c.quantity, c.unitQty.trim()) : null;
 }
 
 const percentOf = (normalizedName: string) => normalizedName.match(/(\d+(?:\.\d+)?)\s*%/)?.[1] ?? null;
 
 function cleanManufacturer(m: string | null): string | null {
   if (!m) return null;
-  const cleaned = m.replace(/בע"?מ|בעמ|ltd\.?|s\.?p\.?a\.?|[.,]/gi, "").replace(/\s+/g, " ").trim();
+  // Some files escape the quote: 'בע\"מ'.
+  const cleaned = m
+    .replace(/\\/g, "")
+    .replace(/בע"?מ|בעמ|ltd\.?|s\.?p\.?a\.?|[.,]/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
   if (cleaned.length < 2 || cleaned === "כללי") return null;
   return cleaned.split(" ").slice(0, 2).join(" ");
 }
@@ -100,9 +104,10 @@ export function verifySkuCandidatesByRules(
   const aliasWords = new Set(
     product.normalizedAliases.flatMap((a) => normalizeRetailName(a).split(" ")).flatMap(wordVariants),
   );
-  // The shortest alias is the generic term a shopper writes ("חלב").
-  const genericTerm = [...product.normalizedAliases].sort((a, b) => a.length - b.length)[0] ?? product.canonicalName;
-  const genericWords = new Set(normalizeRetailName(genericTerm).split(" ").flatMap(wordVariants));
+  // Generic terms a shopper writes ("חלב"): every alias with the fewest words ("ביצים" and "ביצה" alike).
+  const aliasWordLists = product.normalizedAliases.map((a) => normalizeRetailName(a).split(" ").filter(Boolean));
+  const fewest = Math.min(...aliasWordLists.map((w) => w.length));
+  const genericWords = new Set(aliasWordLists.filter((w) => w.length === fewest).flat().flatMap(wordVariants));
   const canonical = normalizeRetailName(product.canonicalName);
   const wantedPercent = percentOf(canonical);
   const wantedSize = sizeFromName(canonical);
@@ -141,6 +146,26 @@ export function verifySkuCandidatesByRules(
   const typicals = () => verdicts.filter((v) => v.typical);
   // Never mix per-kg and per-pack prices in "any, cheapest": weighted wins when present.
   if (typicals().some((v) => v.c.isWeighted)) for (const v of typicals()) if (!v.c.isWeighted) v.typical = false;
+  // No size in the canonical name ("קוטג'", "ביצים"): "any, cheapest" must still
+  // compare like with like, so keep the most common pack size (by branches carrying it)
+  // — otherwise a 100g cottage cheese makes a branch look cheaper than a 250g one.
+  if (!wantedSize && !typicals().some((v) => v.c.isWeighted)) {
+    const sizeKey = (s: Size) => `${s.base}:${Math.round(s.amount)}`;
+    const weight = new Map<string, number>();
+    for (const v of typicals()) {
+      const size = candidateSize(v.c);
+      if (size) weight.set(sizeKey(size), (weight.get(sizeKey(size)) ?? 0) + v.c.branchCount);
+    }
+    const dominant = [...weight].sort((a, b) => b[1] - a[1])[0]?.[0];
+    if (dominant) {
+      const [base, amount] = dominant.split(":");
+      for (const v of typicals()) {
+        const size = candidateSize(v.c);
+        const same = size !== null && size.base === base && Math.abs(size.amount - Number(amount)) <= Number(amount) * 0.15;
+        if (!same) v.typical = false;
+      }
+    }
+  }
   // Leave items another product claims more specifically to that product — if anything remains.
   const own = typicals().filter((v) => !moreSpecificElsewhere(v.itemKey, v.c.matchedWords));
   if (own.length) for (const v of typicals()) if (!own.includes(v)) v.typical = false;
