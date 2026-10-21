@@ -2,6 +2,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Path } from "react-native-svg";
+import { effectiveVariant } from "@smartroute/core/application/basket/effective-variant";
 import { resolveBeforeBranch } from "@smartroute/core/application/classification/resolve-before-branch";
 import { suggestBeforeAdding } from "@smartroute/core/application/classification/suggest-before-adding";
 import { normalizeShareCode } from "@smartroute/core/application/shopping-list/generate-share-code";
@@ -784,7 +785,9 @@ export function HomeListWidget({
                   ? resolveBeforeBranch(item.classification, products).matchedProductId
                   : undefined;
                 const product = matchedId ? productById.get(matchedId) : undefined;
-                const name = product?.canonicalName ?? item.rawText;
+                // The exact product chosen in the cheapest-basket popup, when there is one.
+                const chosen = effectiveVariant(item);
+                const name = (chosen?.kind === "sku" && chosen.name) || product?.canonicalName || item.rawText;
                 const icon = CATEGORY_ICON[product?.category ?? "other"];
                 // No checkbox: the list is for writing only - items are marked
                 // as collected on the route screen, which tracks that itself.

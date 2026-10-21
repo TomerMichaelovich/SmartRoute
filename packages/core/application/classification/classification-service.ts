@@ -14,8 +14,9 @@ const MAX_UNRESOLVED_SUGGESTIONS = 3;
  * -> fuzzy -> LLM fallback, in the order the layers are supplied, against the
  * whole shared master product catalog - matching text to a product is a global
  * question with one right answer, not a per-store one, so every outcome
- * (including "unresolved") is cached by normalized text alone and only ever
- * computed once, app-wide. Whether the matched product is actually carried by
+ * (including "unresolved") is cached by normalized text alone, app-wide; a cached
+ * "unresolved" is re-checked against the (growing) catalog by the local layers,
+ * but the LLM runs only once per text. Whether the matched product is actually carried by
  * the requesting store is a separate, per-request concern - see
  * resolveAvailability().
  */
@@ -30,9 +31,18 @@ export class ClassificationService {
     const normalized = normalizeHebrewText(rawText);
 
     const cached = await this.cacheRepo.get(normalized);
-    if (cached) return { ...cached, rawText };
+    if (cached && cached.source !== "unresolved") return { ...cached, rawText };
 
     const products = await this.productRepo.findAllActive();
+    if (cached) {
+      // A cached "unresolved" isn't final: the catalog grows, and a text nothing
+      // matched yesterday ("פתיתים") may be an alias today. Re-run the cheap local
+      // layers; the LLM layer still runs only once per text.
+      const retry = await this.runLayers(rawText, normalized, products, (layer) => layer.name !== "llm");
+      if (retry.source === "unresolved") return { ...cached, rawText };
+      await this.cacheRepo.set(normalized, retry);
+      return retry;
+    }
     const result = await this.runLayers(rawText, normalized, products);
     await this.cacheRepo.set(normalized, result);
     return result;
@@ -58,8 +68,9 @@ export class ClassificationService {
     rawText: string,
     normalized: string,
     products: Product[],
+    include: (layer: ClassificationLayer) => boolean = () => true,
   ): Promise<ClassificationResult> {
-    for (const layer of this.layers) {
+    for (const layer of this.layers.filter(include)) {
       const match = await layer.classify(rawText, { normalized, products });
       if (match && match.confidence >= layer.acceptThreshold) {
         return {

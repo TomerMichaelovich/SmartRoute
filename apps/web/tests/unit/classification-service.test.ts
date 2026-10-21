@@ -141,6 +141,14 @@ describe("ClassificationService", () => {
     expect(cacheRepo.size).toBe(1);
   });
 
+  it("re-checks a cached 'unresolved' against a catalog that has grown since, without the LLM", async () => {
+    await cacheRepo.set("עגבניות", { rawText: "עגבניות", confidence: 0, source: "unresolved" });
+    const result = await service.classify("עגבניות");
+    expect(result.matchedProductId).toBe(productByName("עגבניות").id);
+    expect(llm.calls).toBe(0);
+    expect((await cacheRepo.get("עגבניות"))?.source).not.toBe("unresolved");
+  });
+
   it("classifyBatch resolves every item and preserves order", async () => {
     const results = await service.classifyBatch(["עגבניות", "חלב תנובה", "xyzunknownproduct"]);
     expect(results).toHaveLength(3);

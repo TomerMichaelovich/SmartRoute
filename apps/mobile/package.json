@@ -17,6 +17,7 @@
     "expo-image-manipulator": "~57.0.21",
     "expo-image-picker": "~57.0.20",
     "expo-linking": "~57.0.13",
+    "expo-location": "~57.0.22",
     "expo-navigation-bar": "~57.0.3",
     "expo-notifications": "~57.0.23",
     "expo-router": "~57.0.27",
@@ -40,6 +41,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "eslint-config-expo": "~57.0.2",
     "typescript": "~6.0.3"
   },
   "scripts": {

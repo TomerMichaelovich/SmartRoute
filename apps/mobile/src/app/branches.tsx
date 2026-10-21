@@ -1,10 +1,10 @@
 import { Link, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import type { ShoppingList } from "@smartroute/core/domain/entities/shopping-list";
 import type { Store } from "@smartroute/core/domain/entities/store";
 import { he } from "@smartroute/core/i18n/he";
 import { apiFetch } from "@/lib/api";
+import { startRouteAtStore } from "@/lib/start-route";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { COLORS } from "@/constants/colors";
@@ -49,35 +49,16 @@ export default function BranchesScreen() {
   }, [attempt]);
 
   async function handleRouteAtStore(storeId: string) {
+    if (!listCode) return;
     setRoutingStoreId(storeId);
     setRouteError(null);
-    try {
-      const listRes = await apiFetch(`/api/lists/${listCode}`);
-      if (!listRes.ok) throw new Error(`HTTP ${listRes.status}`);
-      const { list }: { list: ShoppingList } = await listRes.json();
-      const res = await apiFetch("/api/routes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storeId, shoppingListId: list.id, items: list.items }),
-      });
-      if (!res.ok) {
-        const body: { code?: string } | null = await res.json().catch(() => null);
-        setRouteError(
-          body?.code === "missing_entrance_or_checkout"
-            ? he.review.missingEntranceOrCheckout
-            : body?.code === "disconnected_graph"
-              ? he.review.disconnectedGraph
-              : he.common.error,
-        );
-        setRoutingStoreId(null);
-        return;
-      }
-      const route: { id: string } = await res.json();
-      router.push(`/route/${route.id}`);
-    } catch {
-      setRouteError(he.common.error);
+    const result = await startRouteAtStore(listCode, storeId);
+    if ("error" in result) {
+      setRouteError(result.error);
       setRoutingStoreId(null);
+      return;
     }
+    router.push(`/route/${result.routeId}`);
   }
 
   return (
@@ -90,15 +71,29 @@ export default function BranchesScreen() {
       {/* With a list in hand, shopping without a map/route is always an
           option - and it doesn't depend on the branches loading. */}
       {listCode && (
-        <Pressable
-          onPress={() => router.push(`/checklist/${listCode}`)}
-          style={({ pressed }) => [styles.listModeRow, pressed && styles.listModeRowPressed]}
-          accessibilityRole="button"
-        >
-          <Text style={styles.listModeIcon}>📝</Text>
-          <Text style={styles.listModeText}>{he.branches.useAsList}</Text>
-          <Text style={styles.listModeChevron}>‹</Text>
-        </Pressable>
+        <View style={styles.modes}>
+          <Pressable
+            onPress={() => router.push(`/checklist/${listCode}`)}
+            style={({ pressed }) => [styles.listModeRow, pressed && styles.listModeRowPressed]}
+            accessibilityRole="button"
+          >
+            <Text style={styles.listModeIcon}>📝</Text>
+            <Text style={styles.listModeText}>{he.branches.useAsList}</Text>
+            <Text style={styles.listModeChevron}>‹</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => router.push(`/cheapest/${listCode}`)}
+            style={({ pressed }) => [styles.listModeRow, styles.cheapestRow, pressed && styles.listModeRowPressed]}
+            accessibilityRole="button"
+          >
+            <Text style={styles.listModeIcon}>🏷️</Text>
+            <View style={styles.cheapestTexts}>
+              <Text style={styles.listModeText}>{he.cheapest.entry}</Text>
+              <Text style={styles.cheapestSubtitle}>{he.cheapest.entrySubtitle}</Text>
+            </View>
+            <Text style={styles.listModeChevron}>‹</Text>
+          </Pressable>
+        </View>
       )}
 
       {state.status === "loading" && (
@@ -217,6 +212,22 @@ const styles = StyleSheet.create({
   },
   listModeRowPressed: {
     backgroundColor: COLORS.neutral100,
+  },
+  modes: {
+    gap: 10,
+  },
+  cheapestRow: {
+    borderColor: COLORS.cyan500,
+    backgroundColor: COLORS.cyan50,
+  },
+  cheapestTexts: {
+    flex: 1,
+    gap: 2,
+  },
+  cheapestSubtitle: {
+    fontSize: 13,
+    fontFamily: FONTS.regular,
+    color: COLORS.neutral600,
   },
   listModeIcon: {
     fontSize: 16,

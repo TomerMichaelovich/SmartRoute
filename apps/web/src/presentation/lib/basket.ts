@@ -7,18 +7,32 @@ import {
 import { effectiveVariant } from "@smartroute/core/application/basket/effective-variant";
 import { needsVariantChoice } from "@smartroute/core/application/basket/needs-variant-choice";
 import type { ShoppingList, ShoppingListItem, ShoppingListItemVariant } from "@smartroute/core/domain/entities/shopping-list";
-import { priceRepository } from "@/src/infrastructure/container";
+import { classificationService, priceRepository } from "@/src/infrastructure/container";
 import { MAX_PRICE_FILE_AGE_HOURS } from "@/src/infrastructure/prices/pilot-config";
 import { cityName } from "@/src/infrastructure/prices/settlements";
 import type { PriceBranch, SkuOption } from "@/src/infrastructure/repositories/interfaces/price-repository";
 
-/** Items still to buy: what the comparison is about. */
-const openItems = (list: ShoppingList) => list.items.filter((i) => !i.checked);
+/**
+ * Items still to buy: what the comparison is about. Items left unclassified
+ * (e.g. classified before the catalog had their product) are re-classified
+ * against today's catalog — for this comparison only; the list isn't changed.
+ */
+async function openItems(list: ShoppingList): Promise<ShoppingListItem[]> {
+  const items = list.items.filter((i) => !i.checked);
+  const unclassified = items.filter((i) => !i.classification?.matchedProductId);
+  if (unclassified.length === 0) return items;
+  const results = await classificationService.classifyBatch(unclassified.map((i) => i.rawText));
+  const byId = new Map(unclassified.map((item, idx) => [item.id, results[idx]]));
+  return items.map((item) => {
+    const result = byId.get(item.id);
+    return result?.matchedProductId ? { ...item, classification: result } : item;
+  });
+}
 
 const MAX_OPTIONS = 12;
 
 export async function variantOptionsFor(list: ShoppingList) {
-  const items = openItems(list);
+  const items = await openItems(list);
   const productIds = [...new Set(items.map((i) => i.classification?.matchedProductId).filter((id): id is string => !!id))];
   const options = await priceRepository.findSkuOptions(productIds);
   return items
@@ -101,7 +115,7 @@ export async function quoteBasket(
     overrides: Map<string, ShoppingListItemVariant>;
   },
 ) {
-  const items = openItems(list);
+  const items = await openItems(list);
   const branches = (await priceRepository.findBranchesInCity(input.cityCode, MAX_PRICE_FILE_AGE_HOURS)).map((b) => ({
     ...b,
     distanceKm: distanceKm(input.location, b),

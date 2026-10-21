@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from "react-native";
+import { effectiveVariant } from "@smartroute/core/application/basket/effective-variant";
 import { resolveBeforeBranch } from "@smartroute/core/application/classification/resolve-before-branch";
 import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ShoppingList } from "@smartroute/core/domain/entities/shopping-list";
@@ -36,7 +37,9 @@ function checkedKey(code: string): string {
  * items sit together, with the same tick / "didn't find it" rows as the route.
  */
 export default function ListChecklistScreen() {
-  const { code } = useLocalSearchParams<{ code: string }>();
+  // branchName: set when arriving from the cheapest-basket results for a branch
+  // NAVIO hasn't mapped - shown so the shopper knows where this list is for.
+  const { code, branchName } = useLocalSearchParams<{ code: string; branchName?: string }>();
   const router = useRouter();
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [checkedItemIds, setCheckedItemIds] = useState<Set<string>>(new Set());
@@ -85,7 +88,10 @@ export default function ListChecklistScreen() {
       const product = matchedId ? productById.get(matchedId) : undefined;
       const department = product?.department || he.listMode.otherDepartment;
       const rows = byDepartment.get(department) ?? [];
-      rows.push({ id: item.id, displayName: product?.canonicalName ?? item.rawText, imageUrl: product?.imageUrl });
+      // The exact product chosen in the cheapest-basket popup, when there is one.
+      const chosen = effectiveVariant(item);
+      const displayName = (chosen?.kind === "sku" && chosen.name) || product?.canonicalName || item.rawText;
+      rows.push({ id: item.id, displayName, imageUrl: product?.imageUrl });
       byDepartment.set(department, rows);
     }
     // Alphabetical, with the catch-all group last.
@@ -209,6 +215,7 @@ export default function ListChecklistScreen() {
     <ScrollView contentContainerStyle={styles.page}>
       <View style={styles.header}>
         <Text style={styles.title}>{state.list.name ?? he.myList.defaultName()}</Text>
+        {branchName ? <Text style={styles.hint}>{he.listMode.shoppingAt(branchName)}</Text> : null}
         <ProgressBar value={totalItems === 0 ? 1 : checkedCount / totalItems} />
         <Text style={styles.hint}>{he.route.progress(checkedCount, totalItems)}</Text>
       </View>

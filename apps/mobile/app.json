@@ -2,7 +2,7 @@
   "expo": {
     "name": "NAVIO",
     "slug": "smartroute-mobile",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "smartroute",
@@ -24,6 +24,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
+      "blockedPermissions": ["android.permission.ACCESS_FINE_LOCATION", "android.permission.ACCESS_BACKGROUND_LOCATION"],
       "intentFilters": [
         {
           "action": "VIEW",
@@ -77,6 +78,14 @@
         {
           "photosPermission": "NAVIO צריכה גישה לתמונות כדי לקרוא רשימת קניות מתמונה.",
           "cameraPermission": "NAVIO צריכה גישה למצלמה כדי לצלם רשימת קניות."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "NAVIO משתמשת במיקום כדי להשוות מחירים בסניפים שבעיר שלכם.",
+          "isAndroidBackgroundLocationEnabled": false,
+          "isAndroidForegroundServiceEnabled": false
         }
       ],
       "expo-notifications",

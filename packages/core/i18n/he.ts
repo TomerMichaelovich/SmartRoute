@@ -361,9 +361,63 @@ export const he = {
     retry: "נסו שוב",
     useAsList: "השתמשו כרשימה",
   },
+  cheapest: {
+    entry: "הסל הזול ביותר",
+    entrySubtitle: "השוו את מחיר הרשימה בסניפים בעיר שלכם",
+    title: "הסל הזול ביותר",
+    locating: "מאתרים את העיר שלכם…",
+    preparing: "בודקים את הפריטים ברשימה…",
+    comparing: "משווים מחירים בסניפים…",
+    pickCityTitle: "באיזו עיר אתם קונים?",
+    pickCityLocationOff: "בלי הרשאת מיקום — בחרו עיר מהרשימה.",
+    cityNotCovered(city: string): string {
+      return `השוואת מחירים עדיין לא זמינה ב${city}. אפשר לבחור עיר זמינה:`;
+    },
+    cityUnknown: "לא זיהינו את העיר שלכם. בחרו עיר מהרשימה:",
+    resultsTitle(city: string): string {
+      return `הסניפים הזולים ב${city}`;
+    },
+    comparedBranches(n: number): string {
+      return `השוואה בין ${n} סניפים`;
+    },
+    changeCity: "החלפת עיר",
+    total: 'סה"כ',
+    estimated: "כולל מחיר משוער לפירות וירקות במשקל",
+    pricesAt(date: string): string {
+      return `מחירים מ־${date}`;
+    },
+    missing(n: number): string {
+      return n === 1 ? "פריט אחד לא נמכר כאן" : `${n} פריטים לא נמכרים כאן`;
+    },
+    allItemsHere: "כל הפריטים נמכרים כאן",
+    chooseBranch: "קונים בסניף הזה",
+    unpriced(items: string): string {
+      return `לא הצלחנו לתמחר: ${items}`;
+    },
+    noBranches: "לא נמצאו סניפים עם מחירים עדכניים בעיר.",
+    disclaimer: "מחירי מדף לפי פרסומי הרשתות (חוק שקיפות המחירים), לפני מבצעים. המחיר בקופה עשוי להשתנות.",
+    loadFailed: "לא הצלחנו להשוות מחירים. בדקו את החיבור ונסו שוב.",
+    retry: "נסו שוב",
+    variant: {
+      title(rawText: string): string {
+        return `למה התכוונתם ב״${rawText}״?`;
+      },
+      progress(index: number, total: number): string {
+        return `${index} מתוך ${total}`;
+      },
+      any: "לא משנה לי – הכי זול",
+      anyForRest: "הכי זול לכל השאר",
+      branchCount(n: number): string {
+        return n === 1 ? "בסניף אחד" : `ב־${n} סניפים`;
+      },
+    },
+  },
   listMode: {
     otherDepartment: "שונות",
     empty: "הרשימה ריקה",
+    shoppingAt(branch: string): string {
+      return `קונים ב${branch}`;
+    },
   },
   list: {
     title: "רשימת קניות",
