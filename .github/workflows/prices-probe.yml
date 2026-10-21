@@ -1,0 +1,19 @@
+# Phase-0 spike: are the price-transparency portals reachable from a GitHub
+# Actions runner (non-Israeli IP)? Runs on push to the spike branch or manually.
+name: prices-probe
+
+on:
+  push:
+    branches: [spike/prices-probe]
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node apps/web/scripts/prices/probe-portals.mjs
