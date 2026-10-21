@@ -147,6 +147,12 @@ const probes = {
   "super-pharm": superPharm,
 };
 
+// In CI, also emit annotations: they are readable through the public
+// check-runs API, unlike job logs.
+const annotate = (level, title, msg) => {
+  if (process.env.GITHUB_ACTIONS) console.log(`::${level} title=${title}::${msg.replaceAll("\n", "%0A")}`);
+};
+
 let failed = 0;
 for (const [name, probe] of Object.entries(probes)) {
   const started = Date.now();
@@ -154,9 +160,12 @@ for (const [name, probe] of Object.entries(probes)) {
     const lines = await probe();
     console.log(`OK   ${name} (${Date.now() - started}ms)`);
     for (const l of lines) console.log(`       ${l}`);
+    annotate("notice", `OK ${name}`, lines.join("\n"));
   } catch (e) {
     failed++;
-    console.log(`FAIL ${name} (${Date.now() - started}ms): ${e.cause?.code ?? e.message}`);
+    const reason = String(e.cause?.code ?? e.message);
+    console.log(`FAIL ${name} (${Date.now() - started}ms): ${reason}`);
+    annotate("warning", `FAIL ${name}`, reason);
   }
 }
 console.log(`\n${Object.keys(probes).length - failed}/${Object.keys(probes).length} portals reachable`);
