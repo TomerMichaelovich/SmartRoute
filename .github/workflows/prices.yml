@@ -41,3 +41,11 @@ jobs:
           MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || (github.event.schedule == '30 3 * * *' && 'full' || 'prices') }}
           CHAIN: ${{ inputs.chain }}
         run: npx tsx scripts/prices/ingest.ts --mode="$MODE" ${CHAIN:+--chain="$CHAIN"}
+      # Link generic products to the SKUs just ingested (rule-based, free, ~1 min).
+      # Admin decisions (source "manual") are never overwritten.
+      - name: Link SKUs
+        if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' && inputs.mode == 'full' || github.event.schedule == '30 3 * * *') }}
+        working-directory: apps/web
+        env:
+          DATABASE_URL: ${{ secrets.PRICES_DATABASE_URL }}
+        run: npx tsx scripts/prices/link-skus.ts --verifier=rules

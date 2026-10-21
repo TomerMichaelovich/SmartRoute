@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ProductCategory } from "@smartroute/core/domain/entities/product";
 import { productRepository, storeRepository } from "@/src/infrastructure/container";
 import { createProduct, updateProduct } from "@/src/presentation/actions/admin-product-actions";
@@ -212,6 +213,14 @@ export default async function AdminProductsPage({
                 שמור
               </button>
             </form>
+            {!product.chainId && (
+              <Link
+                href={`/admin/products/${product.id}/skus`}
+                className="mt-3 inline-block text-xs font-medium text-cyan-700 hover:underline"
+              >
+                מוצרים ברשתות ומחירים ←
+              </Link>
+            )}
           </details>
         ))}
       </div>
