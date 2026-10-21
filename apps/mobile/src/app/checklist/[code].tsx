@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import { resolveBeforeBranch } from "@smartroute/core/application/classification/resolve-before-branch";
 import type { Product } from "@smartroute/core/domain/entities/product";
@@ -12,6 +12,7 @@ import { ProgressBar } from "@/components/ProgressBar";
 import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
 import { loadCheckedItemIds, saveCheckedItemIds } from "@/lib/route-storage";
+import { refreshMyListWidget } from "@/widgets/refresh-my-list-widget";
 
 interface ChecklistRow {
   id: string;
@@ -41,6 +42,9 @@ export default function ListChecklistScreen() {
   const [checkedItemIds, setCheckedItemIds] = useState<Set<string>>(new Set());
   const [notFoundItemIds, setNotFoundItemIds] = useState<Set<string>>(new Set());
   const [hydrated, setHydrated] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  // Set once this run is in the history, so retrying a failed finish doesn't record it twice.
+  const tripSaved = useRef<boolean | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -116,13 +120,73 @@ export default function ListChecklistScreen() {
     if (nowNotFound) setCheckedItemIds((prev) => new Set(prev).add(itemId));
   }
 
-  // The list itself stays (no route, so no trip to record) - only this
-  // shopping run's ticks are cleared, ready for next time.
+  // Records the trip in the shopper's history (as a route's finish does), then takes
+  // what was bought off the list, like finishing a pinned list's route. Unticked and
+  // not-found items stay.
   async function handleFinish() {
+    setFinishing(true);
+    const boughtIds = new Set(Array.from(checkedItemIds).filter((id) => !notFoundItemIds.has(id)));
+    // Before the removal, so the trip's snapshot still has the bought items.
+    if (tripSaved.current === null) tripSaved.current = await recordTrip(boughtIds);
+    try {
+      if (boughtIds.size > 0) await removeBoughtItems(boughtIds);
+    } catch {
+      setFinishing(false);
+      Alert.alert(he.common.error);
+      return;
+    }
     await saveCheckedItemIds(checkedKey(code), new Set());
-    Alert.alert(he.route.finishedTitle, he.route.finishedBody, [
-      { text: he.route.finishedOk, onPress: () => router.dismissTo("/") },
-    ]);
+    refreshMyListWidget();
+    const goHome = { text: he.route.finishedOk, onPress: () => router.dismissTo("/") };
+    Alert.alert(
+      he.route.finishedTitle,
+      tripSaved.current ? he.route.finishedSavedBody : he.route.finishedBody,
+      tripSaved.current
+        ? [{ text: he.route.finishedViewHistory, onPress: () => router.replace("/history") }, goHome]
+        : [goHome],
+    );
+  }
+
+  // Best-effort, like the route's: the server no-ops with 204 for guests and lists
+  // that aren't theirs, and a failed save still lets them finish.
+  async function recordTrip(boughtIds: Set<string>): Promise<boolean> {
+    try {
+      const res = await apiFetch("/api/trips", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          listCode: code,
+          collectedItemIds: Array.from(boughtIds),
+          notFoundItemIds: Array.from(notFoundItemIds),
+        }),
+      });
+      return res.status === 201;
+    } catch {
+      return false;
+    }
+  }
+
+  // Saves the list minus the bought items. Starts from the server's copy, so items
+  // someone added mid-shop are kept; if it changed again before the save (409), the
+  // removal is reapplied to the newer copy once.
+  async function removeBoughtItems(boughtIds: Set<string>) {
+    const res = await apiFetch(`/api/lists/${code}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    let { list }: { list: ShoppingList } = await res.json();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const saveRes = await apiFetch(`/api/lists/${code}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: list.items.filter((item) => !boughtIds.has(item.id)),
+          expectedUpdatedAt: list.updatedAt,
+        }),
+      });
+      if (saveRes.ok) return;
+      if (saveRes.status !== 409) throw new Error(`HTTP ${saveRes.status}`);
+      list = ((await saveRes.json()) as { current: ShoppingList }).current;
+    }
+    throw new Error("list kept changing");
   }
 
   if (state.status === "loading") {
@@ -172,8 +236,8 @@ export default function ListChecklistScreen() {
       ))}
 
       {totalItems > 0 && (
-        <Button variant={allDone ? "primary" : "secondary"} fullWidth onPress={handleFinish}>
-          {he.route.finishShopping}
+        <Button variant={allDone ? "primary" : "secondary"} fullWidth onPress={handleFinish} disabled={finishing}>
+          {finishing ? he.common.loading : he.route.finishShopping}
         </Button>
       )}
     </ScrollView>

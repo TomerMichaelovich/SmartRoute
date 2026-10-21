@@ -195,6 +195,8 @@ export const he = {
     detailTitle: "פרטי הקנייה",
     dateLabel: "תאריך",
     storeLabel: "סניף",
+    /** Stands in for the branch name on trips shopped as a plain list (no branch picked). */
+    listModeTrip: "קנייה לפי רשימה",
     itemsHeading: "פריטים ברשימה",
     collected: "נאסף",
     notCollected: "לא נאסף",
