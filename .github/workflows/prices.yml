@@ -1,0 +1,43 @@
+# Price-transparency ingestion for the cheapest-basket feature
+# (apps/web/scripts/prices/ingest.ts). Scheduled runs only fire from the default
+# branch. The repo is public, so logs are public too: the script never prints
+# connection strings, and DATABASE_URL comes from the PRICES_DATABASE_URL secret.
+name: prices
+
+on:
+  schedule:
+    # Times are UTC. Israel is UTC+2/+3; most chains publish PriceFull between
+    # 00:00 and 06:00 local, Rami Levy again every ~6h.
+    - cron: "30 3 * * *" # ~06:30 IL: Stores + prices
+    - cron: "30 10,14,18 * * *" # prices only (diff-based, cheap when unchanged)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "full | stores | prices"
+        default: "full"
+      chain:
+        description: "comma-separated chain ids (empty = all)"
+        default: ""
+
+concurrency:
+  group: prices
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --workspace @smartroute/web --include-workspace-root
+      - name: Ingest
+        working-directory: apps/web
+        env:
+          DATABASE_URL: ${{ secrets.PRICES_DATABASE_URL }}
+          MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || (github.event.schedule == '30 3 * * *' && 'full' || 'prices') }}
+          CHAIN: ${{ inputs.chain }}
+        run: npx tsx scripts/prices/ingest.ts --mode="$MODE" ${CHAIN:+--chain="$CHAIN"}

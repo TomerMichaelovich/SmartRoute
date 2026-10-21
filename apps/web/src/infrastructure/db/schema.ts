@@ -5,6 +5,8 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
+  real,
   text,
   timestamp,
   uniqueIndex,
@@ -337,4 +339,155 @@ export const analyticsEvents = pgTable(
     index("analytics_events_route_id_idx").on(table.routeId),
     index("analytics_events_user_id_idx").on(table.userId),
   ],
+);
+
+// ---------------------------------------------------------------------------
+// Price transparency (חוק קידום התחרות בענף המזון). Chains publish Stores and
+// PriceFull files per branch; scripts/prices ingests them for the pilot
+// cities. These tables are independent of the NAVIO-mapped `stores`: a retail
+// branch links to a mapped store only through `navio_store_id`.
+//
+// The high-volume tables use integer identity ids (branch_prices is the bulk of
+// the data). Anything that must survive dev<->prod copies — SKU links, the
+// variant saved on a list item — uses the stable `item_key` text instead.
+// ---------------------------------------------------------------------------
+
+export const retailChains = pgTable(
+  "retail_chains",
+  {
+    // Slug, e.g. "shufersal", "rami-levy".
+    id: text("id").primaryKey(),
+    // The 13-digit ChainID the files carry, e.g. "7290027600007".
+    govChainId: text("gov_chain_id").notNull(),
+    name: text("name").notNull(),
+    // Which portal adapter downloads this chain: "shufersal" | "cerberus" | "carrefour".
+    portal: text("portal").notNull(),
+    portalConfig: jsonb("portal_config").notNull().$type<Record<string, string>>(),
+    // The matching stores.chain_id, when NAVIO has mapped stores of this chain.
+    navioChainId: text("navio_chain_id"),
+    isEnabled: boolean("is_enabled").notNull(),
+    updatedAt: timestamp("updated_at", { mode: "string" }).notNull(),
+  },
+  (table) => [uniqueIndex("retail_chains_gov_chain_id_idx").on(table.govChainId)],
+);
+
+export const retailBranches = pgTable(
+  "retail_branches",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    chainId: text("chain_id").notNull(),
+    // StoreID from the files, without leading zeros ("001" -> "1").
+    storeCode: text("store_code").notNull(),
+    subChainId: text("sub_chain_id"),
+    subChainName: text("sub_chain_name"),
+    name: text("name").notNull(),
+    address: text("address"),
+    // <City> as published: usually a CBS settlement code, sometimes a name, "0" or empty.
+    cityRaw: text("city_raw"),
+    // Resolved CBS settlement code. Comparison only ever happens within one city.
+    cityCode: integer("city_code"),
+    lat: doublePrecision("lat"),
+    lng: doublePrecision("lng"),
+    // "pending" | "ok" | "failed" | "manual"
+    geocodeStatus: text("geocode_status").notNull().default("pending"),
+    // The address+city string last geocoded; re-geocode only when it changes.
+    geocodedAddress: text("geocoded_address"),
+    navioStoreId: text("navio_store_id"),
+    // False for wholesale / cash&carry branches that shouldn't be offered to shoppers.
+    isRetail: boolean("is_retail").notNull().default(true),
+    // In a pilot city: prices are ingested and the branch takes part in quotes.
+    pricesEnabled: boolean("prices_enabled").notNull().default(false),
+    // Timestamp parsed from the PriceFull file name last ingested.
+    priceFileAt: timestamp("price_file_at", { mode: "string" }),
+    pricesUpdatedAt: timestamp("prices_updated_at", { mode: "string" }),
+    isActive: boolean("is_active").notNull().default(true),
+    updatedAt: timestamp("updated_at", { mode: "string" }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("retail_branches_chain_store_idx").on(table.chainId, table.storeCode),
+    uniqueIndex("retail_branches_navio_store_id_idx").on(table.navioStoreId),
+    index("retail_branches_city_code_idx").on(table.cityCode),
+  ],
+);
+
+export const retailItems = pgTable(
+  "retail_items",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    // The barcode for packaged goods (shared across chains), or "<chainId>:<code>"
+    // for chain-internal codes — weighted produce reuses 729000000xxxx codes that
+    // mean different things at different chains.
+    itemKey: text("item_key").notNull(),
+    itemCode: text("item_code").notNull(),
+    // Set only for chain-internal codes.
+    chainId: text("chain_id"),
+    name: text("name").notNull(),
+    normalizedName: text("normalized_name").notNull(),
+    manufacturer: text("manufacturer"),
+    quantity: doublePrecision("quantity"),
+    unitQty: text("unit_qty"),
+    unitOfMeasure: text("unit_of_measure"),
+    isWeighted: boolean("is_weighted").notNull(),
+    // How many price-enabled branches carry it; ranks refinement options.
+    branchCount: integer("branch_count").notNull().default(0),
+    updatedAt: timestamp("updated_at", { mode: "string" }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("retail_items_item_key_idx").on(table.itemKey),
+    // Needs `CREATE EXTENSION pg_trgm` (drizzle-kit push doesn't create extensions).
+    index("retail_items_normalized_name_trgm_idx").using("gin", table.normalizedName.op("gin_trgm_ops")),
+  ],
+);
+
+export const branchPrices = pgTable(
+  "branch_prices",
+  {
+    branchId: integer("branch_id").notNull(),
+    retailItemId: integer("retail_item_id").notNull(),
+    priceAgorot: integer("price_agorot").notNull(),
+    unitPriceAgorot: integer("unit_price_agorot"),
+    priceUpdatedAt: timestamp("price_updated_at", { mode: "string" }),
+  },
+  (table) => [primaryKey({ columns: [table.branchId, table.retailItemId] })],
+);
+
+/** Which concrete SKUs a generic product ("חלב") can mean. Built offline by scripts/prices/link-skus. */
+export const productSkuLinks = pgTable(
+  "product_sku_links",
+  {
+    productId: text("product_id").notNull(),
+    itemKey: text("item_key").notNull(),
+    // "trgm" | "llm" | "manual"
+    source: text("source").notNull(),
+    score: real("score").notNull(),
+    // The standard package a shopper means by default (1L milk, not 200ml chocolate milk).
+    isTypical: boolean("is_typical").notNull().default(false),
+    // Admin-rejected; kept so re-running the linker doesn't add it back.
+    isRejected: boolean("is_rejected").notNull().default(false),
+    variantLabel: text("variant_label"),
+    updatedAt: timestamp("updated_at", { mode: "string" }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.productId, table.itemKey] }),
+    index("product_sku_links_item_key_idx").on(table.itemKey),
+  ],
+);
+
+export const priceIngestRuns = pgTable(
+  "price_ingest_runs",
+  {
+    id: text("id").primaryKey(),
+    // "stores" | "prices"
+    mode: text("mode").notNull(),
+    chainId: text("chain_id").notNull(),
+    // "running" | "ok" | "failed"
+    status: text("status").notNull(),
+    files: integer("files").notNull().default(0),
+    rowsUpserted: integer("rows_upserted").notNull().default(0),
+    rowsDeleted: integer("rows_deleted").notNull().default(0),
+    error: text("error"),
+    startedAt: timestamp("started_at", { mode: "string" }).notNull(),
+    finishedAt: timestamp("finished_at", { mode: "string" }),
+  },
+  (table) => [index("price_ingest_runs_started_at_idx").on(table.startedAt)],
 );
