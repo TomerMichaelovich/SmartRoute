@@ -10,7 +10,7 @@ import { Button } from "@/components/Button";
 import { Checklist, type ChecklistStopView } from "@/components/Checklist";
 import { ProgressBar } from "@/components/ProgressBar";
 import { SharedListUpdateModal } from "@/components/SharedListUpdateModal";
-import { StoreMap } from "@/components/StoreMap";
+import { MapExpandButton, StoreMap } from "@/components/StoreMap";
 import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
 import { clearMyListCode, getMyListCode } from "@/lib/my-list-storage";
@@ -121,6 +121,17 @@ export default function RouteScreen() {
     if (!lastCheckedItemId) return undefined;
     return stopViews.find(({ items }) => items.some((item) => item.id === lastCheckedItemId))?.stop;
   }, [stopViews, checkedItemIds]);
+  // On the map a stop is named after the first item still needed there ("שימורי תירס"
+  // rather than "שימורים"), moving on to the next item as they're ticked off.
+  const mapStops = useMemo(() => {
+    if (state.status !== "ready") return [];
+    const itemsByOrder = new Map(stopViews.map(({ stop, items }) => [stop.order, items]));
+    return state.data.route.stops.map((stop) => {
+      const items = itemsByOrder.get(stop.order) ?? [];
+      const firstNeeded = items.find((item) => !checkedItemIds.has(item.id)) ?? items[0];
+      return firstNeeded ? { ...stop, label: firstNeeded.displayName } : stop;
+    });
+  }, [state, stopViews, checkedItemIds]);
   const displayPathNodeIds =
     state.status === "ready"
       ? (nextStop?.pathFromPrevious ?? lastCheckedStop?.pathToCheckout ?? state.data.route.checkoutPathNodeIds)
@@ -219,11 +230,14 @@ export default function RouteScreen() {
   const { route, store, nodes, mapImageUrl } = state.data;
 
   // Full-screen map: just the store name, progress and the map - the expand
-  // button on the map brings the list back.
+  // button beside the store name brings the list back.
   return (
     <View style={styles.screen}>
       <View style={[styles.top, mapExpanded && styles.topExpanded]}>
-        <Text style={styles.title}>{store.name}</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>{store.name}</Text>
+          <MapExpandButton expanded={mapExpanded} onPress={() => setMapExpanded((v) => !v)} />
+        </View>
         <ProgressBar value={progress} />
         <Text style={styles.progressText}>{he.route.progress(checkedCount, totalItems)}</Text>
 
@@ -233,10 +247,9 @@ export default function RouteScreen() {
           mapImageUrl={mapImageUrl ? resolveAssetUrl(mapImageUrl) : undefined}
           nodes={nodes}
           pathNodeIds={displayPathNodeIds}
-          stops={route.stops}
+          stops={mapStops}
           checkedStopOrders={checkedStopOrders}
           expanded={mapExpanded}
-          onToggleExpanded={() => setMapExpanded((v) => !v)}
         />
       </View>
 
@@ -301,7 +314,14 @@ const styles = StyleSheet.create({
   hidden: {
     display: "none",
   },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
   title: {
+    flex: 1,
     fontSize: 20,
     fontFamily: FONTS.bold,
     color: COLORS.neutral900,

@@ -95,6 +95,21 @@ function ExpandIcon({ expanded }: { expanded: boolean }) {
   );
 }
 
+/** Toggles the map's full-screen mode. Sits outside the map so it never covers the floor plan. */
+export function MapExpandButton({ expanded, onPress }: { expanded: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={styles.expandButton}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={expanded ? he.route.shrinkMap : he.route.expandMap}
+    >
+      <ExpandIcon expanded={expanded} />
+    </Pressable>
+  );
+}
+
 function Footprint({ size, ...step }: FootstepPlacement & { size: number }) {
   return (
     <G
@@ -124,14 +139,13 @@ interface StoreMapProps {
   /** Full-screen mode: the map fills its parent (flex: 1), zoomed in to cover it and centered
    * on the current stop. Inline, the whole map shows at its own proportions. */
   expanded: boolean;
-  onToggleExpanded: () => void;
 }
 
 /**
  * The shopping route's map. Started as a port of apps/web's StoreMap.tsx but now
  * deliberately lighter, so the floor photo stays visible: no department images,
- * only the stop the shopper is heading to and the one after it (numbered
- * circles with a white name label), plus small entrance/checkout labels.
+ * only the stop the shopper is heading to (a numbered circle with a white
+ * name label), plus small entrance/checkout labels.
  */
 export function StoreMap({
   mapWidth,
@@ -142,7 +156,6 @@ export function StoreMap({
   stops,
   checkedStopOrders,
   expanded,
-  onToggleExpanded,
 }: StoreMapProps) {
   // Marker/label sizes are fractions of the map's width, so they read the same on a phone
   // whatever resolution the store's floor photo has.
@@ -155,10 +168,10 @@ export function StoreMap({
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
   const stopByNodeId = new Map(stops.map((s) => [s.nodeId, s]));
 
-  // Only where to go now and right after that - every stop at once crowds the map.
+  // Only where to go now - every stop at once crowds the map.
   const upcoming = [...stops].sort((a, b) => a.order - b.order).filter((s) => !checkedStopOrders.has(s.order));
   const currentStop = upcoming[0];
-  const visibleStopOrders = new Set(upcoming.slice(0, 2).map((s) => s.order));
+  const visibleStopOrders = new Set(upcoming.slice(0, 1).map((s) => s.order));
 
   const currentNode = currentStop ? nodeById.get(currentStop.nodeId) : undefined;
 
@@ -245,15 +258,6 @@ export function StoreMap({
           })}
         </Svg>
       </ZoomableView>
-      <Pressable
-        onPress={onToggleExpanded}
-        style={styles.expandButton}
-        hitSlop={8}
-        accessibilityRole="button"
-        accessibilityLabel={expanded ? he.route.shrinkMap : he.route.expandMap}
-      >
-        <ExpandIcon expanded={expanded} />
-      </Pressable>
     </View>
   );
 }
@@ -269,9 +273,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   expandButton: {
-    position: "absolute",
-    top: 8,
-    end: 8,
     width: 36,
     height: 36,
     borderRadius: 18,
