@@ -381,16 +381,27 @@ export const he = {
       return `השוואה בין ${n} סניפים`;
     },
     changeCity: "החלפת עיר",
-    total: 'סה"כ',
-    estimated: "כולל מחיר משוער לפירות וירקות במשקל",
+    estimated: "~ כולל מחיר משוער לפירות וירקות במשקל",
     pricesAt(date: string): string {
       return `מחירים מ־${date}`;
     },
-    missing(n: number): string {
-      return n === 1 ? "פריט אחד לא נמכר כאן" : `${n} פריטים לא נמכרים כאן`;
+    missingShort(n: number): string {
+      return n === 1 ? "חסר פריט אחד" : `חסרים ${n} פריטים`;
     },
-    allItemsHere: "כל הפריטים נמכרים כאן",
-    chooseBranch: "קונים בסניף הזה",
+    missingEstimated: "הפריטים החסרים מחושבים לפי מחירם הטיפוסי בעיר",
+    allItemsHere: "כל הפריטים",
+    breakdown: "פירוט מחירים",
+    hideBreakdown: "הסתרת הפירוט",
+    buyHere: "קונים כאן",
+    notSoldHere: "לא נמכר כאן",
+    showMore(n: number): string {
+      return n === 1 ? "הצגת סניף נוסף" : `הצגת עוד ${n} סניפים`;
+    },
+    showLess: "הצגת 3 הזולים בלבד",
+    branchSummary(rank: number, chain: string, branch: string, price: string, missing: number): string {
+      const missingText = missing === 0 ? "כל הפריטים נמכרים" : missing === 1 ? "חסר פריט אחד" : `חסרים ${missing} פריטים`;
+      return `מקום ${rank}: ${chain} ${branch}, ${price}, ${missingText}`;
+    },
     unpriced(items: string): string {
       return `לא הצלחנו לתמחר: ${items}`;
     },

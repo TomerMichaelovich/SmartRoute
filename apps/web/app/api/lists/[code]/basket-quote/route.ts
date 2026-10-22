@@ -16,7 +16,9 @@ const requestSchema = z
     // Optional, only to show each branch's distance. Never stored or logged.
     lat: z.number().min(-90).max(90).optional(),
     lng: z.number().min(-180).max(180).optional(),
-    limit: z.number().int().min(1).max(5).default(3),
+    // How many branches to return, cheapest full basket first (the app shows 3 and
+    // reveals the rest on demand, so it asks for all of them at once).
+    limit: z.number().int().min(1).max(50).default(3),
     // Choices made in the popup that may not have been saved yet (offline / failed PATCH).
     variants: z.record(z.string(), shoppingListItemVariantSchema).optional(),
   })

@@ -151,6 +151,7 @@ export async function quoteBasket(
         pricesAt: q.branch.priceFileAt,
       },
       totalAgorot: q.totalAgorot,
+      fullBasketAgorot: q.fullBasketAgorot,
       estimated: q.estimated,
       missingItems: q.missingItems,
       lines: q.lines,

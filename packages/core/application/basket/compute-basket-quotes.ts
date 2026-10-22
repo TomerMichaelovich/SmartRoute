@@ -3,8 +3,8 @@
  *
  * A branch missing items must not win just because it's missing them: each
  * missing item is charged at that item's median price across the compared
- * branches for ranking purposes. The total shown to the shopper is only what
- * the branch actually sells, with the missing items listed next to it.
+ * branches, giving every branch a comparable full-basket price to rank by
+ * (shown as an estimate when items are missing).
  */
 
 export interface BasketRequirement {
@@ -30,9 +30,12 @@ export interface QuoteLine extends PricedLine {
 
 export interface BasketQuote<B> {
   branch: B;
+  /** What the items this branch sells cost there. */
   totalAgorot: number;
+  /** totalAgorot plus each missing item at its median price elsewhere: what branches are ranked by. */
+  fullBasketAgorot: number;
   estimated: boolean;
-  missingItems: { itemId: string; rawText: string }[];
+  missingItems: { itemId: string; rawText: string; estimatedAgorot: number }[];
   lines: QuoteLine[];
 }
 
@@ -77,7 +80,7 @@ export function computeBasketQuotes<B extends { id: number; distanceKm: number |
   const scored = branches.map((branch) => {
     const branchPrices = prices.get(branch.id);
     const lines: QuoteLine[] = [];
-    const missingItems: { itemId: string; rawText: string }[] = [];
+    const missingItems: { itemId: string; rawText: string; estimatedAgorot: number }[] = [];
     let score = 0;
     let estimated = false;
     for (const req of comparable) {
@@ -88,12 +91,13 @@ export function computeBasketQuotes<B extends { id: number; distanceKm: number |
         score += total;
         estimated ||= req.estimated;
       } else {
-        missingItems.push({ itemId: req.itemId, rawText: req.rawText });
-        score += medianByItem.get(req.itemId)!;
+        const estimatedAgorot = medianByItem.get(req.itemId)!;
+        missingItems.push({ itemId: req.itemId, rawText: req.rawText, estimatedAgorot });
+        score += estimatedAgorot;
       }
     }
     const totalAgorot = lines.reduce((sum, l) => sum + l.lineTotalAgorot, 0);
-    return { quote: { branch, totalAgorot, estimated, missingItems, lines }, score };
+    return { quote: { branch, totalAgorot, fullBasketAgorot: score, estimated, missingItems, lines }, score };
   });
 
   scored.sort(

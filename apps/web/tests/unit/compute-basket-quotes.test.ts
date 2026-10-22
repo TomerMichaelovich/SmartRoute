@@ -41,7 +41,12 @@ describe("computeBasketQuotes", () => {
     expect(quotes[0].branch.id).toBe(1);
     const third = quotes.find((q) => q.branch.id === 3)!;
     expect(third.totalAgorot).toBe(600);
-    expect(third.missingItems).toEqual([{ itemId: "salmon", rawText: "salmon" }]);
+    // The full basket charges the missing salmon at its median elsewhere (6000 / 6200 -> 6100).
+    expect(third.fullBasketAgorot).toBe(6700);
+    expect(third.missingItems).toEqual([{ itemId: "salmon", rawText: "salmon", estimatedAgorot: 6100 }]);
+    // Ranked by the full basket: ascending all the way down.
+    const full = quotes.map((q) => q.fullBasketAgorot);
+    expect(full).toEqual([...full].sort((a, b) => a - b));
   });
 
   it("an item no branch sells is reported once and counted against nobody", () => {

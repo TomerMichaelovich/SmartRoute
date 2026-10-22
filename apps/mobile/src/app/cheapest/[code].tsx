@@ -3,8 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { ShoppingListItemVariant } from "@smartroute/core/domain/entities/shopping-list";
 import { he } from "@smartroute/core/i18n/he";
+import { BranchQuoteCard, type BranchQuote } from "@/components/BranchQuoteCard";
 import { Button } from "@/components/Button";
-import { Card } from "@/components/Card";
 import { VariantPickerModal, type VariantOption, type VariantQuestion } from "@/components/VariantPickerModal";
 import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
@@ -20,27 +20,18 @@ interface City {
 
 type CityQuery = { cityCode?: number; cityName?: string; lat?: number; lng?: number };
 
-interface Quote {
-  branch: {
-    id: number;
-    chainName: string;
-    name: string;
-    address: string | null;
-    distanceKm: number | null;
-    navioStoreId: string | null;
-    pricesAt: string;
-  };
-  totalAgorot: number;
-  estimated: boolean;
-  missingItems: { itemId: string; rawText: string }[];
-}
-
 interface QuoteResult {
   city: City;
   comparedBranchCount: number;
-  quotes: Quote[];
+  /** Every branch in the city, cheapest full basket first. */
+  quotes: BranchQuote[];
   unpricedItems: { itemId: string; rawText: string }[];
 }
+
+/** Shown before "show the other branches". */
+const TOP_COUNT = 3;
+/** Ask for every branch at once: revealing the rest needs no second request. */
+const MAX_BRANCHES = 50;
 
 type QuoteResponse =
   | ({ status: "ok" } & QuoteResult)
@@ -55,14 +46,6 @@ type Phase =
   | { kind: "results"; result: QuoteResult }
   | { kind: "error" };
 
-const shekels = (agorot: number) => `₪${(agorot / 100).toFixed(2)}`;
-
-/** "2026-10-21T04:31:00" -> "21/10 04:31" */
-function formatPricesAt(value: string): string {
-  const m = value.match(/^\d{4}-(\d{2})-(\d{2})T(\d{2}:\d{2})/);
-  return m ? `${m[2]}/${m[1]} ${m[3]}` : value;
-}
-
 /**
  * "The cheapest basket": compares the list's price across the branches in the
  * shopper's city (never across cities), after asking what they meant by generic
@@ -74,7 +57,7 @@ export default function CheapestBasketScreen() {
   const router = useRouter();
   const t = he.cheapest;
   const [phase, setPhase] = useState<Phase>({ kind: "locating" });
-  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [showAll, setShowAll] = useState(false);
   const [choosingBranch, setChoosingBranch] = useState<number | null>(null);
   const [routeError, setRouteError] = useState<string | null>(null);
   const city = useRef<CityQuery | null>(null);
@@ -86,7 +69,7 @@ export default function CheapestBasketScreen() {
     const res = await apiFetch(`/api/lists/${code}/basket-quote`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...city.current, limit: 3, variants: Object.fromEntries(choices.current) }),
+      body: JSON.stringify({ ...city.current, limit: MAX_BRANCHES, variants: Object.fromEntries(choices.current) }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
@@ -182,7 +165,7 @@ export default function CheapestBasketScreen() {
     chosenAt: new Date().toISOString(),
   });
 
-  async function chooseBranch(q: Quote) {
+  async function chooseBranch(q: BranchQuote) {
     setRouteError(null);
     if (q.branch.navioStoreId) {
       setChoosingBranch(q.branch.id);
@@ -193,15 +176,6 @@ export default function CheapestBasketScreen() {
       return;
     }
     router.push({ pathname: "/checklist/[code]", params: { code, branchName: `${q.branch.chainName} · ${q.branch.name}` } });
-  }
-
-  function toggleMissing(branchId: number) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(branchId)) next.delete(branchId);
-      else next.add(branchId);
-      return next;
-    });
   }
 
   const question = phase.kind === "refining" ? phase.questions[phase.index] : null;
@@ -260,47 +234,32 @@ export default function CheapestBasketScreen() {
         <View style={styles.list}>
           {phase.result.quotes.length === 0 && <Text style={styles.hint}>{t.noBranches}</Text>}
           {routeError && <Text style={styles.errorText}>{routeError}</Text>}
-          {phase.result.quotes.map((q, i) => {
-            const missing = q.missingItems.length;
-            const open = expanded.has(q.branch.id);
-            return (
-              <Card key={q.branch.id} style={[styles.quoteCard, i === 0 && styles.bestCard]}>
-                <View style={styles.quoteTop}>
-                  <View style={styles.quoteNames}>
-                    <Text style={styles.chain}>{q.branch.chainName}</Text>
-                    <Text style={styles.branchName}>{q.branch.name}</Text>
-                    {q.branch.address ? <Text style={styles.hint}>{q.branch.address}</Text> : null}
-                  </View>
-                  <View style={styles.totalBox}>
-                    <Text style={styles.totalLabel}>{t.total}</Text>
-                    <Text style={styles.total}>{shekels(q.totalAgorot)}</Text>
-                  </View>
-                </View>
+          {/* Cheapest full basket first, all the way down. */}
+          {(showAll ? phase.result.quotes : phase.result.quotes.slice(0, TOP_COUNT)).map((q, i) => (
+            <BranchQuoteCard
+              key={q.branch.id}
+              quote={q}
+              rank={i + 1}
+              busy={choosingBranch === q.branch.id}
+              disabled={choosingBranch !== null}
+              onBuyHere={() => chooseBranch(q)}
+            />
+          ))}
 
-                {missing > 0 ? (
-                  <Pressable onPress={() => toggleMissing(q.branch.id)} hitSlop={6} accessibilityRole="button">
-                    <Text style={styles.missing}>
-                      {t.missing(missing)} {open ? "▴" : "▾"}
-                    </Text>
-                    {open && <Text style={styles.missingList}>{q.missingItems.map((m) => m.rawText).join(" · ")}</Text>}
-                  </Pressable>
-                ) : (
-                  <Text style={styles.allHere}>✓ {t.allItemsHere}</Text>
-                )}
+          {phase.result.quotes.length > TOP_COUNT && (
+            <Pressable
+              onPress={() => setShowAll((v) => !v)}
+              style={({ pressed }) => [styles.moreButton, pressed && styles.cityOptionPressed]}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: showAll }}
+            >
+              <Text style={styles.moreText}>
+                {showAll ? t.showLess : t.showMore(phase.result.quotes.length - TOP_COUNT)} {showAll ? "▴" : "▾"}
+              </Text>
+            </Pressable>
+          )}
 
-                <Text style={styles.meta}>
-                  {t.pricesAt(formatPricesAt(q.branch.pricesAt))}
-                  {q.branch.distanceKm !== null ? ` · ${q.branch.distanceKm} ק"מ` : ""}
-                </Text>
-
-                <Button onPress={() => chooseBranch(q)} disabled={choosingBranch !== null} fullWidth>
-                  {choosingBranch === q.branch.id ? he.common.loading : t.chooseBranch}
-                </Button>
-              </Card>
-            );
-          })}
-
-          {phase.result.quotes.some((q) => q.estimated) && <Text style={styles.note}>~ {t.estimated}</Text>}
+          {phase.result.quotes.some((q) => q.estimated) && <Text style={styles.note}>{t.estimated}</Text>}
           {phase.result.unpricedItems.length > 0 && (
             <Text style={styles.note}>{t.unpriced(phase.result.unpricedItems.map((u) => u.rawText).join(", "))}</Text>
           )}
@@ -409,65 +368,19 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.medium,
     color: COLORS.neutral900,
   },
-  quoteCard: {
-    gap: 10,
+  moreButton: {
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.neutral200,
+    backgroundColor: COLORS.white,
   },
-  bestCard: {
-    borderColor: COLORS.cyan500,
-    borderWidth: 2,
-  },
-  quoteTop: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-  },
-  quoteNames: {
-    flex: 1,
-    gap: 2,
-  },
-  chain: {
-    fontSize: 18,
-    fontFamily: FONTS.bold,
-    color: COLORS.neutral900,
-  },
-  branchName: {
-    fontSize: 15,
+  moreText: {
+    fontSize: 14,
     fontFamily: FONTS.medium,
-    color: COLORS.neutral700,
-  },
-  totalBox: {
-    alignItems: "flex-end",
-  },
-  totalLabel: {
-    fontSize: 12,
-    fontFamily: FONTS.regular,
-    color: COLORS.neutral500,
-  },
-  total: {
-    fontSize: 22,
-    fontFamily: FONTS.bold,
     color: COLORS.cyan700,
-  },
-  missing: {
-    fontSize: 14,
-    fontFamily: FONTS.medium,
-    color: "#b45309",
-  },
-  missingList: {
-    marginTop: 4,
-    fontSize: 14,
-    fontFamily: FONTS.regular,
-    color: COLORS.neutral600,
-  },
-  allHere: {
-    fontSize: 14,
-    fontFamily: FONTS.medium,
-    color: COLORS.green600,
-  },
-  meta: {
-    fontSize: 12,
-    fontFamily: FONTS.regular,
-    color: COLORS.neutral500,
   },
   note: {
     fontSize: 13,
