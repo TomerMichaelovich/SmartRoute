@@ -394,6 +394,7 @@ export const he = {
     hideBreakdown: "הסתרת הפירוט",
     buyHere: "קונים כאן",
     notSoldHere: "לא נמכר כאן",
+    similar: "דומה",
     showMore(n: number): string {
       return n === 1 ? "הצגת סניף נוסף" : `הצגת עוד ${n} סניפים`;
     },

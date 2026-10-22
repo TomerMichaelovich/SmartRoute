@@ -29,12 +29,24 @@ const NON_STANDARD_WORDS = [
 
 const PRODUCE_DEPARTMENT = "ירקות ופירות";
 
-type Size = { amount: number; base: "ml" | "g" | "unit" };
+export type Size = { amount: number; base: "ml" | "g" | "unit" };
 
-/** "1 ליטר" / "500 גרם" in a canonical name -> base units. */
-function sizeFromName(normalizedName: string): Size | null {
+const UNIT = "(ליטר|מ ?ל|מיליליטר|ל|גרם|גר|ק ?ג|קילו|ג|יחידות|יח)(?:\\s|$)";
+const MULTIPACK = new RegExp(`(\\d+)\\s*\\*\\s*(\\d+(?:\\.\\d+)?)\\s*${UNIT}`);
+const SINGLE = new RegExp(`(\\d+(?:\\.\\d+)?)\\s*${UNIT}`);
+
+/**
+ * "1 ליטר" / "500 גרם" in a name -> base units. A multipack ("6*1.5 ליטר",
+ * "4 * 1 ליטר") is its total, so it never passes for a single bottle.
+ */
+export function sizeFromName(normalizedName: string): Size | null {
   // Normalization turns מ"ל / ק"ג into "מ ל" / "ק ג".
-  const m = normalizedName.match(/(\d+(?:\.\d+)?)\s*(ליטר|מ ?ל|מיליליטר|ל|גרם|גר|ק ?ג|קילו|ג|יחידות|יח)(?:\s|$)/);
+  const multi = normalizedName.match(MULTIPACK);
+  if (multi) {
+    const each = toBase(Number(multi[2]), multi[3]);
+    return each ? { ...each, amount: each.amount * Number(multi[1]) } : null;
+  }
+  const m = normalizedName.match(SINGLE);
   if (!m) return null;
   return toBase(Number(m[1]), m[2]);
 }
@@ -56,7 +68,7 @@ function candidateSize(c: ScoredCandidate): Size | null {
   return c.quantity && c.unitQty ? toBase(c.quantity, c.unitQty.trim()) : null;
 }
 
-const percentOf = (normalizedName: string) => normalizedName.match(/(\d+(?:\.\d+)?)\s*%/)?.[1] ?? null;
+export const percentOf = (normalizedName: string) => normalizedName.match(/(\d+(?:\.\d+)?)\s*%/)?.[1] ?? null;
 
 function cleanManufacturer(m: string | null): string | null {
   if (!m) return null;

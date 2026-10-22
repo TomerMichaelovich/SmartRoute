@@ -10,6 +10,8 @@ import type { ShoppingList, ShoppingListItem, ShoppingListItemVariant } from "@s
 import { classificationService, priceRepository } from "@/src/infrastructure/container";
 import { MAX_PRICE_FILE_AGE_HOURS } from "@/src/infrastructure/prices/pilot-config";
 import { cityName } from "@/src/infrastructure/prices/settlements";
+import { shortBranchName } from "@/src/infrastructure/prices/branch-name";
+import { dedupeByName, equivalentKeys } from "@/src/infrastructure/prices/sku-equivalence";
 import type { PriceBranch, SkuOption } from "@/src/infrastructure/repositories/interfaces/price-repository";
 
 /**
@@ -45,7 +47,7 @@ export async function variantOptionsFor(list: ShoppingList) {
       itemId: item.id,
       rawText: item.rawText,
       productId: item.classification!.matchedProductId!,
-      options: itemOptions.slice(0, MAX_OPTIONS).map((o) => ({
+      options: dedupeByName(itemOptions).slice(0, MAX_OPTIONS).map((o) => ({
         itemKey: o.itemKey,
         name: o.name,
         label: o.label,
@@ -56,12 +58,14 @@ export async function variantOptionsFor(list: ShoppingList) {
     }));
 }
 
-type Requirement = BasketRequirement & { itemKeys: string[] };
+type Requirement = BasketRequirement & { itemKeys: string[]; chosenKey?: string };
 
 /**
- * List items -> what to price. A chosen product is priced exactly; otherwise
- * ("any, cheapest", or nothing chosen yet) the cheapest typical product of the
- * item's generic product. Items with no linked products can't be priced.
+ * List items -> what to price. A chosen product is priced as that kind of
+ * product: the pick itself or the cheapest equivalent a branch sells (chains
+ * list the same eggs under their own barcodes). Otherwise ("any, cheapest", or
+ * nothing chosen yet) the cheapest typical product of the item's generic
+ * product. Items with no linked products can't be priced.
  */
 function buildRequirements(
   items: ShoppingListItem[],
@@ -74,11 +78,18 @@ function buildRequirements(
     const override = overrides.get(item.id);
     const variant = override ? effectiveVariant({ ...item, variant: override }) : effectiveVariant(item);
     const quantity = item.quantity && item.quantity > 0 ? item.quantity : 1;
+    const productOptions = options.get(item.classification?.matchedProductId ?? "") ?? [];
     if (variant?.kind === "sku" && variant.itemKey) {
-      requirements.push({ itemId: item.id, rawText: item.rawText, quantity, estimated: false, itemKeys: [variant.itemKey] });
+      requirements.push({
+        itemId: item.id,
+        rawText: item.rawText,
+        quantity,
+        estimated: false,
+        itemKeys: [variant.itemKey, ...equivalentKeys(variant.itemKey, productOptions)],
+        chosenKey: variant.itemKey,
+      });
       continue;
     }
-    const productOptions = options.get(item.classification?.matchedProductId ?? "") ?? [];
     const typical = productOptions.filter((o) => o.isTypical);
     if (typical.length === 0) {
       unpriceable.push({ itemId: item.id, rawText: item.rawText });
@@ -136,8 +147,10 @@ export async function quoteBasket(
   }
 
   const { quotes, unavailableEverywhere } = computeBasketQuotes({ requirements, branches, prices, limit: input.limit });
+  const chosenKeyByItem = new Map(requirements.map((r) => [r.itemId, r.chosenKey]));
+  const city = cityName(input.cityCode);
   return {
-    city: { code: input.cityCode, name: cityName(input.cityCode) },
+    city: { code: input.cityCode, name: city },
     comparedBranchCount: branches.length,
     itemCount: items.length,
     quotes: quotes.map((q) => ({
@@ -145,6 +158,7 @@ export async function quoteBasket(
         id: q.branch.id,
         chainName: q.branch.chainName,
         name: q.branch.name,
+        shortName: shortBranchName(q.branch.name, city),
         address: q.branch.address,
         distanceKm: q.branch.distanceKm,
         navioStoreId: q.branch.navioStoreId,
@@ -154,7 +168,11 @@ export async function quoteBasket(
       fullBasketAgorot: q.fullBasketAgorot,
       estimated: q.estimated,
       missingItems: q.missingItems,
-      lines: q.lines,
+      lines: q.lines.map((line) => {
+        const chosenKey = chosenKeyByItem.get(line.itemId);
+        // Priced with an equivalent of the shopper's pick (another chain's barcode).
+        return { ...line, substitute: chosenKey !== undefined && line.itemKey !== chosenKey };
+      }),
     })),
     // Not counted against any branch: no linked products, or no branch in the city sells them.
     unpricedItems: [...unpriceable, ...unavailableEverywhere],

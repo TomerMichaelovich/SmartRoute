@@ -9,6 +9,8 @@ export interface BranchQuote {
     id: number;
     chainName: string;
     name: string;
+    /** The name without the city ("רמי לוי באר שבע" -> null), or null when nothing is left. */
+    shortName: string | null;
     address: string | null;
     distanceKm: number | null;
     navioStoreId: string | null;
@@ -18,7 +20,15 @@ export interface BranchQuote {
   fullBasketAgorot: number;
   estimated: boolean;
   missingItems: { itemId: string; rawText: string; estimatedAgorot: number }[];
-  lines: { itemId: string; name: string; quantity: number; priceAgorot: number; lineTotalAgorot: number }[];
+  lines: {
+    itemId: string;
+    name: string;
+    quantity: number;
+    priceAgorot: number;
+    lineTotalAgorot: number;
+    /** An equivalent of the shopper's pick (this chain's own barcode for it). */
+    substitute?: boolean;
+  }[];
 }
 
 export const shekels = (agorot: number) => `₪${(agorot / 100).toFixed(2)}`;
@@ -46,6 +56,9 @@ export function BranchQuoteCard({ quote, rank, busy, disabled, onBuyHere }: Bran
   const [open, setOpen] = useState(false);
   const missing = quote.missingItems.length;
   const best = rank === 1;
+  // Branch names often just repeat the city ("רמי לוי באר שבע"); the address tells them apart.
+  const place = quote.branch.shortName ?? quote.branch.address ?? quote.branch.name;
+  const address = quote.branch.shortName ? quote.branch.address : null;
 
   return (
     <View
@@ -55,7 +68,7 @@ export function BranchQuoteCard({ quote, rank, busy, disabled, onBuyHere }: Bran
       <View
         style={styles.summary}
         accessible
-        accessibilityLabel={t.branchSummary(rank, quote.branch.chainName, quote.branch.name, shekels(quote.fullBasketAgorot), missing)}
+        accessibilityLabel={t.branchSummary(rank, quote.branch.chainName, [place, address].filter(Boolean).join(" "), shekels(quote.fullBasketAgorot), missing)}
       >
         <View style={[styles.rank, best && styles.bestRank]}>
           <Text style={[styles.rankText, best && styles.bestRankText]}>{rank}</Text>
@@ -63,15 +76,16 @@ export function BranchQuoteCard({ quote, rank, busy, disabled, onBuyHere }: Bran
         <View style={styles.names}>
           <Text style={styles.chain} numberOfLines={1}>
             {quote.branch.chainName}
-            <Text style={styles.branchName}> · {quote.branch.name}</Text>
+            <Text style={styles.branchName}> · {place}</Text>
           </Text>
           <Text style={[styles.coverage, missing > 0 ? styles.coverageMissing : styles.coverageFull]} numberOfLines={1}>
             {missing > 0 ? t.missingShort(missing) : `✓ ${t.allItemsHere}`}
-            <Text style={styles.meta}>
-              {"  ·  "}
-              {t.pricesAt(formatPricesAt(quote.branch.pricesAt))}
-              {quote.branch.distanceKm !== null ? `  ·  ${quote.branch.distanceKm} ק"מ` : ""}
-            </Text>
+            {(address || quote.branch.distanceKm !== null) && (
+              <Text style={styles.meta}>
+                {address ? `  ·  ${address}` : ""}
+                {quote.branch.distanceKm !== null ? `  ·  ${quote.branch.distanceKm} ק"מ` : ""}
+              </Text>
+            )}
           </Text>
         </View>
         <Text style={[styles.price, best && styles.bestPrice]}>
@@ -86,6 +100,7 @@ export function BranchQuoteCard({ quote, rank, busy, disabled, onBuyHere }: Bran
             <View key={line.itemId} style={styles.line}>
               <Text style={styles.lineName} numberOfLines={1}>
                 {line.name}
+                {line.substitute ? <Text style={styles.meta}> ({t.similar})</Text> : null}
               </Text>
               {line.quantity !== 1 && <Text style={styles.lineQty}>×{line.quantity}</Text>}
               <Text style={styles.linePrice}>{shekels(line.lineTotalAgorot)}</Text>
@@ -100,6 +115,7 @@ export function BranchQuoteCard({ quote, rank, busy, disabled, onBuyHere }: Bran
             </View>
           ))}
           {missing > 0 && <Text style={styles.meta}>{t.missingEstimated}</Text>}
+          <Text style={styles.meta}>{t.pricesAt(formatPricesAt(quote.branch.pricesAt))}</Text>
         </View>
       )}
 

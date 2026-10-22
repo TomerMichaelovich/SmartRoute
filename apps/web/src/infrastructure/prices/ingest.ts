@@ -22,7 +22,10 @@ export interface IngestOptions {
  * trigram / whole-word matching used by the SKU linker sees separate tokens.
  */
 export function normalizeRetailName(name: string): string {
-  return normalizeHebrewText(name)
+  // Keep decimal points: "1.5 ליטר" must not become "1 5 ליטר" (= 5 liters).
+  const DECIMAL = "․";
+  return normalizeHebrewText(name.replace(/(\d)[.,](\d)/g, `$1${DECIMAL}$2`))
+    .replaceAll(DECIMAL, ".")
     .replace(/([א-ת])(\d)/g, "$1 $2")
     .replace(/([\d%])([א-ת])/g, "$1 $2")
     .replace(/\s+/g, " ")

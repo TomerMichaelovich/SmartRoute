@@ -1,3 +1,4 @@
+import { normalizeRetailName } from "@/src/infrastructure/prices/ingest";
 import { findSkuCandidates, type CandidateItem } from "@/src/infrastructure/prices/sku-candidates";
 import { verifySkuCandidatesByRules } from "@/src/infrastructure/prices/sku-rules";
 import { verifySkuCandidates, type SkuVerdict } from "@/src/infrastructure/prices/sku-verifier";
@@ -45,7 +46,8 @@ async function main() {
     id: r.id,
     itemKey: r.item_key,
     name: r.name,
-    normalizedName: r.normalized_name,
+    // Recomputed from the name: rows stored before a normalization fix keep the old form.
+    normalizedName: normalizeRetailName(r.name),
     manufacturer: r.manufacturer,
     quantity: r.quantity,
     unitQty: r.unit_qty,
