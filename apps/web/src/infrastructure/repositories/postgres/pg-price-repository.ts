@@ -4,6 +4,7 @@ import type {
   CheapestPriceRow,
   IPriceRepository,
   PriceBranch,
+  RequirementKey,
   SkuLinkView,
   SkuOption,
 } from "../interfaces/price-repository";
@@ -69,28 +70,36 @@ export class PgPriceRepository implements IPriceRepository {
     }));
   }
 
-  async findCheapestPrices(
-    branchIds: number[],
-    requirements: { id: string; itemKeys: string[] }[],
-  ): Promise<CheapestPriceRow[]> {
-    const pairs = requirements.flatMap((r) => r.itemKeys.map((k) => [r.id, k] as const));
-    if (branchIds.length === 0 || pairs.length === 0) return [];
+  async findCheapestPrices(branchIds: number[], requirements: { id: string; keys: RequirementKey[] }[]): Promise<CheapestPriceRow[]> {
+    const rowsIn = requirements.flatMap((r) => r.keys.map((k) => ({ reqId: r.id, ...k })));
+    if (branchIds.length === 0 || rowsIn.length === 0) return [];
     const rows = (await rawSql.query(
-      `WITH req AS (SELECT * FROM unnest($1::text[], $2::text[]) AS r(req_id, item_key))
+      `WITH req AS (
+         SELECT * FROM unnest($1::text[], $2::text[], $3::float8[], $4::int[]) AS r(req_id, item_key, factor, tier)
+       )
        SELECT DISTINCT ON (bp.branch_id, req.req_id)
-              bp.branch_id, req.req_id, ri.item_key, ri.name, bp.price_agorot
+              bp.branch_id, req.req_id, ri.item_key, ri.name, bp.price_agorot, req.tier,
+              round(bp.price_agorot * req.factor)::int AS effective
        FROM req
        JOIN retail_items ri ON ri.item_key = req.item_key
-       JOIN branch_prices bp ON bp.retail_item_id = ri.id AND bp.branch_id = ANY($3::int[])
-       ORDER BY bp.branch_id, req.req_id, bp.price_agorot, ri.item_key`,
-      [pairs.map((p) => p[0]), pairs.map((p) => p[1]), branchIds],
+       JOIN branch_prices bp ON bp.retail_item_id = ri.id AND bp.branch_id = ANY($5::int[])
+       ORDER BY bp.branch_id, req.req_id, req.tier, bp.price_agorot * req.factor, ri.item_key`,
+      [
+        rowsIn.map((r) => r.reqId),
+        rowsIn.map((r) => r.itemKey),
+        rowsIn.map((r) => r.factor),
+        rowsIn.map((r) => r.tier),
+        branchIds,
+      ],
     )) as Record<string, unknown>[];
     return rows.map((r) => ({
       branchId: Number(r.branch_id),
       requirementId: String(r.req_id),
       itemKey: String(r.item_key),
       name: String(r.name),
-      priceAgorot: Number(r.price_agorot),
+      priceAgorot: Number(r.effective),
+      packPriceAgorot: Number(r.price_agorot),
+      scaled: Number(r.tier) === 1,
     }));
   }
 

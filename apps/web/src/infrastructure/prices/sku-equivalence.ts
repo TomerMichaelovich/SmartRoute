@@ -53,24 +53,53 @@ function profile(option: EquivalenceOption, commonWords: Set<string>): Profile {
 const sameSize = (a: Size | null, b: Size | null) =>
   a === null || b === null ? a === b : a.base === b.base && Math.abs(a.amount - b.amount) <= a.amount * 0.15;
 
+/** Words every option shares ("ביצים") say nothing about which one it is. */
+function commonWordsOf(options: EquivalenceOption[]): Set<string> {
+  const wordSets = options.map((o) => new Set(normalizeRetailName(o.name).split(" ")));
+  return new Set([...(wordSets[0] ?? [])].filter((w) => wordSets.every((set) => set.has(w))));
+}
+
+// Exactly the same distinguishing words: omega eggs aren't plain eggs either way round.
+const sameKind = (a: Profile, b: Profile) =>
+  a.percent === b.percent && a.words.size === b.words.size && [...a.words].every((w) => b.words.has(w));
+
 /** Item keys of the options equivalent to `chosenKey` (not including it). */
 export function equivalentKeys(chosenKey: string, options: EquivalenceOption[]): string[] {
   const chosen = options.find((o) => o.itemKey === chosenKey);
   if (!chosen || options.length < 2) return [];
-  // Words every option shares ("ביצים") say nothing about which one it is.
-  const wordSets = options.map((o) => new Set(normalizeRetailName(o.name).split(" ")));
-  const commonWords = new Set([...wordSets[0]].filter((w) => wordSets.every((set) => set.has(w))));
-
+  const commonWords = commonWordsOf(options);
   const want = profile(chosen, commonWords);
   return options
     .filter((o) => o.itemKey !== chosenKey)
     .filter((o) => {
       const p = profile(o, commonWords);
-      // Exactly the same distinguishing words: omega eggs aren't plain eggs either way round.
-      const sameWords = want.words.size === p.words.size && [...want.words].every((w) => p.words.has(w));
-      return sameSize(want.size, p.size) && want.percent === p.percent && sameWords;
+      return sameSize(want.size, p.size) && sameKind(want, p);
     })
     .map((o) => o.itemKey);
+}
+
+/**
+ * The same kind of product in another pack size, with the factor that prices it
+ * per unit at the target size: a branch selling only 18-egg trays is compared
+ * on 12 eggs at 12/18 of the tray's price. Used only where a branch has nothing
+ * in the target size itself.
+ */
+export function scaledFallbacks(
+  targetKeys: string[],
+  options: EquivalenceOption[],
+): { itemKey: string; factor: number }[] {
+  const targetSet = new Set(targetKeys);
+  const commonWords = commonWordsOf(options);
+  const targets = options.filter((o) => targetSet.has(o.itemKey)).map((o) => profile(o, commonWords));
+  const out: { itemKey: string; factor: number }[] = [];
+  for (const option of options) {
+    if (targetSet.has(option.itemKey)) continue;
+    const p = profile(option, commonWords);
+    if (!p.size) continue;
+    const target = targets.find((t) => t.size && t.size.base === p.size!.base && !sameSize(t.size, p.size) && sameKind(t, p));
+    if (target?.size) out.push({ itemKey: option.itemKey, factor: target.size.amount / p.size.amount });
+  }
+  return out;
 }
 
 /** One popup option per distinct product name — chains often list the same product under their own barcode. */

@@ -31,7 +31,7 @@ const PRODUCE_DEPARTMENT = "ירקות ופירות";
 
 export type Size = { amount: number; base: "ml" | "g" | "unit" };
 
-const UNIT = "(ליטר|מ ?ל|מיליליטר|ל|גרם|גר|ק ?ג|קילו|ג|יחידות|יח)(?:\\s|$)";
+const UNIT = "(ליטר|מ ?ל|מיליליטר|ל|גרם|גר|ק ?ג|קילו|ג|יחידות|יחיד|יח)(?:\\s|$)";
 const MULTIPACK = new RegExp(`(\\d+)\\s*\\*\\s*(\\d+(?:\\.\\d+)?)\\s*${UNIT}`);
 const SINGLE = new RegExp(`(\\d+(?:\\.\\d+)?)\\s*${UNIT}`);
 

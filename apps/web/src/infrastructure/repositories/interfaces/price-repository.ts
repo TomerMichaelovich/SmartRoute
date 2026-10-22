@@ -44,7 +44,20 @@ export interface CheapestPriceRow {
   requirementId: string;
   itemKey: string;
   name: string;
+  /** The price used for the comparison: the shelf price times the key's factor. */
   priceAgorot: number;
+  /** The shelf price of the product actually found. */
+  packPriceAgorot: number;
+  /** Found only as another pack size, priced per unit (factor != 1). */
+  scaled: boolean;
+}
+
+/** An acceptable product for a requirement. Tier 0 keys win over tier 1 wherever a branch has one. */
+export interface RequirementKey {
+  itemKey: string;
+  /** Multiplies the shelf price (e.g. 12/18 to price an 18-egg tray as 12 eggs). */
+  factor: number;
+  tier: 0 | 1;
 }
 
 export interface IPriceRepository {
@@ -58,9 +71,9 @@ export interface IPriceRepository {
   findPriceCities(): Promise<{ cityCode: number; branchCount: number }[]>;
   /** Retail branches of a city whose prices are fresh enough to compare. */
   findBranchesInCity(cityCode: number, maxPriceAgeHours: number): Promise<PriceBranch[]>;
-  /** For each branch and requirement, the cheapest of the requirement's acceptable SKUs it sells. */
-  findCheapestPrices(
-    branchIds: number[],
-    requirements: { id: string; itemKeys: string[] }[],
-  ): Promise<CheapestPriceRow[]>;
+  /**
+   * For each branch and requirement, the best acceptable SKU it sells: the
+   * lowest tier available there, then the lowest price after the key's factor.
+   */
+  findCheapestPrices(branchIds: number[], requirements: { id: string; keys: RequirementKey[] }[]): Promise<CheapestPriceRow[]>;
 }

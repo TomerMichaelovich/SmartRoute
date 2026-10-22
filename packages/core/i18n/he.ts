@@ -395,6 +395,9 @@ export const he = {
     buyHere: "קונים כאן",
     notSoldHere: "לא נמכר כאן",
     similar: "דומה",
+    perUnit(packPrice: string): string {
+      return `אריזה אחרת ב־${packPrice}, מחושב לפי יחידה`;
+    },
     showMore(n: number): string {
       return n === 1 ? "הצגת סניף נוסף" : `הצגת עוד ${n} סניפים`;
     },

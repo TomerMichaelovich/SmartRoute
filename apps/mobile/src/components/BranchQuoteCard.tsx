@@ -28,6 +28,9 @@ export interface BranchQuote {
     lineTotalAgorot: number;
     /** An equivalent of the shopper's pick (this chain's own barcode for it). */
     substitute?: boolean;
+    /** Found only in another pack size: priced per unit; packPriceAgorot is its shelf price. */
+    scaled?: boolean;
+    packPriceAgorot?: number;
   }[];
 }
 
@@ -98,9 +101,13 @@ export function BranchQuoteCard({ quote, rank, busy, disabled, onBuyHere }: Bran
         <View style={styles.breakdown}>
           {quote.lines.map((line) => (
             <View key={line.itemId} style={styles.line}>
-              <Text style={styles.lineName} numberOfLines={1}>
+              <Text style={styles.lineName} numberOfLines={2}>
                 {line.name}
-                {line.substitute ? <Text style={styles.meta}> ({t.similar})</Text> : null}
+                {line.scaled && line.packPriceAgorot !== undefined ? (
+                  <Text style={styles.meta}> ({t.perUnit(shekels(line.packPriceAgorot))})</Text>
+                ) : line.substitute ? (
+                  <Text style={styles.meta}> ({t.similar})</Text>
+                ) : null}
               </Text>
               {line.quantity !== 1 && <Text style={styles.lineQty}>×{line.quantity}</Text>}
               <Text style={styles.linePrice}>{shekels(line.lineTotalAgorot)}</Text>

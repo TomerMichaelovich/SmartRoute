@@ -11,8 +11,12 @@ import { classificationService, priceRepository } from "@/src/infrastructure/con
 import { MAX_PRICE_FILE_AGE_HOURS } from "@/src/infrastructure/prices/pilot-config";
 import { cityName } from "@/src/infrastructure/prices/settlements";
 import { shortBranchName } from "@/src/infrastructure/prices/branch-name";
-import { dedupeByName, equivalentKeys } from "@/src/infrastructure/prices/sku-equivalence";
-import type { PriceBranch, SkuOption } from "@/src/infrastructure/repositories/interfaces/price-repository";
+import { dedupeByName, equivalentKeys, scaledFallbacks } from "@/src/infrastructure/prices/sku-equivalence";
+import type {
+  PriceBranch,
+  RequirementKey,
+  SkuOption,
+} from "@/src/infrastructure/repositories/interfaces/price-repository";
 
 /**
  * Items still to buy: what the comparison is about. Items left unclassified
@@ -58,7 +62,21 @@ export async function variantOptionsFor(list: ShoppingList) {
     }));
 }
 
-type Requirement = BasketRequirement & { itemKeys: string[]; chosenKey?: string };
+type Requirement = BasketRequirement & { keys: RequirementKey[]; chosenKey?: string };
+
+/**
+ * Target-size products first (tier 0); where a branch has none, the same kind
+ * in another pack size, priced per unit at the target size (tier 1).
+ */
+function keysFor(targetKeys: string[], options: SkuOption[]): RequirementKey[] {
+  const tier0 = new Set(targetKeys);
+  return [
+    ...targetKeys.map((itemKey) => ({ itemKey, factor: 1, tier: 0 as const })),
+    ...scaledFallbacks(targetKeys, options)
+      .filter((f) => !tier0.has(f.itemKey))
+      .map((f) => ({ ...f, tier: 1 as const })),
+  ];
+}
 
 /**
  * List items -> what to price. A chosen product is priced as that kind of
@@ -85,7 +103,7 @@ function buildRequirements(
         rawText: item.rawText,
         quantity,
         estimated: false,
-        itemKeys: [variant.itemKey, ...equivalentKeys(variant.itemKey, productOptions)],
+        keys: keysFor([variant.itemKey, ...equivalentKeys(variant.itemKey, productOptions)], productOptions),
         chosenKey: variant.itemKey,
       });
       continue;
@@ -102,7 +120,7 @@ function buildRequirements(
       // Weighted produce is priced per kg; a list quantity ("3 עגבניות") isn't kilos.
       quantity: weighted ? 1 : quantity,
       estimated: weighted,
-      itemKeys: typical.map((o) => o.itemKey),
+      keys: weighted ? typical.map((o) => ({ itemKey: o.itemKey, factor: 1, tier: 0 as const })) : keysFor(typical.map((o) => o.itemKey), productOptions),
     });
   }
   return { requirements, unpriceable };
@@ -137,12 +155,18 @@ export async function quoteBasket(
 
   const rows = await priceRepository.findCheapestPrices(
     branches.map((b) => b.id),
-    requirements.map((r) => ({ id: r.itemId, itemKeys: r.itemKeys })),
+    requirements.map((r) => ({ id: r.itemId, keys: r.keys })),
   );
   const prices = new Map<number, Map<string, PricedLine>>();
   for (const row of rows) {
     const byItem = prices.get(row.branchId) ?? new Map<string, PricedLine>();
-    byItem.set(row.requirementId, { itemKey: row.itemKey, name: row.name, priceAgorot: row.priceAgorot });
+    byItem.set(row.requirementId, {
+      itemKey: row.itemKey,
+      name: row.name,
+      priceAgorot: row.priceAgorot,
+      packPriceAgorot: row.packPriceAgorot,
+      scaled: row.scaled,
+    });
     prices.set(row.branchId, byItem);
   }
 
@@ -166,7 +190,8 @@ export async function quoteBasket(
       },
       totalAgorot: q.totalAgorot,
       fullBasketAgorot: q.fullBasketAgorot,
-      estimated: q.estimated,
+      // Lines priced per unit from another pack size are estimates too.
+      estimated: q.estimated || q.lines.some((l) => l.scaled),
       missingItems: q.missingItems,
       lines: q.lines.map((line) => {
         const chosenKey = chosenKeyByItem.get(line.itemId);

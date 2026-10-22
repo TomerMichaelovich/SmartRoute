@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dedupeByName, equivalentKeys } from "@/src/infrastructure/prices/sku-equivalence";
+import { dedupeByName, equivalentKeys, scaledFallbacks } from "@/src/infrastructure/prices/sku-equivalence";
 
 // Real egg listings from Be'er Sheva branches (2026-10-22).
 const EGGS = [
@@ -43,6 +43,23 @@ describe("equivalentKeys", () => {
 
   it("returns nothing for an unknown key", () => {
     expect(equivalentKeys("nope", EGGS)).toEqual([]);
+  });
+});
+
+describe("scaledFallbacks", () => {
+  it("offers the same kind in another pack size, priced per unit at the target size", () => {
+    const fallbacks = scaledFallbacks(["rl-12L"], EGGS);
+    const tray18 = fallbacks.find((f) => f.itemKey === "rl-18L");
+    expect(tray18?.factor).toBeCloseTo(12 / 18);
+    expect(fallbacks.find((f) => f.itemKey === "carrefour-18L")?.factor).toBeCloseTo(12 / 18); // "18 יחיד"
+    expect(fallbacks.map((f) => f.itemKey)).not.toContain("rl-12M"); // another kind
+    expect(fallbacks.map((f) => f.itemKey)).not.toContain("carrefour-12L"); // same size: not a fallback
+  });
+
+  it("never crosses brands or units", () => {
+    const keys = scaledFallbacks(["coke-15"], COLA).map((f) => f.itemKey);
+    expect(keys).toContain("coke-2");
+    expect(keys).not.toContain("pepsi-15");
   });
 });
 

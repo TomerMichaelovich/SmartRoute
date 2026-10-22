@@ -20,6 +20,9 @@ export interface PricedLine {
   name: string;
   /** Price of one unit (or one kg for weighted produce). */
   priceAgorot: number;
+  /** Set when found only in another pack size: priceAgorot is then its per-unit share, this the shelf price. */
+  packPriceAgorot?: number;
+  scaled?: boolean;
 }
 
 export interface QuoteLine extends PricedLine {
