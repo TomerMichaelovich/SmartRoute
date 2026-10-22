@@ -11,23 +11,40 @@ import { parsePriceFileName } from "./parse";
 
 const USER_AGENT = "NAVIO-prices/1.0 (+https://navio.co.il)";
 const TIMEOUT_MS = 90_000;
+// Shufersal's listing pages can take over a minute to render.
+const SLOW_TIMEOUT_MS = 180_000;
+const ATTEMPTS = 3;
+const RETRY_DELAYS_MS = [3_000, 10_000];
 
-async function request(url: string, init: RequestInit = {}, attempts = 2): Promise<Response> {
+/**
+ * Undici reports every network failure as "fetch failed"; the reason
+ * (ETIMEDOUT, ECONNRESET, a TLS error...) is in `cause`. Keep it, with the
+ * host, so the ingest log says what actually went wrong.
+ */
+function describeFetchError(url: string, error: unknown): Error {
+  const e = error as { name?: string; message?: string; cause?: { code?: string; message?: string } };
+  const reason =
+    e.name === "TimeoutError" ? "timeout" : (e.cause?.code ?? e.cause?.message ?? e.message ?? String(error));
+  return new Error(`${new URL(url).host}: ${reason}`);
+}
+
+async function request(url: string, init: RequestInit = {}, timeoutMs = TIMEOUT_MS): Promise<Response> {
   let lastError: unknown;
-  for (let attempt = 1; attempt <= attempts; attempt++) {
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
     try {
       const res = await fetch(url, {
         ...init,
         headers: { "user-agent": USER_AGENT, ...(init.headers as Record<string, string> | undefined) },
-        signal: AbortSignal.timeout(TIMEOUT_MS),
+        signal: AbortSignal.timeout(timeoutMs),
       });
-      if (res.status >= 500 && attempt < attempts) throw new Error(`HTTP ${res.status}`);
+      if (res.status >= 500 && attempt < ATTEMPTS) throw new Error(`HTTP ${res.status}`);
       return res;
     } catch (e) {
       lastError = e;
+      if (attempt < ATTEMPTS) await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt - 1]));
     }
   }
-  throw lastError;
+  throw describeFetchError(url, lastError);
 }
 
 async function download(url: string, init?: RequestInit): Promise<Buffer> {
@@ -74,7 +91,7 @@ function priceFullRef(name: string, fetchFile: () => Promise<Buffer>): PriceFile
 function shufersal(): PortalAdapter {
   const base = "https://prices.shufersal.co.il/FileObject/UpdateCategory";
   const links = async (catId: number, storeId: string) => {
-    const html = await (await request(`${base}?catID=${catId}&storeId=${storeId}`)).text();
+    const html = await (await request(`${base}?catID=${catId}&storeId=${storeId}`, {}, SLOW_TIMEOUT_MS)).text();
     return [...html.matchAll(/href="(https:\/\/[^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, "&"));
   };
   const nameOf = (url: string) => decodeURIComponent(new URL(url).pathname.split("/").pop() ?? "");
