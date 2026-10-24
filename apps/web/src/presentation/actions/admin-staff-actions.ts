@@ -12,6 +12,16 @@ import { requireAdmin } from "@/src/presentation/auth/admin";
 export type IssuedCredentials = { status: "issued"; username: string; password: string } | { status: "error"; message: string } | null;
 
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
+const MIN_PASSWORD_LENGTH = 8;
+
+/** The password the admin typed, or a generated one when the field was left empty. */
+function passwordFromForm(formData: FormData): { password: string } | { error: string } {
+  const typed = String(formData.get("password") ?? "");
+  if (!typed) return { password: generatePassword() };
+  if (typed.length < MIN_PASSWORD_LENGTH) return { error: `סיסמה: לפחות ${MIN_PASSWORD_LENGTH} תווים` };
+  if (typed.length > 128) return { error: "סיסמה: עד 128 תווים" };
+  return { password: typed };
+}
 
 /** Permissions from the form, keeping only stores that exist. */
 async function permissionsFromForm(formData: FormData): Promise<AdminPermissions> {
@@ -34,8 +44,10 @@ export async function createAdminUser(_prev: IssuedCredentials, formData: FormDa
     return { status: "error", message: "שם משתמש: 3-32 תווים, אותיות באנגלית, ספרות, נקודה, מקף או קו תחתון" };
   }
 
+  const chosen = passwordFromForm(formData);
+  if ("error" in chosen) return { status: "error", message: chosen.error };
+  const { password } = chosen;
   const permissions = await permissionsFromForm(formData);
-  const password = generatePassword();
   const passwordHash = await hashPassword(password);
   // An empty username is issued for them; retry the rare collision.
   for (let attempt = 0; attempt < (requested ? 1 : 5); attempt++) {
@@ -64,12 +76,13 @@ export async function updateAdminUser(id: string, formData: FormData): Promise<v
   revalidatePath(`/admin/staff/${id}`);
 }
 
-// Used through useActionState, which also passes the previous state - not needed here.
-export async function resetAdminUserPassword(id: string): Promise<IssuedCredentials> {
+export async function resetAdminUserPassword(id: string, _prev: IssuedCredentials, formData: FormData): Promise<IssuedCredentials> {
   await requireAdmin("staff");
   const user = await adminUserRepository.findById(id);
   if (!user) return { status: "error", message: "המשתמש לא נמצא" };
-  const password = generatePassword();
+  const chosen = passwordFromForm(formData);
+  if ("error" in chosen) return { status: "error", message: chosen.error };
+  const { password } = chosen;
   await adminUserRepository.resetPassword(id, await hashPassword(password));
   return { status: "issued", username: user.username, password };
 }

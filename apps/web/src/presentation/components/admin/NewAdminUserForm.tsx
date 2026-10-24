@@ -24,8 +24,17 @@ export function NewAdminUserForm({ stores, createAdminUser }: NewAdminUserFormPr
         dir="ltr"
         className="rounded-lg border border-neutral-300 p-2 text-start"
       />
+      <input
+        type="password"
+        name="password"
+        placeholder="סיסמה (לפחות 8 תווים, ריק = תונפק אוטומטית)"
+        autoComplete="new-password"
+        minLength={8}
+        maxLength={128}
+        dir="ltr"
+        className="rounded-lg border border-neutral-300 p-2 text-start"
+      />
       <AdminPermissionFields stores={stores} />
-      <p className="text-xs text-neutral-500">סיסמה תונפק אוטומטית ותוצג פעם אחת אחרי היצירה.</p>
       {state?.status === "error" && <p className="text-sm text-red-600">{state.message}</p>}
       {state?.status === "issued" && <IssuedCredentialsNotice username={state.username} password={state.password} />}
       <button
@@ -33,7 +42,7 @@ export function NewAdminUserForm({ stores, createAdminUser }: NewAdminUserFormPr
         disabled={pending}
         className="self-start rounded-lg bg-cyan-600 px-4 py-2 font-semibold text-white disabled:bg-neutral-300"
       >
-        {pending ? "יוצר..." : "צור והנפק סיסמה"}
+        {pending ? "יוצר..." : "צור משתמש"}
       </button>
     </form>
   );
