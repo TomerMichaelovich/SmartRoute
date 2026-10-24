@@ -14,6 +14,13 @@ export interface ChainConfig {
   name: string;
   portal: "shufersal" | "cerberus" | "carrefour";
   portalConfig: Record<string, string>;
+  /**
+   * The portal refuses connections from outside Israel, so GitHub-hosted
+   * runners (US) can't reach it: CI skips the chain; it's ingested from an
+   * Israeli machine (`ingest.ts --chain=<id> --prod`, or a runner in Israel
+   * started with PRICES_RUNNER_IN_ISRAEL=1).
+   */
+  israelOnly?: boolean;
 }
 
 export const PRICE_CHAINS: readonly ChainConfig[] = [
@@ -21,7 +28,8 @@ export const PRICE_CHAINS: readonly ChainConfig[] = [
   { id: "rami-levy", govChainId: "7290058140886", name: "רמי לוי", portal: "cerberus", portalConfig: { username: "RamiLevi" } },
   { id: "yohananof", govChainId: "7290803800003", name: "יוחננוף", portal: "cerberus", portalConfig: { username: "yohananof" } },
   { id: "osher-ad", govChainId: "7290103152017", name: "אושר עד", portal: "cerberus", portalConfig: { username: "osherad" } },
-  { id: "carrefour", govChainId: "7290055700007", name: "קרפור", portal: "carrefour", portalConfig: {} },
+  // Blocks non-Israeli IPs since 2026-10-22 (UND_ERR_CONNECT_TIMEOUT from GitHub runners).
+  { id: "carrefour", govChainId: "7290055700007", name: "קרפור", portal: "carrefour", portalConfig: {}, israelOnly: true },
 ];
 
 /** Wholesale / cash & carry branches that publish prices but aren't for shoppers. */

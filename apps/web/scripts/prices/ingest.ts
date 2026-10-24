@@ -27,8 +27,13 @@ async function main() {
   const storeCodes = arg("stores")?.split(",");
   const dryRun = process.argv.includes("--dry-run");
   const force = process.argv.includes("--force");
-  const chains = PRICE_CHAINS.filter((c) => !chainIds || chainIds.includes(c.id));
-  if (chains.length === 0) throw new Error(`no chain matches --chain=${chainIds}`);
+  // GitHub-hosted runners are abroad: chains that block foreign IPs are left to
+  // a machine in Israel (see ChainConfig.israelOnly).
+  const abroad = process.env.CI === "true" && process.env.PRICES_RUNNER_IN_ISRAEL !== "1";
+  const skipped = abroad ? PRICE_CHAINS.filter((c) => c.israelOnly).map((c) => c.id) : [];
+  if (skipped.length) console.log(`skipping (Israel-only portals, runner abroad): ${skipped.join(", ")}`);
+  const chains = PRICE_CHAINS.filter((c) => (!chainIds || chainIds.includes(c.id)) && !skipped.includes(c.id));
+  if (chains.length === 0) throw new Error(`no chain to ingest (--chain=${chainIds ?? ""})`);
 
   const { sql, target } = connect();
   console.log(`[${target}] mode=${mode}${dryRun ? " (dry run)" : ""} chains=${chains.map((c) => c.id).join(",")}`);
