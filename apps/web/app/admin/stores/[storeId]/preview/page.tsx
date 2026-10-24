@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { storeRepository } from "@/src/infrastructure/container";
 import { AdminRoutePreview } from "@/src/presentation/components/admin/AdminRoutePreview";
+import { requireAdminPage } from "@/src/presentation/auth/admin";
 
 export default async function AdminStorePreviewPage({
   params,
@@ -8,6 +9,7 @@ export default async function AdminStorePreviewPage({
   params: Promise<{ storeId: string }>;
 }) {
   const { storeId } = await params;
+  await requireAdminPage({ mapStore: storeId });
   const store = await storeRepository.findById(storeId);
   if (!store) notFound();
 

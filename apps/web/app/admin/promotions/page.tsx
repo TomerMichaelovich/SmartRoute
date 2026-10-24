@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { promotionRepository, storeRepository } from "@/src/infrastructure/container";
+import { requireAdminPage } from "@/src/presentation/auth/admin";
 
 export default async function AdminPromotionsStorePickerPage() {
+  await requireAdminPage("promotions");
   const [stores, promotions] = await Promise.all([
     storeRepository.findAll(),
     promotionRepository.findAll(),

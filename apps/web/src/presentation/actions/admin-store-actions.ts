@@ -8,8 +8,10 @@ import type { MapNode, MapNodeType } from "@smartroute/core/domain/entities/map-
 import { generateNavGraph } from "@smartroute/core/map/walkable/generate-graph";
 import { type StoredWalkableMask, decodeRle, encodeRle } from "@smartroute/core/map/walkable/mask";
 import {
+  adminUserRepository,
   edgeRepository,
   nodeRepository,
+  priceRepository,
   productListingRepository,
   promotionRepository,
   storeRepository,
@@ -21,7 +23,7 @@ import { NODE_TYPE_LABELS } from "@/src/presentation/node-type-labels";
 import { requireAdmin } from "@/src/presentation/auth/admin";
 
 export async function createStore(formData: FormData): Promise<void> {
-  await requireAdmin();
+  await requireAdmin("stores");
   const name = String(formData.get("name") ?? "").trim();
   const chainId = String(formData.get("chainId") ?? "").trim();
   const address = String(formData.get("address") ?? "").trim();
@@ -51,7 +53,7 @@ export async function createStore(formData: FormData): Promise<void> {
 }
 
 export async function updateStore(storeId: string, formData: FormData): Promise<void> {
-  await requireAdmin();
+  await requireAdmin("stores");
   const name = String(formData.get("name") ?? "").trim();
   const address = String(formData.get("address") ?? "").trim();
   const city = String(formData.get("city") ?? "").trim();
@@ -72,6 +74,19 @@ export async function updateStore(storeId: string, formData: FormData): Promise<
 }
 
 /**
+ * Links the store to its branch in the chains' price files, so "the cheapest
+ * basket" opens this store's map instead of the plain list. Empty = unlink.
+ */
+export async function setStorePriceBranch(storeId: string, formData: FormData): Promise<void> {
+  await requireAdmin("stores");
+  const raw = String(formData.get("branchId") ?? "");
+  const branchId = raw ? Number(raw) : null;
+  if (branchId !== null && !Number.isInteger(branchId)) return;
+  await priceRepository.setStoreBranch(storeId, branchId);
+  revalidatePath(`/admin/stores/${storeId}`);
+}
+
+/**
  * Hard delete, not a soft-delete via isActive (which already exists via
  * updateStore for hiding a store from customers without losing data). Cascades
  * to the store's layout (nodes/edges/product listings) and any promotion whose
@@ -83,7 +98,7 @@ export async function updateStore(storeId: string, formData: FormData): Promise<
  * nothing in the admin UI lists them by store.
  */
 export async function deleteStore(storeId: string): Promise<void> {
-  await requireAdmin();
+  await requireAdmin("stores");
   const store = await storeRepository.findById(storeId);
   if (!store) return;
 
@@ -111,16 +126,28 @@ export async function deleteStore(storeId: string): Promise<void> {
   }
 
   await walkableMapRepository.deleteMask(storeId);
+  await priceRepository.setStoreBranch(storeId, null);
+  await adminUserRepository.removeStoreFromAll(storeId);
   await storeRepository.delete(storeId);
 
   revalidatePath("/admin/stores");
   redirect("/admin/stores");
 }
 
+/**
+ * Mapping permission is per store, and every node/edge action is called with
+ * the store id it was granted for - so the node it touches must belong to that
+ * store, or a mapper of one store could edit another's map by passing its ids.
+ */
+async function assertNodeInStore(storeId: string, nodeId: string): Promise<void> {
+  const node = await nodeRepository.findById(nodeId);
+  if (node?.storeId !== storeId) throw new Error("Unauthorized");
+}
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function createNode(storeId: string, formData: FormData): Promise<void> {
-  await requireAdmin();
+  await requireAdmin({ mapStore: storeId });
   const type = String(formData.get("type") ?? "waypoint") as MapNodeType;
   const rawLabel = String(formData.get("label") ?? "").trim();
   // Only "department" is customer-facing (shown on the shopper's map/checklist), so it's the
@@ -156,7 +183,8 @@ export async function createNode(storeId: string, formData: FormData): Promise<v
  * exists on the map, and route building fails for any list containing that product.
  */
 export async function deleteNode(storeId: string, nodeId: string): Promise<void> {
-  await requireAdmin();
+  await requireAdmin({ mapStore: storeId });
+  await assertNodeInStore(storeId, nodeId);
   const [edges, listings] = await Promise.all([
     edgeRepository.findByStore(storeId),
     productListingRepository.findByStore(storeId),
@@ -175,14 +203,16 @@ export async function updateNodePosition(
   x: number,
   y: number,
 ): Promise<void> {
-  await requireAdmin();
+  await requireAdmin({ mapStore: storeId });
+  await assertNodeInStore(storeId, nodeId);
   const clamp = (n: number) => Math.max(0, Math.min(1, n));
   await nodeRepository.update(nodeId, { position: { x: clamp(x), y: clamp(y) } });
   revalidatePath(`/admin/stores/${storeId}`);
 }
 
 export async function updateNodeLabel(storeId: string, nodeId: string, formData: FormData): Promise<void> {
-  await requireAdmin();
+  await requireAdmin({ mapStore: storeId });
+  await assertNodeInStore(storeId, nodeId);
   // Textareas normalize line breaks to \r\n on submit in some browsers - collapse to a
   // plain \n so the stored label and MultilineSvgText's split both only ever see one form.
   const label = String(formData.get("label") ?? "")
@@ -194,7 +224,8 @@ export async function updateNodeLabel(storeId: string, nodeId: string, formData:
 }
 
 export async function addProductToNode(storeId: string, nodeId: string, formData: FormData): Promise<void> {
-  await requireAdmin();
+  await requireAdmin({ mapStore: storeId });
+  await assertNodeInStore(storeId, nodeId);
   const productId = String(formData.get("productId") ?? "");
   if (!productId) return;
   // One product, one node, per store - guard against it already being listed anywhere
@@ -206,7 +237,7 @@ export async function addProductToNode(storeId: string, nodeId: string, formData
 }
 
 export async function removeProductFromNode(storeId: string, nodeId: string, productId: string): Promise<void> {
-  await requireAdmin();
+  await requireAdmin({ mapStore: storeId });
   const storeListings = await productListingRepository.findByStore(storeId);
   const match = storeListings.find((l) => l.productId === productId && l.nodeId === nodeId);
   if (!match) return;
@@ -215,11 +246,12 @@ export async function removeProductFromNode(storeId: string, nodeId: string, pro
 }
 
 export async function createEdge(storeId: string, formData: FormData): Promise<void> {
-  await requireAdmin();
+  await requireAdmin({ mapStore: storeId });
   const fromNodeId = String(formData.get("fromNodeId") ?? "");
   const toNodeId = String(formData.get("toNodeId") ?? "");
   const bidirectional = formData.get("bidirectional") === "on";
   if (!fromNodeId || !toNodeId || fromNodeId === toNodeId) return;
+  await Promise.all([assertNodeInStore(storeId, fromNodeId), assertNodeInStore(storeId, toNodeId)]);
 
   await edgeRepository.create({
     id: crypto.randomUUID(),
@@ -233,7 +265,9 @@ export async function createEdge(storeId: string, formData: FormData): Promise<v
 }
 
 export async function deleteEdge(storeId: string, edgeId: string): Promise<void> {
-  await requireAdmin();
+  await requireAdmin({ mapStore: storeId });
+  const edge = await edgeRepository.findById(edgeId);
+  if (edge?.storeId !== storeId) throw new Error("Unauthorized");
   await edgeRepository.delete(edgeId);
   revalidatePath(`/admin/stores/${storeId}`);
 }
@@ -249,7 +283,7 @@ export async function deleteEdge(storeId: string, edgeId: string): Promise<void>
  * accumulating orphaned files.
  */
 export async function uploadStoreImage(storeId: string, formData: FormData): Promise<void> {
-  await requireAdmin();
+  await requireAdmin({ mapStore: storeId });
   const file = formData.get("image");
   if (!(file instanceof File)) return;
   const saved = await saveUploadedImage("stores", storeId, file);
@@ -281,7 +315,7 @@ export interface WalkableMapSaveResult {
  * and treated like a department.
  */
 export async function saveWalkableMap(storeId: string, stored: StoredWalkableMask): Promise<WalkableMapSaveResult> {
-  await requireAdmin();
+  await requireAdmin({ mapStore: storeId });
   const mask = decodeRle({
     cols: Number(stored?.cols),
     rows: Number(stored?.rows),

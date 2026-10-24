@@ -1,12 +1,22 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { hasSection } from "@smartroute/core/domain/entities/admin-user";
 import { storeRepository } from "@/src/infrastructure/container";
 import { createStore, deleteStore } from "@/src/presentation/actions/admin-store-actions";
+import { requireAdminPage } from "@/src/presentation/auth/admin";
 import { DeleteStoreButton } from "@/src/presentation/components/admin/DeleteStoreButton";
 import { NewStoreForm } from "@/src/presentation/components/admin/NewStoreForm";
 
 export default async function AdminStoresPage() {
-  const stores = await storeRepository.findAll();
-  const existingChainIds = Array.from(new Set(stores.map((store) => store.chainId))).sort();
+  const principal = await requireAdminPage();
+  // Full store access sees and manages every store; mapping access only lists its own.
+  const manages = hasSection(principal, "stores");
+  const allStores = await storeRepository.findAll();
+  const stores = manages
+    ? allStores
+    : allStores.filter((s) => principal.kind === "user" && principal.permissions.storeIds.includes(s.id));
+  if (!manages && stores.length === 0) redirect("/admin");
+  const existingChainIds = Array.from(new Set(allStores.map((store) => store.chainId))).sort();
 
   return (
     <div className="flex flex-col gap-6">
@@ -25,16 +35,18 @@ export default async function AdminStoresPage() {
               </div>
               <div className="text-sm text-neutral-500">{store.address}</div>
             </Link>
-            <DeleteStoreButton
-              storeName={store.name}
-              deleteStore={deleteStore.bind(null, store.id)}
-              className="shrink-0 text-sm"
-            />
+            {manages && (
+              <DeleteStoreButton
+                storeName={store.name}
+                deleteStore={deleteStore.bind(null, store.id)}
+                className="shrink-0 text-sm"
+              />
+            )}
           </div>
         ))}
       </div>
 
-      <NewStoreForm existingChainIds={existingChainIds} createStore={createStore} />
+      {manages && <NewStoreForm existingChainIds={existingChainIds} createStore={createStore} />}
     </div>
   );
 }

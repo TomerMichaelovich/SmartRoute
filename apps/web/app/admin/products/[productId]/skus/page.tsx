@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { priceRepository, productRepository } from "@/src/infrastructure/container";
 import type { SkuLinkView } from "@/src/infrastructure/repositories/interfaces/price-repository";
 import { setSkuLinkRejected, setSkuLinkTypical } from "@/src/presentation/actions/admin-sku-link-actions";
+import { requireAdminPage } from "@/src/presentation/auth/admin";
 
 const shekels = (agorot: number) => `₪${(agorot / 100).toFixed(2)}`;
 
@@ -78,6 +79,7 @@ function LinksTable({ productId, links }: { productId: string; links: SkuLinkVie
 }
 
 export default async function ProductSkusPage({ params }: { params: Promise<{ productId: string }> }) {
+  await requireAdminPage("products");
   const { productId } = await params;
   const product = await productRepository.findById(productId);
   if (!product) notFound();

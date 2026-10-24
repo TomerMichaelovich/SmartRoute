@@ -1,9 +1,11 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { hasSection } from "@smartroute/core/domain/entities/admin-user";
 import type { MapNodeType } from "@smartroute/core/domain/entities/map-node";
 import {
   edgeRepository,
   nodeRepository,
+  priceRepository,
   productListingRepository,
   productRepository,
   storeRepository,
@@ -18,14 +20,18 @@ import {
   deleteStore,
   removeProductFromNode,
   saveWalkableMap,
+  setStorePriceBranch,
   updateNodeLabel,
   updateNodePosition,
   updateStore,
   uploadStoreImage,
 } from "@/src/presentation/actions/admin-store-actions";
+import { requireAdminPage } from "@/src/presentation/auth/admin";
 import { DeleteStoreButton } from "@/src/presentation/components/admin/DeleteStoreButton";
 import { StoreDetailsForm } from "@/src/presentation/components/admin/StoreDetailsForm";
 import { StoreLayoutEditor } from "@/src/presentation/components/admin/StoreLayoutEditor";
+import { StorePriceBranchForm } from "@/src/presentation/components/admin/StorePriceBranchForm";
+import { cityCodeFromName, cityName } from "@/src/infrastructure/prices/settlements";
 import { NODE_TYPE_LABELS } from "@/src/presentation/node-type-labels";
 
 const NODE_TYPES: MapNodeType[] = ["entrance", "checkout", "waypoint", "department"];
@@ -36,16 +42,26 @@ export default async function AdminStoreDetailPage({
   params: Promise<{ storeId: string }>;
 }) {
   const { storeId } = await params;
+  const principal = await requireAdminPage({ mapStore: storeId });
+  // Mapping-only access gets the map and its products, not the store's details or deletion.
+  const manages = hasSection(principal, "stores");
   const store = await storeRepository.findById(storeId);
   if (!store) notFound();
 
-  const [nodes, edges, products, listings, walkableMask] = await Promise.all([
+  const [nodes, edges, products, listings, walkableMask, priceBranches, allStores] = await Promise.all([
     nodeRepository.findByStore(storeId),
     edgeRepository.findByStore(storeId),
     productRepository.findAllActive(),
     productListingRepository.findByStore(storeId),
     walkableMapRepository.findMask(storeId),
+    manages ? priceRepository.findLinkableBranches() : [],
+    manages ? storeRepository.findAll() : [],
   ]);
+  const priceCityNames = new Map<number, string>();
+  for (const b of priceBranches) {
+    const name = b.cityCode !== null ? cityName(b.cityCode) : null;
+    if (name) priceCityNames.set(b.cityCode!, name);
+  }
   const nodeLabelById = new Map(nodes.map((n) => [n.id, n.label]));
   // Waypoints are just path geometry - the table only lists the store's departments.
   const departments = nodes
@@ -82,11 +98,24 @@ export default async function AdminStoreDetailPage({
           >
             תצוגה מקדימה של מסלול ←
           </Link>
-          <DeleteStoreButton storeName={store.name} deleteStore={deleteStore.bind(null, storeId)} />
+          {manages && <DeleteStoreButton storeName={store.name} deleteStore={deleteStore.bind(null, storeId)} />}
         </div>
       </div>
 
-      <StoreDetailsForm store={store} updateStore={boundUpdateStore} />
+      {manages && (
+        <>
+          <StoreDetailsForm store={store} updateStore={boundUpdateStore} />
+
+          <StorePriceBranchForm
+            storeId={storeId}
+            storeCityCode={cityCodeFromName(store.city)}
+            branches={priceBranches}
+            storeNameById={new Map(allStores.map((s) => [s.id, s.name]))}
+            cityNameByCode={priceCityNames}
+            setStorePriceBranch={setStorePriceBranch.bind(null, storeId)}
+          />
+        </>
+      )}
 
       <StoreLayoutEditor
         storeId={storeId}

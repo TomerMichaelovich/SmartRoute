@@ -10,7 +10,7 @@ function toIsoOrUndefined(raw: string): string | undefined {
 }
 
 export async function createPromotion(formData: FormData): Promise<void> {
-  await requireAdmin();
+  await requireAdmin("promotions");
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   const frequencyCapPerSession = Number(formData.get("frequencyCapPerSession") ?? 3);
@@ -42,7 +42,7 @@ export async function createPromotion(formData: FormData): Promise<void> {
 }
 
 export async function updatePromotion(promotionId: string, formData: FormData): Promise<void> {
-  await requireAdmin();
+  await requireAdmin("promotions");
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   const isActive = formData.get("isActive") === "on";

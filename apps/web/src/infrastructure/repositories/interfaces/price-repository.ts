@@ -39,6 +39,16 @@ export interface PriceBranch {
   priceFileAt: string;
 }
 
+/** A price-compared branch the admin can link to a NAVIO-mapped store. */
+export interface LinkableBranch {
+  id: number;
+  chainName: string;
+  name: string;
+  address: string | null;
+  cityCode: number | null;
+  navioStoreId: string | null;
+}
+
 export interface CheapestPriceRow {
   branchId: number;
   requirementId: string;
@@ -69,7 +79,11 @@ export interface IPriceRepository {
   findSkuOptions(productIds: string[]): Promise<Map<string, SkuOption[]>>;
   /** CBS city codes with price-enabled retail branches, and how many. */
   findPriceCities(): Promise<{ cityCode: number; branchCount: number }[]>;
-  /** Retail branches of a city whose prices are fresh enough to compare. */
+  /** Price-enabled retail branches, for linking one to a mapped store. */
+  findLinkableBranches(): Promise<LinkableBranch[]>;
+  /** Links the store to one branch (unlinking any other), or unlinks it with null. */
+  setStoreBranch(storeId: string, branchId: number | null): Promise<void>;
+  /** Retail branches of a city whose prices are fresh enough to compare; navioStoreId only for active stores. */
   findBranchesInCity(cityCode: number, maxPriceAgeHours: number): Promise<PriceBranch[]>;
   /**
    * For each branch and requirement, the best acceptable SKU it sells: the

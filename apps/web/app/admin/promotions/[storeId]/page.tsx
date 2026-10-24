@@ -11,6 +11,7 @@ import {
   createPromotion,
   updatePromotion,
 } from "@/src/presentation/actions/admin-promotion-actions";
+import { requireAdminPage } from "@/src/presentation/auth/admin";
 
 function toDateInputValue(iso?: string): string {
   if (!iso) return "";
@@ -24,6 +25,7 @@ export default async function AdminStorePromotionsPage({
   params: Promise<{ storeId: string }>;
   searchParams: Promise<{ status?: string }>;
 }) {
+  await requireAdminPage("promotions");
   const { storeId } = await params;
   const { status } = await searchParams;
 

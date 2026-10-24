@@ -16,6 +16,7 @@ import {
   signupMethodOf,
 } from "@/src/presentation/components/admin/user-display";
 import { StatTile } from "@/src/presentation/components/summary/StatTile";
+import { requireAdminPage } from "@/src/presentation/auth/admin";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -24,6 +25,7 @@ export default async function AdminUsersPage({
 }: {
   searchParams: Promise<{ q?: string; status?: string }>;
 }) {
+  await requireAdminPage("customers");
   const { q, status } = await searchParams;
   const summaries = await userAdminRepository.listSummaries();
   const now = new Date();

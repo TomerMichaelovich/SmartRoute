@@ -50,6 +50,28 @@ export const oauthAccounts = pgTable(
   ],
 );
 
+// People who log into the admin panel - separate from the app's `users`. The
+// owner logs in with ADMIN_PASSWORD and needs no row here.
+export const adminUsers = pgTable(
+  "admin_users",
+  {
+    id: text("id").primaryKey(),
+    // Lowercased + trimmed, like users.email.
+    username: text("username").notNull(),
+    passwordHash: text("password_hash").notNull(),
+    displayName: text("display_name").notNull(),
+    // { sections: AdminSection[], storeIds: string[] } - see admin-permissions.ts.
+    permissions: jsonb("permissions").notNull().$type<{ sections: string[]; storeIds: string[] }>(),
+    isActive: boolean("is_active").notNull().default(true),
+    // Part of the session token: bumping it (password reset) logs out every open session.
+    sessionVersion: integer("session_version").notNull().default(1),
+    lastLoginAt: timestamp("last_login_at", { mode: "string" }),
+    createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string" }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("admin_users_username_idx").on(table.username)],
+);
+
 export const sessions = pgTable(
   "sessions",
   {

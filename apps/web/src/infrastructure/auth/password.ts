@@ -1,4 +1,4 @@
-import { randomBytes, scrypt, timingSafeEqual } from "crypto";
+import { randomBytes, randomInt, scrypt, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 
 const scryptAsync = promisify(scrypt);
@@ -26,4 +26,12 @@ export async function verifyPassword(
   const expected = Buffer.from(hashHex, "hex");
   const derived = (await scryptAsync(password, salt, expected.length)) as Buffer;
   return expected.length === derived.length && timingSafeEqual(expected, derived);
+}
+
+// No 0/O, 1/l/I: passwords issued to admin users get read off a screen and typed.
+const ISSUED_ALPHABET = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+/** A random password to hand to a new admin user (~70 bits at the default length). */
+export function generatePassword(length = 12): string {
+  return Array.from({ length }, () => ISSUED_ALPHABET[randomInt(ISSUED_ALPHABET.length)]).join("");
 }

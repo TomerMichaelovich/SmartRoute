@@ -24,7 +24,7 @@ function computeNormalizedAliases(canonicalName: string, aliases: string[]): str
 }
 
 export async function createProduct(formData: FormData): Promise<void> {
-  await requireAdmin();
+  await requireAdmin("products");
   const canonicalName = String(formData.get("canonicalName") ?? "").trim();
   const category = String(formData.get("category") ?? "other") as ProductCategory;
   const department = String(formData.get("department") ?? "").trim();
@@ -51,7 +51,7 @@ export async function createProduct(formData: FormData): Promise<void> {
 }
 
 export async function updateProduct(productId: string, formData: FormData): Promise<void> {
-  await requireAdmin();
+  await requireAdmin("products");
   const canonicalName = String(formData.get("canonicalName") ?? "").trim();
   const category = String(formData.get("category") ?? "other") as ProductCategory;
   const department = String(formData.get("department") ?? "").trim();

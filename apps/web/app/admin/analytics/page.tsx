@@ -22,12 +22,14 @@ import { AnalyticsFilterForm } from "@/src/presentation/components/admin/Analyti
 import { ResetAnalyticsButton } from "@/src/presentation/components/admin/ResetAnalyticsButton";
 import { TrendChart } from "@/src/presentation/components/admin/TrendChart";
 import { StatTile } from "@/src/presentation/components/summary/StatTile";
+import { requireAdminPage } from "@/src/presentation/auth/admin";
 
 export default async function AdminAnalyticsPage({
   searchParams,
 }: {
   searchParams: Promise<{ storeId?: string; from?: string; to?: string }>;
 }) {
+  await requireAdminPage("analytics");
   const { storeId, from, to } = await searchParams;
 
   const [events, promotions, stores] = await Promise.all([

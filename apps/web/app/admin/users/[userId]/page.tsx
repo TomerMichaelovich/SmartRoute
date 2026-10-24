@@ -35,6 +35,7 @@ import {
   signupMethodOf,
 } from "@/src/presentation/components/admin/user-display";
 import { StatTile } from "@/src/presentation/components/summary/StatTile";
+import { requireAdminPage } from "@/src/presentation/auth/admin";
 
 const WEEKDAY_LABELS = ["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "ש׳"];
 const DAY_PART_LABELS: Record<DayPart, string> = {
@@ -45,6 +46,7 @@ const DAY_PART_LABELS: Record<DayPart, string> = {
 };
 
 export default async function AdminUserPage({ params }: { params: Promise<{ userId: string }> }) {
+  await requireAdminPage("customers");
   const { userId } = await params;
 
   const summary = await userAdminRepository.findSummary(userId);

@@ -4,6 +4,7 @@ import { fuzzyMatchLayer } from "@smartroute/core/application/classification/lay
 import { createLlmFallbackLayer } from "@smartroute/core/application/classification/layers/llm-fallback-layer";
 import { normalizationLayer } from "@smartroute/core/application/classification/layers/normalization-layer";
 import { AnthropicClassifier } from "./llm/anthropic-classifier";
+import { PgAdminUserRepository } from "./repositories/postgres/pg-admin-user-repository";
 import { PgAnalyticsRepository } from "./repositories/postgres/pg-analytics-repository";
 import { PgClassificationCacheRepository } from "./repositories/postgres/pg-classification-cache-repository";
 import { PgEdgeRepository } from "./repositories/postgres/pg-edge-repository";
@@ -49,6 +50,7 @@ export const pushTokenRepository = new PgPushTokenRepository();
 export const walkableMapRepository = new PgWalkableMapRepository();
 export const ocrUsageRepository = new PgOcrUsageRepository();
 export const priceRepository = new PgPriceRepository();
+export const adminUserRepository = new PgAdminUserRepository();
 
 const llmClassifier = new AnthropicClassifier();
 

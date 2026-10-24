@@ -3,6 +3,7 @@ import type { ProductCategory } from "@smartroute/core/domain/entities/product";
 import { productRepository, storeRepository } from "@/src/infrastructure/container";
 import { createProduct, updateProduct } from "@/src/presentation/actions/admin-product-actions";
 import { PRODUCT_CATEGORY_LABELS } from "@/src/presentation/product-category-labels";
+import { requireAdminPage } from "@/src/presentation/auth/admin";
 
 const CATEGORIES: ProductCategory[] = [
   "produce",
@@ -42,6 +43,7 @@ export default async function AdminProductsPage({
 }: {
   searchParams: Promise<{ department?: string }>;
 }) {
+  await requireAdminPage("products");
   const { department } = await searchParams;
   const [allProducts, stores] = await Promise.all([productRepository.findAll(), storeRepository.findAll()]);
   const chains = Array.from(new Set(stores.map((s) => s.chainId))).sort();

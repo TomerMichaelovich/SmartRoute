@@ -3,6 +3,7 @@ import { db, rawSql } from "../../db/client";
 import type {
   CheapestPriceRow,
   IPriceRepository,
+  LinkableBranch,
   PriceBranch,
   RequirementKey,
   SkuLinkView,
@@ -49,9 +50,12 @@ export class PgPriceRepository implements IPriceRepository {
   async findBranchesInCity(cityCode: number, maxPriceAgeHours: number): Promise<PriceBranch[]> {
     // price_file_at is the Israel-local time from the file name.
     const rows = (await rawSql.query(
-      `SELECT b.id, b.chain_id, c.name AS chain_name, b.name, b.address, b.city_code, b.lat, b.lng, b.navio_store_id,
+      `SELECT b.id, b.chain_id, c.name AS chain_name, b.name, b.address, b.city_code, b.lat, b.lng,
+              s.id AS navio_store_id,
               to_char(b.price_file_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS price_file_at
        FROM retail_branches b JOIN retail_chains c ON c.id = b.chain_id
+       -- The map only counts while its store is live; otherwise the branch shops as a list.
+       LEFT JOIN stores s ON s.id = b.navio_store_id AND s.is_active
        WHERE b.city_code = $1 AND b.prices_enabled AND b.is_active AND b.is_retail
          AND b.price_file_at > (now() AT TIME ZONE 'Asia/Jerusalem') - make_interval(hours => $2)`,
       [cityCode, maxPriceAgeHours],
@@ -68,6 +72,32 @@ export class PgPriceRepository implements IPriceRepository {
       navioStoreId: (r.navio_store_id as string | null) ?? null,
       priceFileAt: String(r.price_file_at),
     }));
+  }
+
+  async findLinkableBranches(): Promise<LinkableBranch[]> {
+    const rows = (await rawSql.query(
+      `SELECT b.id, c.name AS chain_name, b.name, b.address, b.city_code, b.navio_store_id
+       FROM retail_branches b JOIN retail_chains c ON c.id = b.chain_id
+       WHERE b.prices_enabled AND b.is_active AND b.is_retail
+       ORDER BY c.name, b.name`,
+    )) as Record<string, unknown>[];
+    return rows.map((r) => ({
+      id: Number(r.id),
+      chainName: String(r.chain_name),
+      name: String(r.name),
+      address: (r.address as string | null) ?? null,
+      cityCode: r.city_code === null ? null : Number(r.city_code),
+      navioStoreId: (r.navio_store_id as string | null) ?? null,
+    }));
+  }
+
+  async setStoreBranch(storeId: string, branchId: number | null): Promise<void> {
+    // Two statements, unlink first: the unique index on navio_store_id is checked
+    // row by row, so moving the link in one UPDATE could collide with itself.
+    await rawSql.query(`UPDATE retail_branches SET navio_store_id = NULL WHERE navio_store_id = $1`, [storeId]);
+    if (branchId !== null) {
+      await rawSql.query(`UPDATE retail_branches SET navio_store_id = $1 WHERE id = $2`, [storeId, branchId]);
+    }
   }
 
   async findCheapestPrices(branchIds: number[], requirements: { id: string; keys: RequirementKey[] }[]): Promise<CheapestPriceRow[]> {
