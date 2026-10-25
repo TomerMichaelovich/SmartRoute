@@ -11,6 +11,9 @@ const nextConfig: NextConfig = {
   // the React Native migration) - Next doesn't transpile local workspace packages
   // by default, only node_modules deps shipped as JS.
   transpilePackages: ["@smartroute/core"],
+  // `next dev` would otherwise write AGENTS.md/CLAUDE.md into apps/web - the repo
+  // root's AGENTS.md already carries the same instructions.
+  agentRules: false,
   // The customer-facing web UI is retired in favor of the mobile app - the
   // site is a landing page + /admin + the API. The pages stay in the codebase
   // (drop an entry here to bring one back); only shared-link pages
