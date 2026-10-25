@@ -19,6 +19,25 @@ const CATEGORIES: ProductCategory[] = [
   "other",
 ];
 
+const DEPARTMENT_HINT = "לקיבוץ וסינון המוצרים כאן ובמסכי הבחירה. המיקום בחנות נקבע בעורך הפריסה של הסניף.";
+
+/** Only drives the item's icon in the app (home list, widget, "did you mean"). */
+function CategorySelect({ defaultValue }: { defaultValue: ProductCategory }) {
+  return (
+    <label className="flex flex-col gap-1 text-sm text-neutral-700">
+      אייקון באפליקציה
+      <select name="category" defaultValue={defaultValue} className="rounded-lg border border-neutral-300 p-2">
+        {CATEGORIES.map((c) => (
+          <option key={c} value={c}>
+            {PRODUCT_CATEGORY_LABELS[c]}
+          </option>
+        ))}
+      </select>
+      <span className="text-xs text-neutral-500">הסמל שמופיע ליד הפריט ברשימה, בווידג׳ט ובחלון ״התכוונת ל...?״.</span>
+    </label>
+  );
+}
+
 function ChainSelect({ chains, defaultValue }: { chains: string[]; defaultValue: string }) {
   return (
     <label className="flex flex-col gap-1 text-sm text-neutral-700">
@@ -95,29 +114,27 @@ export default async function AdminProductsPage({
           required
           className="rounded-lg border border-neutral-300 p-2"
         />
-        <select
-          name="department"
-          required
-          defaultValue=""
-          className="rounded-lg border border-neutral-300 p-2"
-        >
-          <option value="" disabled>
-            בחרו מחלקה
-          </option>
-          {!departments.includes("כללי") && <option value="כללי">כללי</option>}
-          {departments.map((d) => (
-            <option key={d} value={d}>
-              {d}
+        <label className="flex flex-col gap-1 text-sm text-neutral-700">
+          מחלקה
+          <select
+            name="department"
+            required
+            defaultValue=""
+            className="rounded-lg border border-neutral-300 p-2"
+          >
+            <option value="" disabled>
+              בחרו מחלקה
             </option>
-          ))}
-        </select>
-        <select name="category" defaultValue="other" className="rounded-lg border border-neutral-300 p-2">
-          {CATEGORIES.map((c) => (
-            <option key={c} value={c}>
-              {PRODUCT_CATEGORY_LABELS[c]}
-            </option>
-          ))}
-        </select>
+            {!departments.includes("כללי") && <option value="כללי">כללי</option>}
+            {departments.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-neutral-500">{DEPARTMENT_HINT}</span>
+        </label>
+        <CategorySelect defaultValue="other" />
         <input
           name="aliases"
           placeholder="כינויים, מופרדים בפסיק"
@@ -133,12 +150,22 @@ export default async function AdminProductsPage({
             className="text-xs text-neutral-600 file:me-2 file:rounded-full file:border-0 file:bg-neutral-100 file:px-2 file:py-1 file:text-xs"
           />
         </label>
-        <button
-          type="submit"
-          className="self-start rounded-lg bg-cyan-600 px-4 py-2 font-semibold text-white"
-        >
-          צור מוצר
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="submit"
+            className="rounded-lg bg-cyan-600 px-4 py-2 font-semibold text-white"
+          >
+            צור מוצר
+          </button>
+          <button
+            type="submit"
+            name="then"
+            value="skus"
+            className="rounded-lg border border-cyan-600 px-4 py-2 font-semibold text-cyan-700"
+          >
+            צור ועבור למוצרים ברשתות ←
+          </button>
+        </div>
       </form>
 
       <div className="flex flex-col gap-2">
@@ -173,22 +200,16 @@ export default async function AdminProductsPage({
                 defaultValue={product.canonicalName}
                 className="rounded-lg border border-neutral-300 p-2"
               />
-              <input
-                name="department"
-                defaultValue={product.department}
-                className="rounded-lg border border-neutral-300 p-2"
-              />
-              <select
-                name="category"
-                defaultValue={product.category}
-                className="rounded-lg border border-neutral-300 p-2"
-              >
-                {CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {PRODUCT_CATEGORY_LABELS[c]}
-                  </option>
-                ))}
-              </select>
+              <label className="flex flex-col gap-1 text-sm text-neutral-700">
+                מחלקה
+                <input
+                  name="department"
+                  defaultValue={product.department}
+                  className="rounded-lg border border-neutral-300 p-2"
+                />
+                <span className="text-xs text-neutral-500">{DEPARTMENT_HINT}</span>
+              </label>
+              <CategorySelect defaultValue={product.category} />
               <input
                 name="aliases"
                 defaultValue={product.aliases.join(", ")}

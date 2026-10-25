@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { normalizeHebrewText } from "@smartroute/core/application/classification/normalize-hebrew-text";
 import type { ProductCategory } from "@smartroute/core/domain/entities/product";
 import { productRepository } from "@/src/infrastructure/container";
@@ -48,6 +49,10 @@ export async function createProduct(formData: FormData): Promise<void> {
   });
 
   revalidatePath("/admin/products");
+  // "צור ועבור למוצרים ברשתות": straight to linking its barcodes, searching by its name.
+  if (formData.get("then") === "skus") {
+    redirect(`/admin/products/${id}/skus?q=${encodeURIComponent(canonicalName)}`);
+  }
 }
 
 export async function updateProduct(productId: string, formData: FormData): Promise<void> {
