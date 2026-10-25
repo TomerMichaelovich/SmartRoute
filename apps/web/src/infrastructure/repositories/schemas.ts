@@ -137,6 +137,12 @@ export const shoppingListItemVariantSchema = z.object({
   chosenAt: z.string(),
 });
 
+export const shoppingListItemPlaceChoiceSchema = z.object({
+  productId: z.string().nullable(),
+  text: z.string().max(200),
+  chosenAt: z.string(),
+});
+
 export const shoppingListItemSchema = z.object({
   id: z.string(),
   rawText: z.string(),
@@ -151,6 +157,8 @@ export const shoppingListItemSchema = z.object({
   // Must be listed: zod strips unknown keys, so without it every read and every
   // full-list save would silently drop the shopper's refinement choice.
   variant: shoppingListItemVariantSchema.optional(),
+  // Same: which of a store's same-name products the shopper meant (see place-choice.ts).
+  placeChoice: shoppingListItemPlaceChoiceSchema.optional(),
 });
 
 export const shoppingListSchema = z.object({

@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import { normalizeHebrewText } from "@smartroute/core/application/classification/normalize-hebrew-text";
 import { db, rawSql } from "../../db/client";
 import type {
   CheapestPriceRow,
@@ -6,6 +7,7 @@ import type {
   LinkableBranch,
   PriceBranch,
   RequirementKey,
+  RetailItemSearchResult,
   SkuLinkView,
   SkuOption,
 } from "../interfaces/price-repository";
@@ -169,5 +171,39 @@ export class PgPriceRepository implements IPriceRepository {
         is_typical = COALESCE(${isTypical ?? null}::boolean, is_typical),
         updated_at = ${new Date().toISOString()}
       WHERE product_id = ${productId} AND item_key = ${itemKey}`);
+  }
+
+  async searchRetailItems(query: string, limit: number): Promise<RetailItemSearchResult[]> {
+    // Every word somewhere in the (normalized) name, or the exact barcode / chain code.
+    const words = normalizeHebrewText(query).split(" ").filter(Boolean);
+    if (words.length === 0) return [];
+    const digits = query.replace(/\D/g, "");
+    const rows = (await rawSql.query(
+      `SELECT ri.item_key, ri.name, ri.manufacturer, ri.branch_count,
+              (SELECT min(bp.price_agorot) FROM branch_prices bp WHERE bp.retail_item_id = ri.id) AS min_price,
+              (SELECT max(bp.price_agorot) FROM branch_prices bp WHERE bp.retail_item_id = ri.id) AS max_price
+       FROM retail_items ri
+       WHERE ri.branch_count > 0
+         AND ((SELECT bool_and(ri.normalized_name LIKE '%' || w || '%') FROM unnest($1::text[]) AS w)
+              OR ($2 <> '' AND (ri.item_code = $2 OR ri.item_key = $2)))
+       ORDER BY ri.branch_count DESC, ri.name
+       LIMIT $3`,
+      [words, digits.length >= 6 ? digits : "", limit],
+    )) as Record<string, unknown>[];
+    return rows.map((r) => ({
+      itemKey: String(r.item_key),
+      name: String(r.name),
+      manufacturer: (r.manufacturer as string | null) ?? null,
+      branchCount: Number(r.branch_count),
+      minPriceAgorot: r.min_price === null ? null : Number(r.min_price),
+      maxPriceAgorot: r.max_price === null ? null : Number(r.max_price),
+    }));
+  }
+
+  async addManualSkuLink(productId: string, itemKey: string): Promise<void> {
+    await db.execute(sql`
+      INSERT INTO product_sku_links (product_id, item_key, source, score, is_typical, is_rejected, updated_at)
+      VALUES (${productId}, ${itemKey}, 'manual', 1, false, false, ${new Date().toISOString()})
+      ON CONFLICT (product_id, item_key) DO UPDATE SET source = 'manual', is_rejected = false, updated_at = EXCLUDED.updated_at`);
   }
 }

@@ -361,6 +361,14 @@ export const he = {
     retry: "נסו שוב",
     useAsList: "השתמשו כרשימה",
   },
+  /** Before routing at a mapped store that carries several products for one item. */
+  placeChoice: {
+    title(rawText: string): string {
+      return `איזה ״${rawText}״ לקחת?`;
+    },
+    any: "לא משנה לי – מה שבדרך",
+    anyForRest: "מה שבדרך לכל השאר",
+  },
   cheapest: {
     entry: "הסל הזול ביותר",
     entrySubtitle: "השוו את מחיר הרשימה בסניפים בעיר שלכם",

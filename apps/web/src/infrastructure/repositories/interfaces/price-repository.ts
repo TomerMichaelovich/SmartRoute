@@ -13,6 +13,15 @@ export interface SkuLinkView {
   maxPriceAgorot: number | null;
 }
 
+export interface RetailItemSearchResult {
+  itemKey: string;
+  name: string;
+  manufacturer: string | null;
+  branchCount: number;
+  minPriceAgorot: number | null;
+  maxPriceAgorot: number | null;
+}
+
 /** One option of the refinement popup: a SKU a shopper could mean by a generic product. */
 export interface SkuOption {
   itemKey: string;
@@ -78,6 +87,10 @@ export interface IPriceRepository {
   /** Linked (not rejected) SKUs per product, most widely carried first. */
   findSkuOptions(productIds: string[]): Promise<Map<string, SkuOption[]>>;
   /** CBS city codes with price-enabled retail branches, and how many. */
+  /** Admin search over every chain's products, by name words or barcode; most carried first. */
+  searchRetailItems(query: string, limit: number): Promise<RetailItemSearchResult[]>;
+  /** Links a retail item to a product by hand (an admin decision the nightly linker keeps). */
+  addManualSkuLink(productId: string, itemKey: string): Promise<void>;
   findPriceCities(): Promise<{ cityCode: number; branchCount: number }[]>;
   /** Price-enabled retail branches, for linking one to a mapped store. */
   findLinkableBranches(): Promise<LinkableBranch[]>;

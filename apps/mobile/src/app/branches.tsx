@@ -4,7 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import type { Store } from "@smartroute/core/domain/entities/store";
 import { he } from "@smartroute/core/i18n/he";
 import { apiFetch } from "@/lib/api";
-import { startRouteAtStore } from "@/lib/start-route";
+import { useRouteStarter } from "@/lib/use-route-starter";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { COLORS } from "@/constants/colors";
@@ -20,6 +20,7 @@ export default function BranchesScreen() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [routingStoreId, setRoutingStoreId] = useState<string | null>(null);
   const [routeError, setRouteError] = useState<string | null>(null);
+  const { startRoute, choiceModal } = useRouteStarter(listCode);
 
   // The branch buttons stay locked while a route is being built; coming back to this
   // screen (e.g. "back" from the route) has to unlock them again.
@@ -52,7 +53,7 @@ export default function BranchesScreen() {
     if (!listCode) return;
     setRoutingStoreId(storeId);
     setRouteError(null);
-    const result = await startRouteAtStore(listCode, storeId);
+    const result = await startRoute(storeId);
     if ("error" in result) {
       setRouteError(result.error);
       setRoutingStoreId(null);
@@ -137,6 +138,8 @@ export default function BranchesScreen() {
           ))}
         </View>
       )}
+
+      {choiceModal}
     </ScrollView>
   );
 }

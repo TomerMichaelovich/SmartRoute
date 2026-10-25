@@ -37,6 +37,88 @@ export interface BuildRouteParams {
 }
 
 /**
+ * For items several products could stand for here (see placeDecisions), the
+ * product whose shelf makes the walk shortest: a shelf the route stops at
+ * anyway costs nothing; otherwise the cheapest detour into the route planned
+ * for everything else (entrance -> stops -> checkout). Decided one item at a
+ * time, each joining the route for the next.
+ */
+export function choosePlaces(params: {
+  storeId: string;
+  items: ShoppingListItem[];
+  flexible: Map<string, string[]>;
+  listings: ProductListing[];
+  nodes: MapNode[];
+  edges: MapEdge[];
+  mapWidth: number;
+  mapHeight: number;
+}): Map<string, string> {
+  const { storeId, items, flexible, listings, nodes, edges, mapWidth, mapHeight } = params;
+  const chosen = new Map<string, string>();
+  if (flexible.size === 0) return chosen;
+  const graph = buildGraph(nodes, edges, mapWidth, mapHeight);
+  const entrance = nodes.find((n) => n.type === "entrance");
+  const checkout = nodes.find((n) => n.type === "checkout");
+  const nodeOf = (productId: string | undefined) => {
+    const listing = productId ? listings.find((l) => l.productId === productId && l.storeId === storeId) : undefined;
+    return listing && graph.nodes.has(listing.nodeId) ? listing.nodeId : null;
+  };
+
+  const stops = new Set<string>();
+  for (const item of items) {
+    if (flexible.has(item.id) || item.checked) continue;
+    const node = nodeOf(item.classification?.matchedProductId);
+    if (node) stops.add(node);
+  }
+
+  // A shelf already on the way wins outright.
+  const pending: { itemId: string; options: { productId: string; nodeId: string }[] }[] = [];
+  for (const [itemId, productIds] of flexible) {
+    const options = productIds.flatMap((productId) => {
+      const nodeId = nodeOf(productId);
+      return nodeId ? [{ productId, nodeId }] : [];
+    });
+    if (options.length === 0) continue;
+    const onTheWay = options.find((o) => stops.has(o.nodeId));
+    if (onTheWay || options.length === 1 || !entrance || !checkout) {
+      const pick = onTheWay ?? options[0];
+      chosen.set(itemId, pick.productId);
+      stops.add(pick.nodeId);
+    } else {
+      pending.push({ itemId, options });
+    }
+  }
+  if (pending.length === 0 || !entrance || !checkout) return chosen;
+
+  const dijkstraByNode = new Map<string, DijkstraResult>();
+  const distanceBetween = (a: string, b: string): number => {
+    if (!dijkstraByNode.has(a)) dijkstraByNode.set(a, dijkstra(graph, a));
+    return dijkstraByNode.get(a)!.distances.get(b) ?? Infinity;
+  };
+  let order = twoOptImprove(entrance.id, checkout.id, nearestNeighborOrder(entrance.id, [...stops], distanceBetween), distanceBetween);
+  for (const { itemId, options } of pending) {
+    const onTheWay = options.find((o) => stops.has(o.nodeId));
+    let best = onTheWay ? { ...onTheWay, cost: 0, at: -1 } : null;
+    if (!best) {
+      const sequence = [entrance.id, ...order, checkout.id];
+      for (const option of options) {
+        for (let i = 0; i < sequence.length - 1; i++) {
+          const cost =
+            distanceBetween(sequence[i], option.nodeId) + distanceBetween(option.nodeId, sequence[i + 1]) - distanceBetween(sequence[i], sequence[i + 1]);
+          if (!best || cost < best.cost) best = { ...option, cost, at: i };
+        }
+      }
+    }
+    chosen.set(itemId, best!.productId);
+    if (!stops.has(best!.nodeId)) {
+      stops.add(best!.nodeId);
+      order = [...order.slice(0, best!.at), best!.nodeId, ...order.slice(best!.at)];
+    }
+  }
+  return chosen;
+}
+
+/**
  * Resolves classified shopping-list items to store locations, orders the
  * stops (nearest-neighbor + 2-opt), and reconstructs the full walked path
  * entrance -> stops -> checkout via Dijkstra shortest paths between them.

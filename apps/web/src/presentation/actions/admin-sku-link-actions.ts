@@ -15,3 +15,9 @@ export async function setSkuLinkTypical(productId: string, itemKey: string, typi
   await priceRepository.updateSkuLink(productId, itemKey, { isTypical: typical });
   revalidatePath(`/admin/products/${productId}/skus`);
 }
+
+export async function addSkuLink(productId: string, itemKey: string): Promise<void> {
+  await requireAdmin("products");
+  await priceRepository.addManualSkuLink(productId, itemKey);
+  revalidatePath(`/admin/products/${productId}/skus`);
+}

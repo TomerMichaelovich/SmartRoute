@@ -215,14 +215,14 @@ export default async function AdminProductsPage({
                 שמור
               </button>
             </form>
-            {!product.chainId && (
-              <Link
-                href={`/admin/products/${product.id}/skus`}
-                className="mt-3 inline-block text-xs font-medium text-cyan-700 hover:underline"
-              >
-                מוצרים ברשתות ומחירים ←
-              </Link>
-            )}
+            {/* Chain products too: linking their own barcode lets a pick in the
+                cheapest-basket popup decide which shelf the route goes to. */}
+            <Link
+              href={`/admin/products/${product.id}/skus`}
+              className="mt-3 inline-block text-xs font-medium text-cyan-700 hover:underline"
+            >
+              מוצרים ברשתות ומחירים ←
+            </Link>
           </details>
         ))}
       </div>

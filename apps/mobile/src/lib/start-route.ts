@@ -1,4 +1,4 @@
-import type { ShoppingList } from "@smartroute/core/domain/entities/shopping-list";
+import type { ShoppingList, ShoppingListItemPlaceChoice } from "@smartroute/core/domain/entities/shopping-list";
 import { he } from "@smartroute/core/i18n/he";
 import { apiFetch } from "@/lib/api";
 
@@ -9,15 +9,21 @@ import { apiFetch } from "@/lib/api";
 export async function startRouteAtStore(
   listCode: string,
   storeId: string,
+  /** Answers given just now, in case saving one on the list hasn't landed (or failed). */
+  placeChoices?: Map<string, ShoppingListItemPlaceChoice>,
 ): Promise<{ routeId: string } | { error: string }> {
   try {
     const listRes = await apiFetch(`/api/lists/${listCode}`);
     if (!listRes.ok) throw new Error(`HTTP ${listRes.status}`);
     const { list }: { list: ShoppingList } = await listRes.json();
+    const items = list.items.map((item) => {
+      const placeChoice = placeChoices?.get(item.id);
+      return placeChoice ? { ...item, placeChoice } : item;
+    });
     const res = await apiFetch("/api/routes", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ storeId, shoppingListId: list.id, items: list.items }),
+      body: JSON.stringify({ storeId, shoppingListId: list.id, items }),
     });
     if (!res.ok) {
       const body: { code?: string } | null = await res.json().catch(() => null);

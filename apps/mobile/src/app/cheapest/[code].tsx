@@ -10,7 +10,7 @@ import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
 import { apiFetch } from "@/lib/api";
 import { detectCity, getSavedCity, saveCity } from "@/lib/location";
-import { startRouteAtStore } from "@/lib/start-route";
+import { useRouteStarter } from "@/lib/use-route-starter";
 
 interface City {
   code: number;
@@ -64,6 +64,7 @@ export default function CheapestBasketScreen() {
   // Popup answers, also sent with the quote in case saving one on the list failed.
   const choices = useRef(new Map<string, ShoppingListItemVariant>());
   const refined = useRef(false);
+  const { startRoute, choiceModal } = useRouteStarter(code);
 
   const quote = useCallback(async (): Promise<QuoteResponse> => {
     const res = await apiFetch(`/api/lists/${code}/basket-quote`, {
@@ -169,7 +170,7 @@ export default function CheapestBasketScreen() {
     setRouteError(null);
     if (q.branch.navioStoreId) {
       setChoosingBranch(q.branch.id);
-      const result = await startRouteAtStore(code, q.branch.navioStoreId);
+      const result = await startRoute(q.branch.navioStoreId);
       setChoosingBranch(null);
       if ("error" in result) setRouteError(result.error);
       else router.push(`/route/${result.routeId}`);
@@ -285,6 +286,7 @@ export default function CheapestBasketScreen() {
         onAny={() => phase.kind === "refining" && answer(phase.questions, phase.index, phase.index + 1, anyVariant)}
         onAnyForRest={() => phase.kind === "refining" && answer(phase.questions, phase.index, phase.questions.length, anyVariant)}
       />
+      {choiceModal}
     </ScrollView>
   );
 }

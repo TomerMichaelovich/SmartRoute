@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { normalizeShareCode } from "@smartroute/core/application/shopping-list/generate-share-code";
 import { shoppingListRepository } from "@/src/infrastructure/container";
-import { shoppingListItemVariantSchema } from "@/src/infrastructure/repositories/schemas";
+import { shoppingListItemPlaceChoiceSchema, shoppingListItemVariantSchema } from "@/src/infrastructure/repositories/schemas";
 import { resolveListAccess } from "@/src/presentation/auth/list-access";
 import { notifyListChanged } from "@/src/presentation/lib/list-push";
 
@@ -12,6 +12,8 @@ const patchSchema = z.object({
   notFound: z.boolean().optional(),
   // The cheapest-basket refinement choice; null clears it.
   variant: shoppingListItemVariantSchema.nullable().optional(),
+  // Which of a mapped store's same-name products was meant (asked before routing); null clears it.
+  placeChoice: shoppingListItemPlaceChoiceSchema.nullable().optional(),
 });
 
 async function loadAndAuthorize(code: string) {
@@ -52,6 +54,9 @@ export async function PATCH(
   }
   if (parsed.data.variant !== undefined) {
     await shoppingListRepository.setItemVariant(list.id, itemId, parsed.data.variant);
+  }
+  if (parsed.data.placeChoice !== undefined) {
+    await shoppingListRepository.setItemPlaceChoice(list.id, itemId, parsed.data.placeChoice);
   }
 
   notifyListChanged(list, access.user?.id);

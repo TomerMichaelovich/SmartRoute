@@ -1,6 +1,7 @@
 import type {
   ShoppingList,
   ShoppingListItem,
+  ShoppingListItemPlaceChoice,
   ShoppingListItemVariant,
 } from "@smartroute/core/domain/entities/shopping-list";
 
@@ -47,6 +48,8 @@ export interface IShoppingListRepository {
   setItemNotFound(listId: string, itemId: string, notFound: boolean): Promise<void>;
   /** The cheapest-basket refinement choice; null clears it. */
   setItemVariant(listId: string, itemId: string, variant: ShoppingListItemVariant | null): Promise<void>;
+  /** Which of a mapped store's same-name products the shopper meant; null clears it. */
+  setItemPlaceChoice(listId: string, itemId: string, placeChoice: ShoppingListItemPlaceChoice | null): Promise<void>;
 
   /** Claim a currently-ownerless (guest) list for a user. */
   attachToOwner(listId: string, userId: string, options?: AttachToOwnerOptions): Promise<void>;
