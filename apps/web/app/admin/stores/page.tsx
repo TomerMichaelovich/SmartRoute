@@ -20,7 +20,14 @@ export default async function AdminStoresPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-lg font-semibold text-neutral-900">סניפים</h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-lg font-semibold text-neutral-900">סניפים</h1>
+        {manages && (
+          <Link href="/admin/price-branches" className="text-xs font-medium text-cyan-700 hover:underline">
+            מיקום סניפי מחירים (מרחק בסל הזול) ←
+          </Link>
+        )}
+      </div>
 
       <div className="flex flex-col gap-2">
         {stores.map((store) => (
