@@ -36,7 +36,7 @@ export async function POST(
   );
   const items = classified.map((item, i) => ({
     ...item,
-    quantity: parsed.data.lines[i].quantity,
+    quantity: parsed.data.lines[i].quantity ?? item.quantity,
   }));
 
   await shoppingListRepository.appendItems(list.id, items);

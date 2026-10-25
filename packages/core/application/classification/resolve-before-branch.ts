@@ -1,6 +1,6 @@
 import type { ClassificationResult } from "@smartroute/core/domain/entities/classification-result";
 import type { Product } from "@smartroute/core/domain/entities/product";
-import { MAX_ALTERNATIVES, MIN_THRESHOLD, scoreCandidates } from "./layers/fuzzy-match-layer";
+import { fuzzyMatch, MAX_ALTERNATIVES, scoreCandidates } from "./layers/fuzzy-match-layer";
 import { normalizeHebrewText } from "./normalize-hebrew-text";
 
 /**
@@ -44,8 +44,8 @@ export function resolveBeforeBranch(result: ClassificationResult, products: Prod
   }
 
   const scored = genericSuggestions();
-  const top = scored[0];
-  if (top && top.confidence >= MIN_THRESHOLD) {
+  const { match: top } = fuzzyMatch(normalized, generic);
+  if (top) {
     return {
       rawText: result.rawText,
       matchedProductId: top.productId,

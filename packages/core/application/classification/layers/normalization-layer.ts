@@ -1,39 +1,62 @@
 import type { ClassificationLayer } from "../classification-layer.interface";
+import { listLineCores } from "../list-line";
 import { normalizeHebrewText } from "../normalize-hebrew-text";
 
 /**
  * Colloquial/brand substitutions that aren't simple string edits, e.g. a brand
  * name that should resolve to the generic product it's colloquially used for.
  */
-const SYNONYMS: Record<string, string> = {
-  "קוקה קולה": "קולה",
-  קוק: "קולה",
-  תפוד: "תפוח אדמה",
-  תפודים: "תפוחי אדמה",
-};
+const SYNONYMS: Record<string, string> = Object.fromEntries(
+  Object.entries({
+    "קוקה קולה": "קולה",
+    קוק: "קולה",
+    תפוד: "תפוח אדמה",
+    תפודים: "תפוחי אדמה",
+    פיירי: "סבון כלים",
+    קולגייט: "משחת שיניים",
+    האגיס: "חיתולים",
+    פמפרס: "חיתולים",
+    "חלב שוקו": "שוקו",
+    מילקי: "מעדן",
+    דני: "מעדן",
+    "ז'אוול": "אקונומיקה",
+    "סנו ז'אוול": "אקונומיקה",
+  }).map(([from, to]) => [normalizeHebrewText(from), normalizeHebrewText(to)]),
+);
 
 const BOUND_PREFIXES = ["ה", "ו", "ב", "ל", "מ"];
 
-/** Candidate rewrites of `normalized` worth re-checking against the exact-match corpus. */
-function candidateVariants(normalized: string): string[] {
-  const variants = new Set<string>();
-
-  const synonym = SYNONYMS[normalized];
-  if (synonym) variants.add(normalizeHebrewText(synonym));
+function rewrites(text: string, variants: Set<string>): void {
+  const synonym = SYNONYMS[text];
+  if (synonym) variants.add(synonym);
 
   for (const prefix of BOUND_PREFIXES) {
-    if (normalized.startsWith(prefix) && normalized.length > prefix.length + 1) {
-      variants.add(normalized.slice(prefix.length));
+    if (text.startsWith(prefix) && text.length > prefix.length + 1) {
+      variants.add(text.slice(prefix.length));
     }
   }
 
-  if (normalized.endsWith("ים") && normalized.length > 3) {
-    variants.add(normalized.slice(0, -2));
+  if (text.endsWith("ים") && text.length > 3) {
+    variants.add(text.slice(0, -2));
   }
-  if (normalized.endsWith("ות") && normalized.length > 3) {
-    variants.add(normalized.slice(0, -2));
+  if (text.endsWith("ות") && text.length > 3) {
+    variants.add(text.slice(0, -2));
   }
+}
 
+/**
+ * Candidate rewrites of `normalized` worth re-checking against the exact-match
+ * corpus: the line itself rewritten, then the line without counts, units and
+ * brands ("3 חלב", "פסטה ברילה"), as is and rewritten.
+ */
+function candidateVariants(normalized: string): string[] {
+  const variants = new Set<string>();
+  rewrites(normalized, variants);
+  for (const core of listLineCores(normalized)) {
+    variants.add(core);
+    rewrites(core, variants);
+  }
+  variants.delete(normalized);
   return Array.from(variants);
 }
 

@@ -149,6 +149,39 @@ describe("ClassificationService", () => {
     expect((await cacheRepo.get("עגבניות"))?.source).not.toBe("unresolved");
   });
 
+  it("re-checks a cached fuzzy guess against today's catalog", async () => {
+    const wrong = productByName("שוקולד חלב").id;
+    await cacheRepo.set("מיץ תפוזים", { rawText: "מיץ תפוזים", matchedProductId: wrong, confidence: 0.7, source: "fuzzy" });
+    const result = await service.classify("מיץ תפוזים");
+    expect(result.matchedProductId).toBe(productByName("מיץ תפוזים").id);
+    expect((await cacheRepo.get("מיץ תפוזים"))?.source).toBe("dictionary");
+  });
+
+  it("matches a line without its count, units or brand", async () => {
+    for (const [line, product] of [
+      ["3 חלב תנובה", "חלב 3% תנובה 1 ליטר"],
+      ['2 ק"ג עגבניות', "עגבניות"],
+      ["שישיית מים", "מים מינרליים"],
+      ["קוטג' תנובה 5%", "קוטג'"],
+      ["פיירי", "סבון כלים"],
+    ]) {
+      const result = await service.classify(line);
+      expect(result.source, line).toBe("normalization");
+      expect(result.matchedProductId, line).toBe(productByName(product).id);
+    }
+  });
+
+  it("doesn't fuzzy-match a different kind of product that merely looks alike", async () => {
+    expect((await service.classify("שוקו")).matchedProductId).not.toBe(productByName("שוקולד חלב").id);
+    expect((await service.classify("תה שחור")).matchedProductId).not.toBe(productByName("קפה נמס").id);
+    expect((await service.classify("צלי בקר")).matchedProductId).not.toBe(productByName("בצל יבש").id);
+  });
+
+  it("fuzzy-matches past a qualifier word or a swapped word order", async () => {
+    expect((await service.classify("דג סלמון")).matchedProductId).toBe(productByName("פילה סלמון").id);
+    expect((await service.classify("תירס שימורים")).matchedProductId).toBe(productByName("שימורי תירס").id);
+  });
+
   it("classifyBatch resolves every item and preserves order", async () => {
     const results = await service.classifyBatch(["עגבניות", "חלב תנובה", "xyzunknownproduct"]);
     expect(results).toHaveLength(3);

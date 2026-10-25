@@ -31,16 +31,19 @@ export class ClassificationService {
     const normalized = normalizeHebrewText(rawText);
 
     const cached = await this.cacheRepo.get(normalized);
-    if (cached && cached.source !== "unresolved") return { ...cached, rawText };
+    if (cached && cached.source !== "unresolved" && cached.source !== "fuzzy") return { ...cached, rawText };
 
     const products = await this.productRepo.findAllActive();
     if (cached) {
-      // A cached "unresolved" isn't final: the catalog grows, and a text nothing
-      // matched yesterday ("פתיתים") may be an alias today. Re-run the cheap local
-      // layers; the LLM layer still runs only once per text.
-      const retry = await this.runLayers(rawText, normalized, products, (layer) => layer.name !== "llm");
-      if (retry.source === "unresolved") return { ...cached, rawText };
-      await this.cacheRepo.set(normalized, retry);
+      // A cached "unresolved" or fuzzy guess isn't final: the catalog grows, and a
+      // text nothing matched yesterday ("פתיתים") may be an alias today ("שוקו" was
+      // guessed as "שוקולד חלב" before "שוקו" existed). Re-run the cheap local
+      // layers; the LLM layer still runs only once per text (a fuzzy hit never reached it).
+      const retry = await this.runLayers(rawText, normalized, products, (layer) => layer.name !== "llm" || cached.source === "fuzzy");
+      if (retry.source === "unresolved" && cached.source === "unresolved") return { ...cached, rawText };
+      if (retry.matchedProductId !== cached.matchedProductId || retry.source !== cached.source) {
+        await this.cacheRepo.set(normalized, retry);
+      }
       return retry;
     }
     const result = await this.runLayers(rawText, normalized, products);
