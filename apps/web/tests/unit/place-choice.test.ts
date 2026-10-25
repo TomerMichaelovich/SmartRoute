@@ -52,6 +52,22 @@ describe("place choice", () => {
     expect(placeCandidates(item("1", "2 טחינה", generic.id), STORE_ID, listings, products)).toEqual([generic.id, chainTahini.id]);
   });
 
+  it("doesn't ask when the line names one product exactly, pack word and all", () => {
+    // Six-packs stand elsewhere than single bottles, and also answer to "קולה".
+    const cola = productByName("קוקה קולה 1.5 ליטר");
+    const sixPack: Product = {
+      ...cola,
+      id: "six-pack",
+      canonicalName: "שישיית קולה",
+      aliases: ["שישיית קולה", "קולה"],
+      normalizedAliases: ["שישיית קולה", "קולה"].map(normalizeHebrewText),
+    };
+    const products = [...demoProducts, sixPack];
+    const listings: ProductListing[] = [...demoProductListings, { id: "l-six", productId: sixPack.id, storeId: STORE_ID, nodeId: "n-produce" }];
+    expect(placeCandidates(item("1", "שישיית קולה", sixPack.id), STORE_ID, listings, products)).toEqual([sixPack.id]);
+    expect(placeCandidates(item("2", "קולה", cola.id), STORE_ID, listings, products)).toEqual([cola.id, sixPack.id]);
+  });
+
   it("has nothing to ask when the store carries only one of them", () => {
     expect(placeQuestions([item("1", "טחינה", generic.id)], STORE_ID, demoProductListings, demoProducts)).toEqual([]);
   });

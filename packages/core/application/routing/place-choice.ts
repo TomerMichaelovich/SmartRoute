@@ -13,8 +13,11 @@ import { normalizeHebrewText } from "../classification/normalize-hebrew-text";
  */
 
 /**
- * Products carried at this store that the item's text names exactly (or
- * without its count/brand), the classified one first. Fewer than two: nothing to choose.
+ * Products carried at this store that the item's text names, the classified one
+ * first. Fewer than two: nothing to choose. A product named by exactly what was
+ * typed settles it: "שישיית קולה" is the six-pack, even though without its pack
+ * word ("קולה") it would also name the single bottle. Only when nothing matches
+ * the line as typed does its cleaner form count ("2 טחינה" -> "טחינה").
  */
 export function placeCandidates(
   item: ShoppingListItem,
@@ -23,13 +26,17 @@ export function placeCandidates(
   products: Product[],
 ): string[] {
   const carried = new Set(listings.filter((l) => l.storeId === storeId).map((l) => l.productId));
+  const carriedProducts = products.filter((p) => carried.has(p.id));
   const normalized = normalizeHebrewText(item.rawText);
-  const texts = new Set([normalized, ...listLineCores(normalized)]);
-  const candidates = new Set<string>();
   const matched = item.classification?.matchedProductId;
+  const exact = carriedProducts.filter((p) => p.normalizedAliases.includes(normalized)).map((p) => p.id);
+  if (exact.length > 0) return exact.sort((a, b) => Number(b === matched) - Number(a === matched));
+
+  const cores = new Set(listLineCores(normalized));
+  const candidates = new Set<string>();
   if (matched && carried.has(matched)) candidates.add(matched);
-  for (const product of products) {
-    if (carried.has(product.id) && product.normalizedAliases.some((alias) => texts.has(alias))) candidates.add(product.id);
+  for (const product of carriedProducts) {
+    if (product.normalizedAliases.some((alias) => cores.has(alias))) candidates.add(product.id);
   }
   return [...candidates];
 }
