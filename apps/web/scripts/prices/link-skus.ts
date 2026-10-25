@@ -118,9 +118,11 @@ async function main() {
     linked += matches.length;
     typical += matches.filter((v) => v.typical).length;
     if (dryRun) {
-      console.log(`\n${product.canonical_name}: ${matches.length}/${candidates.length} match`);
+      console.log(`\n${product.canonical_name}: ${matches.length}/${candidates.length} match, ${matches.filter((v) => v.typical).length} typical`);
       const byKey = new Map(candidates.map((c) => [c.itemKey, c]));
-      for (const v of verdicts.slice(0, 14)) {
+      // Typical first: what "any, cheapest" prices with is what a dry run is checked for.
+      const rank = (v: SkuVerdict) => (v.typical ? 0 : v.match ? 1 : 2);
+      for (const v of [...verdicts].sort((a, b) => rank(a) - rank(b)).slice(0, 14)) {
         console.log(`   ${v.match ? (v.typical ? "★" : "✓") : "✗"} ${byKey.get(v.itemKey)?.name}  →  ${v.label}`);
       }
       return;

@@ -15,10 +15,18 @@ import type { SkuVerdict } from "./sku-verifier";
 const DERIVED_WORDS = [
   "מרוסקות", "מרוסק", "קצוצות", "קצוץ", "חתוכות", "רסק", "רוטב", "ברוטב", "שימורים", "בשימורים",
   "משומרות", "מיובשות", "מיובש", "אבקה", "אבקת", "ממרח", "בטעם", "טעם", "משקה", "חטיף", "שוקולד",
-  "קרם", "תרכיז", "סירופ", "מחית", "פולפה", "מוקפא", "מוקפאים", "קפוא", "קפואה", "קפואים", "קפואות",
+  "קרם", "תרכיז", "סירופ", "מחית", "פולפה", "מוקפא", "מוקפאת", "מוקפאים", "מוקפאות", "קפוא", "קפואה", "קפואים", "קפואות",
   "מבושל", "מטוגן", "צלוי", "ממולא", "ממולאים", "סלט", "מרק", "פריכיות", "עוגיות", "עוגת", "גלידה",
   "יוגורט", "פודינג", "מעדן", "ריבה", "קוקוס", "שקדים", "סויה", "שיבולת", "שמפו", "סבון", "נרות",
   "תבלין", "ציפוי", "מצופה", "פתיתי",
+];
+
+// For fresh produce only - elsewhere they're ordinary ("יין אדום יבש", "בשר טחון"):
+const DERIVED_PRODUCE_WORDS = [
+  // Spices, not the fresh herb ("פטרוזיליה יבשה", "כוסברה טחונה / גרגירים").
+  "יבש", "יבשה", "יבשים", "יבשות", "טחון", "טחונה", "טחונים", "גרגירים",
+  // Pickles, not the fresh vegetable ("מלפפון במלח 7-9 560 גרם").
+  "בחומץ", "חומץ", "במלח", "כבושים", "כבושות", "חמוצים", "חמוץ",
 ];
 
 // Variants that make an option non-standard: not what "any, cheapest" should pick.
@@ -136,7 +144,7 @@ export function verifySkuCandidatesByRules(
 
   const verdicts = candidates.map((c) => {
     const words = new Set(c.normalizedName.split(" "));
-    const derived = DERIVED_WORDS.some((w) => words.has(w) && !aliasWords.has(w));
+    const derived = [...DERIVED_WORDS, ...(isProduce ? DERIVED_PRODUCE_WORDS : [])].some((w) => words.has(w) && !aliasWords.has(w));
     // Multipacks of cans ("3*400ג") in a produce product are preserves, not produce.
     const preserved = isProduce && !c.isWeighted && /\d\s*\*|\*\s*\d/.test(c.name);
     const match = c.startsWithAlias && !c.viaFallback && !derived && !preserved;
@@ -156,8 +164,21 @@ export function verifySkuCandidatesByRules(
   });
 
   const typicals = () => verdicts.filter((v) => v.typical);
-  // Never mix per-kg and per-pack prices in "any, cheapest": weighted wins when present.
-  if (typicals().some((v) => v.c.isWeighted)) for (const v of typicals()) if (!v.c.isWeighted) v.typical = false;
+  // Leave items another product claims more specifically to that product — if anything
+  // remains. First, so packed cherry tomatoes don't outvote "עגבניות" sold by weight below.
+  const own = typicals().filter((v) => !moreSpecificElsewhere(v.itemKey, v.c.matchedWords));
+  if (own.length) for (const v of typicals()) if (!own.includes(v)) v.typical = false;
+  // Never mix per-kg and per-pack prices in "any, cheapest". Weighted wins (fresh produce is
+  // sold by the kg; packs of it are often canned or frozen) - unless hardly anyone sells it by
+  // weight: one branch selling parsley leaves by the kg (100₪/kg) mustn't price everyone's bunch.
+  if (typicals().some((v) => v.c.isWeighted)) {
+    const reach = (weighted: boolean) =>
+      typicals()
+        .filter((v) => v.c.isWeighted === weighted)
+        .reduce((sum, v) => sum + v.c.branchCount, 0);
+    const byWeight = reach(true) >= Math.max(3, reach(false) / 10);
+    for (const v of typicals()) if (v.c.isWeighted !== byWeight) v.typical = false;
+  }
   // No size in the canonical name ("קוטג'", "ביצים"): "any, cheapest" must still
   // compare like with like, so keep the most common pack size (by branches carrying it)
   // — otherwise a 100g cottage cheese makes a branch look cheaper than a 250g one.
@@ -178,9 +199,6 @@ export function verifySkuCandidatesByRules(
       }
     }
   }
-  // Leave items another product claims more specifically to that product — if anything remains.
-  const own = typicals().filter((v) => !moreSpecificElsewhere(v.itemKey, v.c.matchedWords));
-  if (own.length) for (const v of typicals()) if (!own.includes(v)) v.typical = false;
   // "Any, cheapest" needs something to pick from: fall back to the best matches.
   if (!typicals().length) {
     verdicts
