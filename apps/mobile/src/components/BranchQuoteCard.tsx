@@ -45,6 +45,8 @@ function formatPricesAt(value: string): string {
 
 interface BranchQuoteCardProps {
   quote: BranchQuote;
+  /** List items no branch could be priced for: left out of every total, so never "all items here". */
+  unpriced?: { itemId: string; rawText: string; name?: string }[];
   rank: number;
   busy: boolean;
   disabled: boolean;
@@ -55,7 +57,7 @@ interface BranchQuoteCardProps {
  * One branch in the cheapest-basket results: rank, branch, full-basket price
  * and coverage on two compact lines, with the price breakdown on demand.
  */
-export function BranchQuoteCard({ quote, rank, busy, disabled, onBuyHere }: BranchQuoteCardProps) {
+export function BranchQuoteCard({ quote, unpriced = [], rank, busy, disabled, onBuyHere }: BranchQuoteCardProps) {
   const t = he.cheapest;
   const [open, setOpen] = useState(false);
   const missing = quote.missingItems.length;
@@ -90,8 +92,12 @@ export function BranchQuoteCard({ quote, rank, busy, disabled, onBuyHere }: Bran
               {quote.branch.distanceKm !== null ? `${quote.branch.distanceKm} ק"מ` : ""}
             </Text>
           )}
-          <Text style={[styles.coverage, missing > 0 ? styles.coverageMissing : styles.coverageFull]} numberOfLines={1}>
-            {missing > 0 ? t.missingShort(missing) : `✓ ${t.allItemsHere}`}
+          <Text
+            style={[styles.coverage, missing > 0 || unpriced.length > 0 ? styles.coverageMissing : styles.coverageFull]}
+            numberOfLines={1}
+          >
+            {missing > 0 ? t.missingShort(missing) : unpriced.length === 0 ? `✓ ${t.allItemsHere}` : ""}
+            {unpriced.length > 0 ? `${missing > 0 ? " · " : ""}${t.unpricedShort(unpriced.length)}` : ""}
           </Text>
         </View>
         <Text style={[styles.price, best && styles.bestPrice]}>
@@ -122,6 +128,14 @@ export function BranchQuoteCard({ quote, rank, busy, disabled, onBuyHere }: Bran
                 {item.name ?? item.rawText} · {t.notSoldHere}
               </Text>
               <Text style={[styles.linePrice, styles.missingName]}>~{shekels(item.estimatedAgorot)}</Text>
+            </View>
+          ))}
+          {unpriced.map((item) => (
+            <View key={item.itemId} style={styles.line}>
+              <Text style={[styles.lineName, styles.missingName]} numberOfLines={2}>
+                {item.name ?? item.rawText} · {t.noPrice}
+              </Text>
+              <Text style={[styles.linePrice, styles.missingName]}>—</Text>
             </View>
           ))}
           {missing > 0 && <Text style={styles.meta}>{t.missingEstimated}</Text>}

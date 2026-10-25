@@ -175,6 +175,14 @@ export default async function ProductSkusPage({
         </p>
       </div>
 
+      {!matched.some((l) => l.isTypical) && (
+        <p className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800">
+          {matched.length === 0
+            ? "אין עדיין מוצרים משויכים, ולכן המוצר לא מתומחר ב\"הסל הזול ביותר\". הקישור האוטומטי רץ כל לילה (06:30); כדי שיתומחר כבר עכשיו – שייכו כאן וסמנו טיפוסי."
+            : "אין אף מוצר טיפוסי, ולכן המוצר לא מתומחר ב\"הסל הזול ביותר\". סמנו טיפוסי את הגודל והאריזה הרגילים."}
+        </p>
+      )}
+
       <section className="rounded-xl border border-neutral-200 bg-white p-2">
         <h2 className="p-2 text-sm font-semibold text-neutral-900">משויכים ({matched.length})</h2>
         {matched.length ? (

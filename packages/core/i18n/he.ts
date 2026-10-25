@@ -398,6 +398,12 @@ export const he = {
     },
     missingEstimated: "הפריטים החסרים מחושבים לפי מחירם הטיפוסי בעיר",
     allItemsHere: "כל הפריטים",
+    /** Items no branch could be priced for (no linked products): not "all items here". */
+    unpricedShort(n: number): string {
+      return n === 1 ? "פריט אחד בלי מחיר" : `${n} פריטים בלי מחיר`;
+    },
+    noPrice: "אין מחיר במאגר",
+    nothingPriced: "לא מצאנו מחירים לאף פריט ברשימה, ולכן אין מה להשוות.",
     breakdown: "פירוט מחירים",
     hideBreakdown: "הסתרת הפירוט",
     buyHere: "קונים כאן",

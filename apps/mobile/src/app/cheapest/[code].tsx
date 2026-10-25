@@ -34,6 +34,9 @@ const TOP_COUNT = 3;
 /** Ask for every branch at once: revealing the rest needs no second request. */
 const MAX_BRANCHES = 50;
 
+/** No item priced at any branch (e.g. its products aren't linked to barcodes yet): ₪0 cards would mislead. */
+const nothingPriced = (result: QuoteResult) => result.quotes.every((q) => q.lines.length === 0 && q.missingItems.length === 0);
+
 type QuoteResponse =
   | ({ status: "ok" } & QuoteResult)
   | { status: "city_not_covered"; city: City; coveredCities: City[] }
@@ -236,11 +239,17 @@ export default function CheapestBasketScreen() {
         <View style={styles.list}>
           {phase.result.quotes.length === 0 && <Text style={styles.hint}>{t.noBranches}</Text>}
           {routeError && <Text style={styles.errorText}>{routeError}</Text>}
+          {/* Up front, not under the cards: these items are in no total. */}
+          {phase.result.unpricedItems.length > 0 && (
+            <Text style={styles.warning}>{t.unpriced(phase.result.unpricedItems.map((u) => u.name ?? u.rawText).join(", "))}</Text>
+          )}
+          {nothingPriced(phase.result) && <Text style={styles.hint}>{t.nothingPriced}</Text>}
           {/* Cheapest full basket first, all the way down. */}
-          {(showAll ? phase.result.quotes : phase.result.quotes.slice(0, TOP_COUNT)).map((q, i) => (
+          {(nothingPriced(phase.result) ? [] : showAll ? phase.result.quotes : phase.result.quotes.slice(0, TOP_COUNT)).map((q, i) => (
             <BranchQuoteCard
               key={q.branch.id}
               quote={q}
+              unpriced={phase.result.unpricedItems}
               rank={i + 1}
               busy={choosingBranch === q.branch.id}
               disabled={choosingBranch !== null}
@@ -248,7 +257,7 @@ export default function CheapestBasketScreen() {
             />
           ))}
 
-          {phase.result.quotes.length > TOP_COUNT && (
+          {phase.result.quotes.length > TOP_COUNT && !nothingPriced(phase.result) && (
             <Pressable
               onPress={() => setShowAll((v) => !v)}
               style={({ pressed }) => [styles.moreButton, pressed && styles.cityOptionPressed]}
@@ -262,9 +271,6 @@ export default function CheapestBasketScreen() {
           )}
 
           {phase.result.quotes.some((q) => q.estimated) && <Text style={styles.note}>{t.estimated}</Text>}
-          {phase.result.unpricedItems.length > 0 && (
-            <Text style={styles.note}>{t.unpriced(phase.result.unpricedItems.map((u) => u.name ?? u.rawText).join(", "))}</Text>
-          )}
           <Text style={styles.disclaimer}>{t.disclaimer}</Text>
         </View>
       )}
@@ -389,6 +395,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: FONTS.regular,
     color: COLORS.neutral600,
+  },
+  warning: {
+    fontSize: 13,
+    fontFamily: FONTS.medium,
+    color: "#b45309",
+    backgroundColor: "#fffbeb",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   disclaimer: {
     fontSize: 12,
