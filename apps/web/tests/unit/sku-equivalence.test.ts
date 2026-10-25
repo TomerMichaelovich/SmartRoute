@@ -41,6 +41,25 @@ describe("equivalentKeys", () => {
     expect(keys).not.toContain("coke-6pack"); // 6 x 1.5 L is not one 1.5 L bottle
   });
 
+  it("a chain's own brand matches other chains' own brands of the same kind, never a national brand", () => {
+    // Real names from the chains' files (2026-10-25), truncations included.
+    const tahini = [
+      { itemKey: "rl", name: "טחינה 400ג רמילוי", manufacturer: null },
+      { itemKey: "yoh", name: "טחינה יוחננוף 400 גר", manufacturer: null },
+      { itemKey: "shu-1kg", name: "טחינה שופרסל 1 קג", manufacturer: null },
+      { itemKey: "nasich", name: "טחינה הנסיך 400 גרם", manufacturer: "הנסיך" },
+    ];
+    expect(equivalentKeys("rl", tahini)).toEqual(["yoh"]);
+    expect(equivalentKeys("nasich", tahini)).toEqual([]);
+
+    const sugar = [
+      { itemKey: "rl", name: 'סוכר לבן 1 ק"ג רמי ל', manufacturer: null },
+      { itemKey: "shu", name: 'סוכר לבן 1 ק"ג שופרסל', manufacturer: 'סוגת תעשיות בע"מ' },
+      { itemKey: "sugat", name: 'סוכר לבן 1 ק"ג סוגת', manufacturer: 'סוגת תעשיות בע"מ' },
+    ];
+    expect(equivalentKeys("rl", sugar)).toEqual(["shu"]);
+  });
+
   it("returns nothing for an unknown key", () => {
     expect(equivalentKeys("nope", EGGS)).toEqual([]);
   });
