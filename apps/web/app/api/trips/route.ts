@@ -12,7 +12,9 @@ import {
   shoppingListRepository,
   shoppingTripRepository,
   storeRepository,
+  whatsappRepository,
 } from "@/src/infrastructure/container";
+import { isWhatsAppConfigured } from "@/src/infrastructure/whatsapp/client";
 import { getCurrentUser } from "@/src/presentation/auth/dal";
 import { notifyListChanged } from "@/src/presentation/lib/list-push";
 
@@ -60,6 +62,7 @@ export async function POST(request: Request) {
   }
 
   const alreadyRecorded = await shoppingTripRepository.existsForRoute(routeId);
+  if (!alreadyRecorded) await rememberTripForWhatsApp(list, collectedItemIds);
   if (list.isPinned) {
     // Once per trip: drop the bought items, keep what wasn't found or wasn't picked up.
     if (!alreadyRecorded) {
@@ -107,6 +110,26 @@ export async function POST(request: Request) {
 }
 
 /**
+ * Lets the WhatsApp bot start the list's next round: on the next message it drops
+ * what was bought and asks about what wasn't. Only for lists someone uses via
+ * WhatsApp; never fails the trip.
+ */
+async function rememberTripForWhatsApp(list: ShoppingList, collectedItemIds: string[]): Promise<void> {
+  if (!isWhatsAppConfigured()) return;
+  try {
+    if ((await whatsappRepository.findLinksByList(list.id)).length === 0) return;
+    const collected = new Set(collectedItemIds);
+    await whatsappRepository.recordFinishedTrip(
+      list.id,
+      list.items.map((item) => item.id),
+      list.items.filter((item) => !collected.has(item.id)).map((item) => item.id),
+    );
+  } catch (error) {
+    console.error("[trips] failed to record the trip for the WhatsApp bot", error);
+  }
+}
+
+/**
  * History is written for the completing user when they own the list, or are an
  * active member of the household the list belongs to. Guests and anyone opening
  * someone else's link are silently skipped.
@@ -133,6 +156,7 @@ async function recordListModeTrip(listCode: string, collectedItemIds: string[], 
     return new NextResponse(null, { status: 204 });
   }
 
+  await rememberTripForWhatsApp(list, collectedItemIds);
   const products = await productRepository.findAllActive();
   const productNameById = new Map(products.map((p) => [p.id, p.canonicalName]));
   const now = new Date().toISOString();

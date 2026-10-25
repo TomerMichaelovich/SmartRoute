@@ -24,8 +24,14 @@ export interface ListAccess {
  * Returns null when the caller has no access.
  */
 export async function resolveListAccess(list: ShoppingList): Promise<ListAccess | null> {
-  const user = await getCurrentUser();
+  return resolveListAccessForUser(list, await getCurrentUser());
+}
 
+/** Same rules for a user known some other way than the request's session (e.g. a linked WhatsApp number). */
+export async function resolveListAccessForUser(
+  list: ShoppingList,
+  user: User | null,
+): Promise<ListAccess | null> {
   if (!list.ownerUserId && !list.householdId) {
     return { user, kind: "guest" };
   }

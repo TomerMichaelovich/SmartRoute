@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, AppState, Keyboard, Pressable, type ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, AppState, Keyboard, Linking, Pressable, type ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { resolveBeforeBranch } from "@smartroute/core/application/classification/resolve-before-branch";
 import { sameInstant } from "@smartroute/core/application/shopping-list/same-instant";
 import type { Product } from "@smartroute/core/domain/entities/product";
@@ -50,6 +50,26 @@ export default function MyListScreen() {
   const [shareCopied, setShareCopied] = useState(false);
   const [isShared, setIsShared] = useState(false);
   const { status: authStatus } = useAuth();
+  const [whatsapp, setWhatsapp] = useState<{ enabled: boolean; chatUrl: string | null }>({
+    enabled: false,
+    chatUrl: null,
+  });
+  const [isOpeningWhatsapp, setIsOpeningWhatsapp] = useState(false);
+
+  // The WhatsApp bot is optional per server; an older server 404s here, which also hides the button.
+  useEffect(() => {
+    if (authStatus !== "authenticated") return;
+    let cancelled = false;
+    apiFetch(`/api/lists/${code}/whatsapp-link`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { enabled?: boolean; chatUrl?: string | null } | null) => {
+        if (!cancelled) setWhatsapp({ enabled: Boolean(data?.enabled), chatUrl: data?.chatUrl ?? null });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [authStatus, code]);
 
   const scrollRef = useRef<ScrollView>(null);
   const addInputFocusedRef = useRef(false);
@@ -257,6 +277,27 @@ export default function MyListScreen() {
     }
   }
 
+  // Already linked: just open the chat. Otherwise open WhatsApp with "חיבור <one-time code>"
+  // pre-typed; sending it links this person's number to the list, for good.
+  async function handleConnectWhatsapp() {
+    setIsOpeningWhatsapp(true);
+    setError(null);
+    try {
+      if (whatsapp.chatUrl) {
+        await Linking.openURL(whatsapp.chatUrl);
+        return;
+      }
+      const res = await apiFetch(`/api/lists/${code}/whatsapp-link`, { method: "POST" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { url } = (await res.json()) as { url: string };
+      await Linking.openURL(url);
+    } catch {
+      setError(he.myList.whatsapp.error);
+    } finally {
+      setIsOpeningWhatsapp(false);
+    }
+  }
+
   const unresolvedCount = items.filter((item) => !item.classification?.matchedProductId).length;
 
   // The branch is picked on the next screen, which builds the route from the
@@ -295,7 +336,19 @@ export default function MyListScreen() {
       </View>
 
       {authStatus === "authenticated" ? (
-        <ListParticipantsBar code={code} />
+        <>
+          <ListParticipantsBar code={code} />
+          {whatsapp.enabled && (
+            <View style={styles.shareBlock}>
+              <Button variant="secondary" onPress={handleConnectWhatsapp} disabled={isOpeningWhatsapp} fullWidth>
+                {whatsapp.chatUrl ? he.myList.whatsapp.openChat : he.myList.whatsapp.button}
+              </Button>
+              <Text style={styles.whatsappHint}>
+                {whatsapp.chatUrl ? he.myList.whatsapp.linkedHint : he.myList.whatsapp.hint}
+              </Text>
+            </View>
+          )}
+        </>
       ) : (
         <View style={styles.shareBlock}>
           <Button variant="secondary" onPress={handleShare} fullWidth>
@@ -417,6 +470,12 @@ const styles = StyleSheet.create({
   shareBlock: {
     alignItems: "center",
     gap: 6,
+  },
+  whatsappHint: {
+    fontSize: 13,
+    fontFamily: FONTS.regular,
+    color: COLORS.neutral500,
+    textAlign: "center",
   },
   staleBox: {
     gap: 6,

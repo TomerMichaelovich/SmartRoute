@@ -6,7 +6,7 @@ import type { ShoppingListItem } from "@smartroute/core/domain/entities/shopping
 import { shoppingListRepository, storeRepository } from "@/src/infrastructure/container";
 import { classifyLines } from "@/src/presentation/lib/create-list";
 import { resolveListAccess } from "@/src/presentation/auth/list-access";
-import { notifyListChanged } from "@/src/presentation/lib/list-push";
+import { notifyItemsAdded, notifyListChanged } from "@/src/presentation/lib/list-push";
 import { shoppingListItemSchema } from "@/src/infrastructure/repositories/schemas";
 
 export async function GET(
@@ -83,6 +83,7 @@ export async function PATCH(
   const updatedAt = new Date().toISOString();
   await shoppingListRepository.updateItems(list.id, items, updatedAt);
   notifyListChanged(list, access.user?.id);
+  notifyItemsAdded(list, access.user, newLines.map((line) => line.rawText));
 
   // Read back, so updatedAt is spelled exactly as every later read of the list will spell it.
   const saved = await shoppingListRepository.findById(list.id);

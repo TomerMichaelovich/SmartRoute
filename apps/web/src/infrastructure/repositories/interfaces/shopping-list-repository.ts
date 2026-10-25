@@ -54,6 +54,8 @@ export interface IShoppingListRepository {
   setActive(listId: string, userId: string): Promise<void>;
   /** Take a list off its owner's home screen (e.g. once shopping with it is finished). */
   deactivate(listId: string): Promise<void>;
+  /** Back on its participants' home screens (e.g. the WhatsApp bot started its next round). */
+  reactivate(listId: string): Promise<void>;
   rename(listId: string, name: string): Promise<void>;
   setPinned(listId: string, pinned: boolean): Promise<void>;
   softDelete(listId: string, deletedAt: string): Promise<void>;

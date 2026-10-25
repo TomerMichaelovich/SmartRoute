@@ -24,6 +24,7 @@ import { PgStoreRepository } from "./repositories/postgres/pg-store-repository";
 import { PgUserAdminRepository } from "./repositories/postgres/pg-user-admin-repository";
 import { PgUserRepository } from "./repositories/postgres/pg-user-repository";
 import { PgWalkableMapRepository } from "./repositories/postgres/pg-walkable-map-repository";
+import { PgWhatsAppRepository } from "./repositories/postgres/pg-whatsapp-repository";
 
 /**
  * Composition root: the single place infrastructure implementations are
@@ -51,6 +52,7 @@ export const walkableMapRepository = new PgWalkableMapRepository();
 export const ocrUsageRepository = new PgOcrUsageRepository();
 export const priceRepository = new PgPriceRepository();
 export const adminUserRepository = new PgAdminUserRepository();
+export const whatsappRepository = new PgWhatsAppRepository();
 
 const llmClassifier = new AnthropicClassifier();
 

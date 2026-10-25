@@ -159,6 +159,64 @@ export const householdInvites = pgTable(
   (table) => [uniqueIndex("household_invites_code_idx").on(table.code)],
 );
 
+/** A WhatsApp number linked to a user and the one list the bot adds to for them. */
+export const whatsappLinks = pgTable(
+  "whatsapp_links",
+  {
+    id: text("id").primaryKey(),
+    // WhatsApp's wa_id: the number in international format, digits only (972501234567).
+    phone: text("phone").notNull(),
+    userId: text("user_id").notNull(),
+    listId: text("list_id").notNull(),
+    createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
+    // Last message *from* this number. Replies are free only within 24h of it.
+    lastInboundAt: timestamp("last_inbound_at", { mode: "string" }).notNull().defaultNow(),
+    // Items this number's last message added - what "בטל" removes.
+    lastAddedItemIds: jsonb("last_added_item_ids").$type<string[]>().notNull().default([]),
+  },
+  (table) => [
+    uniqueIndex("whatsapp_links_phone_idx").on(table.phone),
+    index("whatsapp_links_list_id_idx").on(table.listId),
+  ],
+);
+
+/** One-time code the app hands out ("חיבור K7Q2MX") to link a WhatsApp number to a list. */
+export const whatsappLinkCodes = pgTable(
+  "whatsapp_link_codes",
+  {
+    id: text("id").primaryKey(),
+    code: text("code").notNull(),
+    userId: text("user_id").notNull(),
+    listId: text("list_id").notNull(),
+    createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { mode: "string" }).notNull(),
+    usedAt: timestamp("used_at", { mode: "string" }),
+  },
+  (table) => [uniqueIndex("whatsapp_link_codes_code_idx").on(table.code)],
+);
+
+/** WhatsApp message ids already handled - Meta may deliver the same webhook more than once. */
+export const whatsappProcessedMessages = pgTable("whatsapp_processed_messages", {
+  messageId: text("message_id").primaryKey(),
+  createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
+});
+
+/**
+ * A finished trip the WhatsApp bot hasn't turned into a fresh list yet. On the
+ * next message to the bot the bought items are dropped, and if some weren't
+ * bought it asks whether to carry them over. One row per list, removed once done.
+ */
+export const whatsappListResets = pgTable("whatsapp_list_resets", {
+  listId: text("list_id").primaryKey(),
+  tripItemIds: jsonb("trip_item_ids").$type<string[]>().notNull(),
+  leftoverItemIds: jsonb("leftover_item_ids").$type<string[]>().notNull(),
+  finishedAt: timestamp("finished_at", { mode: "string" }).notNull().defaultNow(),
+  // Set once the bot has asked about the leftovers.
+  askedAt: timestamp("asked_at", { mode: "string" }),
+  // Items someone sent while the question was open - added once it's answered.
+  pendingText: text("pending_text"),
+});
+
 export const stores = pgTable("stores", {
   id: text("id").primaryKey(),
   chainId: text("chain_id").notNull(),
