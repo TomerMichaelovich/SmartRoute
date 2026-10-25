@@ -72,7 +72,12 @@ export async function variantOptionsFor(list: ShoppingList) {
 /** Chains don't always flag by-weight items ("פטרוזיליה עלים משקל" is priced per kg). */
 const soldByWeight = (o: SkuOption) => o.isWeighted || /(^|\s)ב?משקל(\s|$)/.test(o.name);
 
-type Requirement = BasketRequirement & { keys: RequirementKey[]; chosenKey?: string };
+type Requirement = BasketRequirement & {
+  keys: RequirementKey[];
+  chosenKey?: string;
+  /** The pick's name from the refinement popup ("שמפו הד אנד שולדרס 400 מל"), for display. */
+  chosenName?: string;
+};
 
 /**
  * Target-size products first (tier 0); where a branch has none, the same kind
@@ -115,6 +120,7 @@ function buildRequirements(
         estimated: false,
         keys: keysFor([variant.itemKey, ...equivalentKeys(variant.itemKey, productOptions)], productOptions),
         chosenKey: variant.itemKey,
+        chosenName: variant.name,
       });
       continue;
     }
@@ -186,6 +192,12 @@ export async function quoteBasket(
 
   const { quotes, unavailableEverywhere } = computeBasketQuotes({ requirements, branches, prices, limit: input.limit });
   const chosenKeyByItem = new Map(requirements.map((r) => [r.itemId, r.chosenKey]));
+  // An item the shopper refined reads as their pick, not as the generic line they typed.
+  const chosenNameByItem = new Map(requirements.map((r) => [r.itemId, r.chosenName]));
+  const withName = <T extends { itemId: string; rawText: string }>(item: T) => ({
+    ...item,
+    name: chosenNameByItem.get(item.itemId) ?? item.rawText,
+  });
   const city = cityName(input.cityCode);
   return {
     city: { code: input.cityCode, name: city },
@@ -206,7 +218,7 @@ export async function quoteBasket(
       fullBasketAgorot: q.fullBasketAgorot,
       // Lines priced per unit from another pack size are estimates too.
       estimated: q.estimated || q.lines.some((l) => l.scaled),
-      missingItems: q.missingItems,
+      missingItems: q.missingItems.map(withName),
       lines: q.lines.map((line) => {
         const chosenKey = chosenKeyByItem.get(line.itemId);
         // Priced with an equivalent of the shopper's pick (another chain's barcode).
@@ -214,6 +226,6 @@ export async function quoteBasket(
       }),
     })),
     // Not counted against any branch: no linked products, or no branch in the city sells them.
-    unpricedItems: [...unpriceable, ...unavailableEverywhere],
+    unpricedItems: [...unpriceable, ...unavailableEverywhere].map(withName),
   };
 }

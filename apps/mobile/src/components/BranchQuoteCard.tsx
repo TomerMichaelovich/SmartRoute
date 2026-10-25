@@ -19,7 +19,8 @@ export interface BranchQuote {
   totalAgorot: number;
   fullBasketAgorot: number;
   estimated: boolean;
-  missingItems: { itemId: string; rawText: string; estimatedAgorot: number }[];
+  /** name: the refinement pick if there was one, else rawText. Absent from older servers. */
+  missingItems: { itemId: string; rawText: string; name?: string; estimatedAgorot: number }[];
   lines: {
     itemId: string;
     name: string;
@@ -77,18 +78,20 @@ export function BranchQuoteCard({ quote, rank, busy, disabled, onBuyHere }: Bran
           <Text style={[styles.rankText, best && styles.bestRankText]}>{rank}</Text>
         </View>
         <View style={styles.names}>
-          <Text style={styles.chain} numberOfLines={1}>
+          <Text style={styles.chain} numberOfLines={2}>
             {quote.branch.chainName}
             <Text style={styles.branchName}> · {place}</Text>
           </Text>
+          {/* On its own line: next to the coverage, a long street name was cut off. */}
+          {(address || quote.branch.distanceKm !== null) && (
+            <Text style={styles.meta} numberOfLines={2}>
+              {address ?? ""}
+              {address && quote.branch.distanceKm !== null ? "  ·  " : ""}
+              {quote.branch.distanceKm !== null ? `${quote.branch.distanceKm} ק"מ` : ""}
+            </Text>
+          )}
           <Text style={[styles.coverage, missing > 0 ? styles.coverageMissing : styles.coverageFull]} numberOfLines={1}>
             {missing > 0 ? t.missingShort(missing) : `✓ ${t.allItemsHere}`}
-            {(address || quote.branch.distanceKm !== null) && (
-              <Text style={styles.meta}>
-                {address ? `  ·  ${address}` : ""}
-                {quote.branch.distanceKm !== null ? `  ·  ${quote.branch.distanceKm} ק"מ` : ""}
-              </Text>
-            )}
           </Text>
         </View>
         <Text style={[styles.price, best && styles.bestPrice]}>
@@ -115,8 +118,8 @@ export function BranchQuoteCard({ quote, rank, busy, disabled, onBuyHere }: Bran
           ))}
           {quote.missingItems.map((item) => (
             <View key={item.itemId} style={styles.line}>
-              <Text style={[styles.lineName, styles.missingName]} numberOfLines={1}>
-                {item.rawText} · {t.notSoldHere}
+              <Text style={[styles.lineName, styles.missingName]} numberOfLines={2}>
+                {item.name ?? item.rawText} · {t.notSoldHere}
               </Text>
               <Text style={[styles.linePrice, styles.missingName]}>~{shekels(item.estimatedAgorot)}</Text>
             </View>

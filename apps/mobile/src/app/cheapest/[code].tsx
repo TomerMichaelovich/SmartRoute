@@ -25,7 +25,8 @@ interface QuoteResult {
   comparedBranchCount: number;
   /** Every branch in the city, cheapest full basket first. */
   quotes: BranchQuote[];
-  unpricedItems: { itemId: string; rawText: string }[];
+  /** name: the refinement pick if there was one, else rawText. Absent from older servers. */
+  unpricedItems: { itemId: string; rawText: string; name?: string }[];
 }
 
 /** Shown before "show the other branches". */
@@ -262,7 +263,7 @@ export default function CheapestBasketScreen() {
 
           {phase.result.quotes.some((q) => q.estimated) && <Text style={styles.note}>{t.estimated}</Text>}
           {phase.result.unpricedItems.length > 0 && (
-            <Text style={styles.note}>{t.unpriced(phase.result.unpricedItems.map((u) => u.rawText).join(", "))}</Text>
+            <Text style={styles.note}>{t.unpriced(phase.result.unpricedItems.map((u) => u.name ?? u.rawText).join(", "))}</Text>
           )}
           <Text style={styles.disclaimer}>{t.disclaimer}</Text>
         </View>
