@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { MapNode } from "@smartroute/core/domain/entities/map-node";
 import type { Route } from "@smartroute/core/domain/entities/route";
 import type { Store } from "@smartroute/core/domain/entities/store";
@@ -24,6 +24,8 @@ interface RoutePayload {
   nodes: MapNode[];
   mapImageUrl: string;
   stopViews: ChecklistStopView[];
+  /** The items left out of the route, by name. Absent from older servers. */
+  unresolvedItems?: { id: string; displayName: string }[];
 }
 
 type LoadState =
@@ -51,6 +53,7 @@ export default function RouteScreen() {
   // items on the server, which the shared-list watcher must not report as someone's removal.
   const [finished, setFinished] = useState(false);
   const [mapExpanded, setMapExpanded] = useState(false);
+  const [showUnresolved, setShowUnresolved] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -227,7 +230,7 @@ export default function RouteScreen() {
     );
   }
 
-  const { route, store, nodes, mapImageUrl } = state.data;
+  const { route, store, nodes, mapImageUrl, unresolvedItems = [] } = state.data;
 
   // Full-screen map: just the store name, progress and the map - the expand
   // button beside the store name brings the list back.
@@ -263,7 +266,29 @@ export default function RouteScreen() {
         />
 
         {route.unresolvedItemIds.length > 0 && (
-          <Text style={styles.unresolvedNotice}>{he.route.unresolvedNotice(route.unresolvedItemIds.length)}</Text>
+          <View style={styles.unresolved}>
+            <View style={styles.unresolvedRow}>
+              <Text style={styles.unresolvedNotice}>{he.route.unresolvedNotice(route.unresolvedItemIds.length)}</Text>
+              {unresolvedItems.length > 0 && (
+                <Pressable
+                  onPress={() => setShowUnresolved((v) => !v)}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: showUnresolved }}
+                >
+                  <Text style={styles.unresolvedToggle}>
+                    {showUnresolved ? he.route.hideUnresolved : he.route.showUnresolved} {showUnresolved ? "▴" : "▾"}
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+            {showUnresolved &&
+              unresolvedItems.map((item) => (
+                <Text key={item.id} style={styles.unresolvedItem}>
+                  • {item.displayName}
+                </Text>
+              ))}
+          </View>
         )}
 
         <Button variant={allDone ? "primary" : "secondary"} fullWidth onPress={handleFinish} disabled={finishing}>
@@ -336,9 +361,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 32,
   },
+  unresolved: {
+    gap: 4,
+  },
+  unresolvedRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 10,
+  },
   unresolvedNotice: {
     fontSize: 14,
     fontFamily: FONTS.regular,
     color: "#b45309",
+  },
+  unresolvedToggle: {
+    fontSize: 14,
+    fontFamily: FONTS.medium,
+    color: COLORS.cyan700,
+  },
+  unresolvedItem: {
+    fontSize: 14,
+    fontFamily: FONTS.regular,
+    color: COLORS.neutral700,
   },
 });

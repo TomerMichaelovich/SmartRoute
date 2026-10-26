@@ -528,6 +528,8 @@ export const he = {
         ? "פריט אחד לא נכלל במסלול"
         : `${n} פריטים לא נכללו במסלול`;
     },
+    showUnresolved: "אילו?",
+    hideUnresolved: "הסתרה",
     finishShopping: "סיימתי לקנות",
     // Mobile's finish alert. finishedSavedBody only when /api/trips actually
     // wrote a history entry (logged-in owner) - guests get the plain body.

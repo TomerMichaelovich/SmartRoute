@@ -39,24 +39,29 @@ export async function GET(_request: Request, { params }: { params: Promise<{ rou
   const productById = new Map(products.map((p) => [p.id, p]));
   const itemById = new Map(shoppingList.items.map((i) => [i.id, i]));
 
-  const stopViews = route.stops.map((stop) => ({
-    stop,
-    items: stop.itemIds.map((itemId) => {
-      const item = itemById.get(itemId);
-      const product = item?.classification?.matchedProductId
-        ? productById.get(item.classification.matchedProductId)
-        : undefined;
-      return {
-        id: itemId,
-        displayName: product?.canonicalName ?? item?.rawText ?? itemId,
-        imageUrl: product?.imageUrl,
-      };
-    }),
-  }));
+  const itemView = (itemId: string) => {
+    const item = itemById.get(itemId);
+    const product = item?.classification?.matchedProductId
+      ? productById.get(item.classification.matchedProductId)
+      : undefined;
+    return {
+      id: itemId,
+      displayName: product?.canonicalName ?? item?.rawText ?? itemId,
+      imageUrl: product?.imageUrl,
+    };
+  };
+
+  const stopViews = route.stops.map((stop) => ({ stop, items: stop.itemIds.map(itemView) }));
+  // The list items left out of the route (not identified, or not carried by this store), so
+  // the shopper can see which ones - route.unresolvedItemIds alone only gives their count.
+  // Items removed from the list since the route was planned are dropped.
+  const unresolvedItems = route.unresolvedItemIds
+    .filter((itemId) => itemById.has(itemId))
+    .map((itemId) => ({ id: itemId, displayName: itemView(itemId).displayName }));
 
   const mapImageUrl = store.mapImageUrl
     ? `${store.mapImageUrl}?v=${encodeURIComponent(store.updatedAt)}`
     : "";
 
-  return NextResponse.json({ route, store, nodes, mapImageUrl, stopViews });
+  return NextResponse.json({ route, store, nodes, mapImageUrl, stopViews, unresolvedItems });
 }
