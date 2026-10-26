@@ -22,6 +22,13 @@ export function resolveAvailability(
   storeId: string,
   listings: ProductListing[],
   products: Product[],
+  /**
+   * False when classifying list lines (the list's store is often just a
+   * placeholder until a branch is picked): only the availability flag is set,
+   * so "קפה נמס" stays the generic product instead of turning into whichever
+   * same-name product that store happens to carry. Routing re-resolves.
+   */
+  { switchToCarried = true }: { switchToCarried?: boolean } = {},
 ): ClassificationResult {
   const { availableAtStore: _previousStore, ...base } = result;
   if (!base.matchedProductId) return base;
@@ -29,6 +36,7 @@ export function resolveAvailability(
     listings.filter((l) => l.storeId === storeId).map((l) => l.productId),
   );
   if (carriedIds.has(base.matchedProductId)) return base;
+  if (!switchToCarried) return { ...base, availableAtStore: false };
 
   const normalized = normalizeHebrewText(base.rawText);
   const carriedExactMatch = products.find(

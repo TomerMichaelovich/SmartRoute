@@ -40,7 +40,8 @@ export async function classifyLines(
     return {
       id: crypto.randomUUID(),
       rawText,
-      classification: resolveAvailability(rawClassifications[i], storeId, listings, products),
+      // No same-name swap here: the store is often a placeholder; the route picks the shelf.
+      classification: resolveAvailability(rawClassifications[i], storeId, listings, products, { switchToCarried: false }),
       ...(quantity ? { quantity } : {}),
       ...(addedByUserId ? { addedByUserId } : {}),
     };

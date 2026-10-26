@@ -182,6 +182,24 @@ describe("ClassificationService", () => {
     expect((await service.classify("תירס שימורים")).matchedProductId).toBe(productByName("שימורי תירס").id);
   });
 
+  it("prefers the product named exactly that over one that only has it as an alias", async () => {
+    const generic = productByName("קפה נמס");
+    const barista: Product = {
+      ...generic,
+      id: "barista",
+      canonicalName: "קפה נמס בריסטה",
+      aliases: ["קפה נמס"],
+      normalizedAliases: ["קפה נמס בריסטה", "קפה נמס"],
+    };
+    // The alias-only product listed first, as the catalog order may have it.
+    const withBarista = new ClassificationService(
+      [dictionaryLayer, normalizationLayer, fuzzyMatchLayer],
+      new FakeCacheRepository(),
+      new FakeProductRepository([barista, ...demoProducts]),
+    );
+    expect((await withBarista.classify("קפה נמס")).matchedProductId).toBe(generic.id);
+  });
+
   it("classifyBatch resolves every item and preserves order", async () => {
     const results = await service.classifyBatch(["עגבניות", "חלב תנובה", "xyzunknownproduct"]);
     expect(results).toHaveLength(3);
