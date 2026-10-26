@@ -98,6 +98,24 @@ async function main() {
   let typical = 0;
   let failed = 0;
 
+  // A rules run owns its rows: links it made earlier that it wouldn't make now
+  // (the product's aliases changed, the item was renamed) go. Admin ("manual")
+  // and Claude ("llm") rows are never touched.
+  const staleRuleLinks = async (productId: string, keep: string[]) =>
+    Number(
+      (
+        (await sql.query(
+          `SELECT count(*)::int AS n FROM product_sku_links WHERE product_id = $1 AND source = 'rules' AND NOT (item_key = ANY($2::text[]))`,
+          [productId, keep],
+        )) as { n: number }[]
+      )[0].n,
+    );
+  const removeStaleRuleLinks = (productId: string, keep: string[]) =>
+    sql.query(`DELETE FROM product_sku_links WHERE product_id = $1 AND source = 'rules' AND NOT (item_key = ANY($2::text[]))`, [
+      productId,
+      keep,
+    ]);
+
   const process1 = async ({ product, candidates }: (typeof work)[number]) => {
     let verdicts: SkuVerdict[];
     if (verifier === "rules") {
@@ -125,9 +143,16 @@ async function main() {
       for (const v of [...verdicts].sort((a, b) => rank(a) - rank(b)).slice(0, 14)) {
         console.log(`   ${v.match ? (v.typical ? "★" : "✓") : "✗"} ${byKey.get(v.itemKey)?.name}  →  ${v.label}`);
       }
+      if (verifier === "rules") {
+        const stale = await staleRuleLinks(product.id, verdicts.map((v) => v.itemKey));
+        if (stale) console.log(`   (would remove ${stale} earlier rules links that no longer fit)`);
+      }
       return;
     }
-    if (verdicts.length === 0) return;
+    if (verdicts.length === 0) {
+      if (verifier === "rules") await removeStaleRuleLinks(product.id, []);
+      return;
+    }
     const score = new Map(candidates.map((c) => [c.itemKey, c.score]));
     await sql.query(
       `INSERT INTO product_sku_links (product_id, item_key, source, score, is_typical, is_rejected, variant_label, updated_at)
@@ -148,6 +173,7 @@ async function main() {
         verdicts.map((v) => v.label),
       ],
     );
+    if (verifier === "rules") await removeStaleRuleLinks(product.id, verdicts.map((v) => v.itemKey));
   };
 
   const queue = [...work];
@@ -164,6 +190,38 @@ async function main() {
     }
   };
   await Promise.all(Array.from({ length: verifier === "claude" ? CLAUDE_CONCURRENCY : 1 }, worker));
+  // Chain-exclusive products are linked by hand only: rules rows on them are leftovers from
+  // before they were marked exclusive (they'd outvote the one barcode the product stands for).
+  if (verifier === "rules") {
+    const filter = productIds ? `AND p.id = ANY($1::text[])` : "";
+    const params = productIds ? [productIds] : [];
+    if (dryRun) {
+      const [{ n }] = (await sql.query(
+        `SELECT count(*)::int AS n FROM product_sku_links l JOIN products p ON p.id = l.product_id
+         WHERE p.chain_id IS NOT NULL AND l.source = 'rules' ${filter}`,
+        params,
+      )) as { n: number }[];
+      if (n) console.log(`\nchain-exclusive products: would remove ${n} rules links`);
+    } else {
+      await sql.query(
+        `DELETE FROM product_sku_links l USING products p
+         WHERE p.id = l.product_id AND p.chain_id IS NOT NULL AND l.source = 'rules' ${filter}`,
+        params,
+      );
+    }
+  }
+  // Products no item matches any more (their alias changed) still carry the rules links of before.
+  if (verifier === "rules") {
+    const unmatched = products.filter((p) => !candidatesOf.get(p.id)!.some((c) => !locked.has(`${p.id}|${c.itemKey}`)));
+    for (const p of unmatched) {
+      if (dryRun) {
+        const stale = await staleRuleLinks(p.id, []);
+        if (stale) console.log(`\n${p.canonical_name}: no candidates (would remove ${stale} earlier rules links)`);
+      } else {
+        await removeStaleRuleLinks(p.id, []);
+      }
+    }
+  }
   console.log(`done: ${done} products, ${linked} links (${typical} typical), ${failed} failed`);
   if (failed) process.exit(1);
 }
