@@ -7,6 +7,8 @@ import { FONTS } from "@/constants/fonts";
 interface ChecklistItemProps {
   id: string;
   displayName: string;
+  /** What the shopper chose for the line, shown small under it. */
+  subtitle?: string | null;
   imageUrl?: string;
   checked: boolean;
   notFound: boolean;
@@ -16,7 +18,7 @@ interface ChecklistItemProps {
 
 // RN port of the web's ChecklistItem.tsx. No native <input type="checkbox"> on RN, so the
 // checkbox is a small custom Pressable square instead.
-export function ChecklistItem({ id, displayName, imageUrl, checked, notFound, onToggle, onNotFound }: ChecklistItemProps) {
+export function ChecklistItem({ id, displayName, subtitle, imageUrl, checked, notFound, onToggle, onNotFound }: ChecklistItemProps) {
   return (
     <View style={styles.row}>
       <Pressable style={styles.main} onPress={() => onToggle(id)}>
@@ -24,7 +26,14 @@ export function ChecklistItem({ id, displayName, imageUrl, checked, notFound, on
           {checked && <View style={styles.checkboxDot} />}
         </View>
         {imageUrl && <Image source={{ uri: resolveAssetUrl(imageUrl) }} style={styles.image} />}
-        <Text style={[styles.name, checked && styles.nameChecked]}>{displayName}</Text>
+        <View style={styles.names}>
+          <Text style={[styles.name, checked && styles.nameChecked]}>{displayName}</Text>
+          {subtitle ? (
+            <Text style={styles.subtitle} numberOfLines={1}>
+              {subtitle}
+            </Text>
+          ) : null}
+        </View>
       </Pressable>
       <Pressable onPress={() => onNotFound(id)} style={[styles.notFoundButton, notFound && styles.notFoundButtonActive]}>
         <Text style={[styles.notFoundText, notFound && styles.notFoundTextActive]}>
@@ -43,6 +52,14 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderTopWidth: 1,
     borderTopColor: COLORS.neutral100,
+  },
+  names: {
+    flex: 1,
+  },
+  subtitle: {
+    fontSize: 12,
+    fontFamily: FONTS.regular,
+    color: COLORS.neutral500,
   },
   main: {
     flex: 1,

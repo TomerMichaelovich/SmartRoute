@@ -1,7 +1,7 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from "react-native";
-import { effectiveVariant } from "@smartroute/core/application/basket/effective-variant";
+import { itemDisplay } from "@smartroute/core/application/shopping-list/item-display";
 import { resolveBeforeBranch } from "@smartroute/core/application/classification/resolve-before-branch";
 import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ShoppingList } from "@smartroute/core/domain/entities/shopping-list";
@@ -18,6 +18,7 @@ import { refreshMyListWidget } from "@/widgets/refresh-my-list-widget";
 interface ChecklistRow {
   id: string;
   displayName: string;
+  subtitle: string | null;
   imageUrl?: string;
 }
 
@@ -88,10 +89,9 @@ export default function ListChecklistScreen() {
       const product = matchedId ? productById.get(matchedId) : undefined;
       const department = product?.department || he.listMode.otherDepartment;
       const rows = byDepartment.get(department) ?? [];
-      // The exact product chosen in the cheapest-basket popup, when there is one.
-      const chosen = effectiveVariant(item);
-      const displayName = (chosen?.kind === "sku" && chosen.name) || product?.canonicalName || item.rawText;
-      rows.push({ id: item.id, displayName, imageUrl: product?.imageUrl });
+      // What was typed, and under it what was chosen for it (popup / in store).
+      const { name, chosen } = itemDisplay(item, state.products);
+      rows.push({ id: item.id, displayName: name, subtitle: chosen, imageUrl: product?.imageUrl });
       byDepartment.set(department, rows);
     }
     // Alphabetical, with the catch-all group last.
@@ -231,6 +231,7 @@ export default function ListChecklistScreen() {
                 key={row.id}
                 id={row.id}
                 displayName={row.displayName}
+                subtitle={row.subtitle}
                 imageUrl={row.imageUrl}
                 checked={checkedItemIds.has(row.id)}
                 notFound={notFoundItemIds.has(row.id)}

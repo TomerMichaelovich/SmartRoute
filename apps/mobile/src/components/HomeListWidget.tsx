@@ -2,7 +2,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Path } from "react-native-svg";
-import { effectiveVariant } from "@smartroute/core/application/basket/effective-variant";
+import { itemDisplay } from "@smartroute/core/application/shopping-list/item-display";
 import { resolveBeforeBranch } from "@smartroute/core/application/classification/resolve-before-branch";
 import { suggestBeforeAdding } from "@smartroute/core/application/classification/suggest-before-adding";
 import { normalizeShareCode } from "@smartroute/core/application/shopping-list/generate-share-code";
@@ -785,9 +785,8 @@ export function HomeListWidget({
                   ? resolveBeforeBranch(item.classification, products).matchedProductId
                   : undefined;
                 const product = matchedId ? productById.get(matchedId) : undefined;
-                // The exact product chosen in the cheapest-basket popup, when there is one.
-                const chosen = effectiveVariant(item);
-                const name = (chosen?.kind === "sku" && chosen.name) || product?.canonicalName || item.rawText;
+                // What was typed, and under it what was chosen for it (popup / in store).
+                const { name, chosen } = itemDisplay(item, products);
                 const icon = CATEGORY_ICON[product?.category ?? "other"];
                 // No checkbox: the list is for writing only - items are marked
                 // as collected on the route screen, which tracks that itself.
@@ -796,9 +795,16 @@ export function HomeListWidget({
                     <View style={styles.itemIcon}>
                       <Text style={styles.itemIconText}>{icon}</Text>
                     </View>
-                    <Text style={styles.itemName} numberOfLines={1}>
-                      {name}
-                    </Text>
+                    <View style={styles.itemNames}>
+                      <Text style={styles.itemName} numberOfLines={1}>
+                        {name}
+                      </Text>
+                      {chosen ? (
+                        <Text style={styles.itemChosen} numberOfLines={1}>
+                          {chosen}
+                        </Text>
+                      ) : null}
+                    </View>
                   </Pressable>
                 );
               })}
@@ -1105,8 +1111,15 @@ const styles = StyleSheet.create({
   itemIconText: {
     fontSize: 15,
   },
-  itemName: {
+  itemNames: {
     flex: 1,
+  },
+  itemChosen: {
+    fontSize: 12,
+    fontFamily: FONTS.regular,
+    color: COLORS.neutral500,
+  },
+  itemName: {
     fontSize: 15,
     fontFamily: FONTS.regular,
     color: COLORS.neutral900,

@@ -58,7 +58,8 @@ export async function loadMyListWidget() {
       const product = matchedId ? productById.get(matchedId) : undefined;
       return {
         id: item.id,
-        name: product?.canonicalName ?? item.rawText,
+        // As typed, like the in-app list (the widget has room for one line).
+        name: item.rawText,
         category: product?.category ?? "other",
       };
     });
