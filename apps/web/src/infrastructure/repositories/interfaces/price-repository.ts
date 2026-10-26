@@ -83,14 +83,14 @@ export interface IPriceRepository {
   findSkuLinks(productId: string): Promise<SkuLinkView[]>;
   /** An admin decision: marks the link "manual" so the nightly linker never overrides it. */
   updateSkuLink(productId: string, itemKey: string, patch: { isRejected?: boolean; isTypical?: boolean }): Promise<void>;
-
-  /** Linked (not rejected) SKUs per product, most widely carried first. */
-  findSkuOptions(productIds: string[]): Promise<Map<string, SkuOption[]>>;
-  /** CBS city codes with price-enabled retail branches, and how many. */
   /** Admin search over every chain's products, by name words or barcode; most carried first. */
   searchRetailItems(query: string, limit: number): Promise<RetailItemSearchResult[]>;
   /** Links a retail item to a product by hand (an admin decision the nightly linker keeps). */
   addManualSkuLink(productId: string, itemKey: string, options: { asOnlyTypical: boolean }): Promise<void>;
+
+  /** Linked (not rejected) SKUs per product, most widely carried first. */
+  findSkuOptions(productIds: string[]): Promise<Map<string, SkuOption[]>>;
+  /** CBS city codes with price-enabled retail branches, and how many. */
   findPriceCities(): Promise<{ cityCode: number; branchCount: number }[]>;
   /** Price-enabled retail branches, for linking one to a mapped store. */
   findLinkableBranches(): Promise<LinkableBranch[]>;
