@@ -90,7 +90,7 @@ export interface IPriceRepository {
   /** Admin search over every chain's products, by name words or barcode; most carried first. */
   searchRetailItems(query: string, limit: number): Promise<RetailItemSearchResult[]>;
   /** Links a retail item to a product by hand (an admin decision the nightly linker keeps). */
-  addManualSkuLink(productId: string, itemKey: string): Promise<void>;
+  addManualSkuLink(productId: string, itemKey: string, options: { asOnlyTypical: boolean }): Promise<void>;
   findPriceCities(): Promise<{ cityCode: number; branchCount: number }[]>;
   /** Price-enabled retail branches, for linking one to a mapped store. */
   findLinkableBranches(): Promise<LinkableBranch[]>;

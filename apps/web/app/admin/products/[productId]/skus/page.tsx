@@ -122,11 +122,26 @@ function AddLinkSection({ productId, query, results, linked }: {
                     {link && !link.isRejected ? (
                       <span className="text-xs text-neutral-500">משויך</span>
                     ) : (
-                      <form action={addSkuLink.bind(null, productId, r.itemKey)}>
-                        <button type="submit" className="text-xs text-cyan-700 hover:underline">
-                          שייך
-                        </button>
-                      </form>
+                      <div className="flex flex-col gap-1">
+                        <form action={addSkuLink.bind(null, productId, r.itemKey, false)}>
+                          <button
+                            type="submit"
+                            title="משייך ומסמן טיפוסי יחיד – שאר הטיפוסיים מתבטלים"
+                            className="text-xs font-medium text-cyan-700 hover:underline"
+                          >
+                            שייך
+                          </button>
+                        </form>
+                        <form action={addSkuLink.bind(null, productId, r.itemKey, true)}>
+                          <button
+                            type="submit"
+                            title="מוסיף כאפשרות בפופאפ, בלי לשנות את הטיפוסיים"
+                            className="text-[11px] text-neutral-500 hover:underline"
+                          >
+                            כאפשרות בלבד
+                          </button>
+                        </form>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -178,7 +193,7 @@ export default async function ProductSkusPage({
       {!matched.some((l) => l.isTypical) && (
         <p className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800">
           {matched.length === 0
-            ? "אין עדיין מוצרים משויכים, ולכן המוצר לא מתומחר ב\"הסל הזול ביותר\". הקישור האוטומטי רץ כל לילה (06:30); כדי שיתומחר כבר עכשיו – שייכו כאן וסמנו טיפוסי."
+            ? "אין עדיין מוצרים משויכים, ולכן המוצר לא מתומחר ב\"הסל הזול ביותר\". הקישור האוטומטי רץ כל לילה (06:30); כדי שיתומחר כבר עכשיו – חפשו למטה ולחצו \"שייך\"."
             : "אין אף מוצר טיפוסי, ולכן המוצר לא מתומחר ב\"הסל הזול ביותר\". סמנו טיפוסי את הגודל והאריזה הרגילים."}
         </p>
       )}

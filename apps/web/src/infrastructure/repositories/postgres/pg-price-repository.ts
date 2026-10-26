@@ -200,10 +200,20 @@ export class PgPriceRepository implements IPriceRepository {
     }));
   }
 
-  async addManualSkuLink(productId: string, itemKey: string): Promise<void> {
+  async addManualSkuLink(productId: string, itemKey: string, { asOnlyTypical }: { asOnlyTypical: boolean }): Promise<void> {
+    const now = new Date().toISOString();
     await db.execute(sql`
       INSERT INTO product_sku_links (product_id, item_key, source, score, is_typical, is_rejected, updated_at)
-      VALUES (${productId}, ${itemKey}, 'manual', 1, false, false, ${new Date().toISOString()})
-      ON CONFLICT (product_id, item_key) DO UPDATE SET source = 'manual', is_rejected = false, updated_at = EXCLUDED.updated_at`);
+      VALUES (${productId}, ${itemKey}, 'manual', 1, ${asOnlyTypical}, false, ${now})
+      ON CONFLICT (product_id, item_key) DO UPDATE SET
+        source = 'manual', is_rejected = false, updated_at = EXCLUDED.updated_at,
+        is_typical = product_sku_links.is_typical OR EXCLUDED.is_typical`);
+    if (asOnlyTypical) {
+      // The pick is what this product means now. Marked manual, so the nightly
+      // linker doesn't make the others typical again.
+      await db.execute(sql`
+        UPDATE product_sku_links SET is_typical = false, source = 'manual', updated_at = ${now}
+        WHERE product_id = ${productId} AND item_key <> ${itemKey} AND is_typical`);
+    }
   }
 }

@@ -16,8 +16,13 @@ export async function setSkuLinkTypical(productId: string, itemKey: string, typi
   revalidatePath(`/admin/products/${productId}/skus`);
 }
 
-export async function addSkuLink(productId: string, itemKey: string): Promise<void> {
+/**
+ * "שייך": the pick becomes the product's only typical one ("קפה נמס בריסטה" is
+ * that barcode). `asOption` ("כאפשרות בלבד") just adds it to the popup's
+ * options, leaving the typical picks - for generic products with many.
+ */
+export async function addSkuLink(productId: string, itemKey: string, asOption: boolean): Promise<void> {
   await requireAdmin("products");
-  await priceRepository.addManualSkuLink(productId, itemKey);
+  await priceRepository.addManualSkuLink(productId, itemKey, { asOnlyTypical: !asOption });
   revalidatePath(`/admin/products/${productId}/skus`);
 }
