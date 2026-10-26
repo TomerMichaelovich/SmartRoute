@@ -119,28 +119,32 @@ function AddLinkSection({ productId, query, results, linked }: {
                   <td className="whitespace-nowrap p-2 text-neutral-600">{priceRange(r)}</td>
                   <td className="p-2 text-center text-neutral-600">{r.branchCount}</td>
                   <td className="p-2">
-                    {link && !link.isRejected ? (
+                    {link && !link.isRejected && link.isTypical ? (
                       <span className="text-xs text-neutral-500">משויך</span>
                     ) : (
                       <div className="flex flex-col gap-1">
+                        {/* Linked as an option only: "שייך" still makes it the product (typical + name). */}
+                        {link && !link.isRejected && <span className="text-[11px] text-neutral-500">משויך כאפשרות</span>}
                         <form action={addSkuLink.bind(null, productId, r.itemKey, false)}>
                           <button
                             type="submit"
-                            title="משייך ומסמן טיפוסי יחיד – שאר הטיפוסיים מתבטלים"
+                            title="משייך, מסמן טיפוסי יחיד ומשנה את שם המוצר לשם הזה (השם הקודם נשמר ככינוי)"
                             className="text-xs font-medium text-cyan-700 hover:underline"
                           >
                             שייך
                           </button>
                         </form>
-                        <form action={addSkuLink.bind(null, productId, r.itemKey, true)}>
-                          <button
-                            type="submit"
-                            title="מוסיף כאפשרות בפופאפ, בלי לשנות את הטיפוסיים"
-                            className="text-[11px] text-neutral-500 hover:underline"
-                          >
-                            כאפשרות בלבד
-                          </button>
-                        </form>
+                        {(!link || link.isRejected) && (
+                          <form action={addSkuLink.bind(null, productId, r.itemKey, true)}>
+                            <button
+                              type="submit"
+                              title="מוסיף כאפשרות בפופאפ, בלי לשנות את הטיפוסיים ואת שם המוצר"
+                              className="text-[11px] text-neutral-500 hover:underline"
+                            >
+                              כאפשרות בלבד
+                            </button>
+                          </form>
+                        )}
                       </div>
                     )}
                   </td>
