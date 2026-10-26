@@ -436,6 +436,7 @@ export const he = {
       },
       any: "לא משנה לי – הכי זול",
       anyForRest: "הכי זול לכל השאר",
+      search: "חיפוש מוצר, למשל בריסטה",
       branchCount(n: number): string {
         return n === 1 ? "בסניף אחד" : `ב־${n} סניפים`;
       },

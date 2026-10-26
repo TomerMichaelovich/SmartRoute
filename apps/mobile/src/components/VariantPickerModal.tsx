@@ -45,6 +45,7 @@ export function VariantPickerModal({ question, index, total, onPick, onAny, onAn
       }))}
       anyLabel={t.any}
       anyForRestLabel={total - index > 1 ? t.anyForRest : null}
+      searchPlaceholder={t.search}
       onPick={(key) => {
         const option = options.find((o) => o.itemKey === key);
         if (option) onPick(option);

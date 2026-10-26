@@ -42,7 +42,8 @@ async function openItems(list: ShoppingList): Promise<ShoppingListItem[]> {
   });
 }
 
-const MAX_OPTIONS = 12;
+// Enough that a specific product is there to find (the popup searches them).
+const MAX_OPTIONS = 60;
 
 export async function variantOptionsFor(list: ShoppingList) {
   const items = await openItems(list);

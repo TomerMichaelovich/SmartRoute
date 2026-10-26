@@ -1,4 +1,5 @@
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
 
@@ -20,14 +21,43 @@ interface ChoicePickerModalProps {
   onPick: (key: string) => void;
   onAny: () => void;
   onAnyForRest: () => void;
+  /** Shown as a search box over the options when there are many to scroll through. */
+  searchPlaceholder?: string;
 }
+
+/** More than this and a specific product is hard to spot by scrolling. */
+const SEARCH_FROM = 8;
+
+// Quotes and punctuation differ between how chains write names and how people type them.
+const searchable = (text: string) => text.replace(/["'׳״.,\-]/g, "").replace(/\s+/g, " ").trim();
 
 /**
  * One "what did you mean by ...?" question of a series, with a "don't mind"
  * answer first and, while more follow, "the same for the rest". Shared by the
  * cheapest-basket refinement and the in-store place choice.
  */
-export function ChoicePickerModal({ title, progress, options, anyLabel, anyForRestLabel, onPick, onAny, onAnyForRest }: ChoicePickerModalProps) {
+export function ChoicePickerModal({
+  title,
+  progress,
+  options,
+  anyLabel,
+  anyForRestLabel,
+  onPick,
+  onAny,
+  onAnyForRest,
+  searchPlaceholder,
+}: ChoicePickerModalProps) {
+  const [query, setQuery] = useState("");
+  // A new question starts with every option showing.
+  useEffect(() => setQuery(""), [title]);
+  const words = searchable(query).split(" ").filter(Boolean);
+  const shown = words.length
+    ? options.filter((o) => {
+        const text = searchable(`${o.title} ${o.meta ?? ""}`);
+        return words.every((w) => text.includes(w));
+      })
+    : options;
+
   return (
     <Modal visible={title !== null} transparent animationType="fade" onRequestClose={onAny}>
       <View style={styles.backdrop}>
@@ -45,8 +75,20 @@ export function ChoicePickerModal({ title, progress, options, anyLabel, anyForRe
             <Text style={styles.anyText}>{anyLabel}</Text>
           </Pressable>
 
-          <ScrollView style={styles.options} contentContainerStyle={styles.optionsContent}>
-            {options.map((option) => (
+          {searchPlaceholder && options.length > SEARCH_FROM && (
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder={searchPlaceholder}
+              placeholderTextColor={COLORS.neutral500}
+              textAlign="right"
+              autoCorrect={false}
+              style={styles.search}
+            />
+          )}
+
+          <ScrollView style={styles.options} contentContainerStyle={styles.optionsContent} keyboardShouldPersistTaps="handled">
+            {shown.map((option) => (
               <Pressable
                 key={option.key}
                 onPress={() => onPick(option.key)}
@@ -112,6 +154,17 @@ const styles = StyleSheet.create({
   },
   options: {
     flexGrow: 0,
+  },
+  search: {
+    minHeight: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.neutral200,
+    backgroundColor: COLORS.white,
+    paddingHorizontal: 12,
+    fontSize: 15,
+    fontFamily: FONTS.regular,
+    color: COLORS.neutral900,
   },
   optionsContent: {
     gap: 8,
