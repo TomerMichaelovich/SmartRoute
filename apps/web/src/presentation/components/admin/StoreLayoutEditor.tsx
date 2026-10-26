@@ -195,6 +195,9 @@ export function StoreLayoutEditor({
   // "move": clicks only select and drags only move - nothing gets added or connected by
   // accident. "build": a click on the map adds a waypoint, a click on a second node connects.
   const [editMode, setEditMode] = useState<"move" | "build">("move");
+  // Departments shrink to small dots that can't be clicked, selected or dragged, so their label
+  // boxes don't cover the corridors being edited. View-only: nothing about the map changes.
+  const [hideDepartments, setHideDepartments] = useState(false);
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<Set<string>>(new Set());
   const marqueeStartRef = useRef<{ clientX: number; clientY: number; active: boolean } | null>(null);
@@ -331,6 +334,7 @@ export function StoreLayoutEditor({
     const [minX, maxX] = [Math.min(from.x, to.x), Math.max(from.x, to.x)];
     const [minY, maxY] = [Math.min(from.y, to.y), Math.max(from.y, to.y)];
     const insideIds = nodes
+      .filter((n) => !(hideDepartments && n.type === "department"))
       .filter((n) => n.position.x >= minX && n.position.x <= maxX && n.position.y >= minY && n.position.y <= maxY)
       .map((n) => n.id);
 
@@ -561,6 +565,25 @@ export function StoreLayoutEditor({
               </button>
               )}
               {placingNode && <span className="text-sm text-cyan-700">לחצו על המפה במיקום המחלקה</span>}
+              <button
+                type="button"
+                onClick={() => {
+                  closePopups();
+                  if (!hideDepartments) {
+                    // A hidden department can't stay selected - "delete" would remove what isn't shown.
+                    setSelectedNodeIds(
+                      (prev) => new Set([...prev].filter((id) => nodeById.get(id)?.type !== "department")),
+                    );
+                  }
+                  setHideDepartments((v) => !v);
+                }}
+                aria-pressed={hideDepartments}
+                className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                  hideDepartments ? "bg-cyan-600 text-white" : "border border-neutral-300 bg-white text-neutral-700"
+                }`}
+              >
+                {hideDepartments ? "הצגת מחלקות" : "הסתרת מחלקות"}
+              </button>
             </div>
 
             <p className="text-xs text-neutral-500">
@@ -663,6 +686,20 @@ export function StoreLayoutEditor({
                   const radius = nodeRadius(node.type);
                   const isSelected = selectedNodeIds.has(node.id);
                   const isWaypoint = node.type === "waypoint";
+
+                  if (hideDepartments && node.type === "department") {
+                    return (
+                      <circle
+                        key={node.id}
+                        cx={x}
+                        cy={y}
+                        r={nodeRadius("waypoint")}
+                        fill={disconnectedNodeIds.has(node.id) ? DISCONNECTED_COLOR : NODE_COLORS.department}
+                        opacity={0.6}
+                        pointerEvents="none"
+                      />
+                    );
+                  }
 
                   return (
                     <g
