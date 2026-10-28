@@ -235,6 +235,8 @@ export async function addProductToNode(storeId: string, nodeId: string, formData
   const storeListings = await productListingRepository.findByStore(storeId);
   if (storeListings.some((l) => l.productId === productId)) return;
   await productListingRepository.create({ id: crypto.randomUUID(), productId, storeId, nodeId });
+  // Placed by hand: whatever "not sold here" said before, it's on the shelf now.
+  await catalogAdminRepository.setExcluded(storeId, [productId], false);
   revalidatePath(`/admin/stores/${storeId}`);
 }
 
@@ -285,6 +287,25 @@ export async function moveProductsToNode(storeId: string, productIds: string[], 
 export async function removeProductsFromNode(storeId: string, nodeId: string, productIds: string[]): Promise<void> {
   await requireAdmin({ mapStore: storeId });
   await productListingRepository.deleteAtNode(storeId, nodeId, productIds);
+  revalidatePath(`/admin/stores/${storeId}`);
+}
+
+/**
+ * The store's price file lists these products but they aren't on its shelves: off the
+ * map, no longer counted as waiting to be placed, and skipped when their shelf group
+ * is placed again. Shoppers get "not at this branch", like any unplaced product.
+ */
+export async function markProductsNotSold(storeId: string, productIds: string[]): Promise<void> {
+  await requireAdmin({ mapStore: storeId });
+  await productListingRepository.deleteInStore(storeId, productIds);
+  await catalogAdminRepository.setExcluded(storeId, productIds, true);
+  revalidatePath(`/admin/stores/${storeId}`);
+}
+
+/** Undoes markProductsNotSold: the products are waiting to be placed again. */
+export async function unmarkProductsNotSold(storeId: string, productIds: string[]): Promise<void> {
+  await requireAdmin({ mapStore: storeId });
+  await catalogAdminRepository.setExcluded(storeId, productIds, false);
   revalidatePath(`/admin/stores/${storeId}`);
 }
 

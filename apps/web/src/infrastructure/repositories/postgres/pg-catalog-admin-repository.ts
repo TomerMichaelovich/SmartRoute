@@ -10,13 +10,17 @@ import type {
 } from "../interfaces/catalog-admin-repository";
 import { productSchema } from "../schemas";
 
-/** Products (by id) in the price file of the branch linked to store $1. */
+/**
+ * Products (by id) in the price file of the branch linked to store $1 - less those the
+ * admin marked as not actually sold there.
+ */
 const CARRIED_BY_STORE = `
   SELECT p.id, p.shelf_group FROM products p
   JOIN retail_items ri ON ri.item_key = p.source_item_key
   JOIN branch_prices bp ON bp.retail_item_id = ri.id
   JOIN retail_branches b ON b.id = bp.branch_id
-  WHERE b.navio_store_id = $1 AND p.is_active`;
+  WHERE b.navio_store_id = $1 AND p.is_active
+    AND NOT EXISTS (SELECT 1 FROM store_excluded_products x WHERE x.store_id = $1 AND x.product_id = p.id)`;
 
 // Search candidates are fetched by a plain LIKE on the aliases, then ranked in code.
 const SEARCH_CANDIDATES = 300;
@@ -109,7 +113,8 @@ export class PgCatalogAdminRepository implements ICatalogAdminRepository {
               EXISTS (SELECT 1 FROM retail_items ri
                       JOIN branch_prices bp ON bp.retail_item_id = ri.id
                       JOIN retail_branches b ON b.id = bp.branch_id
-                      WHERE ri.item_key = p.source_item_key AND b.navio_store_id = $1) AS carried
+                      WHERE ri.item_key = p.source_item_key AND b.navio_store_id = $1) AS carried,
+              EXISTS (SELECT 1 FROM store_excluded_products x WHERE x.store_id = $1 AND x.product_id = p.id) AS excluded
        FROM products p
        WHERE p.is_active AND p.normalized_aliases::text LIKE $2
          AND NOT EXISTS (SELECT 1 FROM product_listings l WHERE l.store_id = $1 AND l.product_id = p.id)
@@ -124,6 +129,7 @@ export class PgCatalogAdminRepository implements ICatalogAdminRepository {
       normalizedAliases: r.normalized_aliases as string[],
       imported: Boolean(r.imported),
       carried: Boolean(r.carried),
+      excluded: Boolean(r.excluded),
     }));
     return rankSearchHits(hits, normalizedText).slice(0, limit);
   }
@@ -140,6 +146,36 @@ export class PgCatalogAdminRepository implements ICatalogAdminRepository {
       db.select({ total: count() }).from(products).where(where),
     ]);
     return { products: rows.map(toDomain), total };
+  }
+
+  async excludedProducts(storeId: string) {
+    const rows = (await rawSql.query(
+      `SELECT p.id, p.canonical_name, p.shelf_group FROM store_excluded_products x
+       JOIN products p ON p.id = x.product_id
+       WHERE x.store_id = $1 ORDER BY p.canonical_name`,
+      [storeId],
+    )) as Record<string, unknown>[];
+    return rows.map((r) => ({
+      id: String(r.id),
+      canonicalName: String(r.canonical_name),
+      shelfGroup: (r.shelf_group as string | null) ?? null,
+    }));
+  }
+
+  async setExcluded(storeId: string, productIds: string[], excluded: boolean): Promise<void> {
+    if (productIds.length === 0) return;
+    if (excluded) {
+      await rawSql.query(
+        `INSERT INTO store_excluded_products (store_id, product_id, created_at)
+         SELECT $1, unnest($2::text[]), now() ON CONFLICT DO NOTHING`,
+        [storeId, productIds],
+      );
+    } else {
+      await rawSql.query(`DELETE FROM store_excluded_products WHERE store_id = $1 AND product_id = ANY($2::text[])`, [
+        storeId,
+        productIds,
+      ]);
+    }
   }
 
   async departments(imported: boolean): Promise<string[]> {

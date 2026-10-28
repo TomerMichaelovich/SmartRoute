@@ -10,5 +10,7 @@ export interface IProductListingRepository {
   moveToNode(storeId: string, productIds: string[], nodeId: string): Promise<void>;
   /** Removes these products' listings at one node. */
   deleteAtNode(storeId: string, nodeId: string, productIds: string[]): Promise<void>;
+  /** Removes these products' listings anywhere in the store. */
+  deleteInStore(storeId: string, productIds: string[]): Promise<void>;
   delete(id: string): Promise<void>;
 }

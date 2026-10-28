@@ -247,6 +247,21 @@ export const productListings = pgTable(
   ],
 );
 
+/**
+ * Products a store's price file lists but the store doesn't actually keep on its shelves
+ * (marked by the admin while mapping). Not counted as waiting to be placed, skipped when
+ * a whole shelf group is placed; placing the product by hand clears the mark.
+ */
+export const storeExcludedProducts = pgTable(
+  "store_excluded_products",
+  {
+    storeId: text("store_id").notNull(),
+    productId: text("product_id").notNull(),
+    createdAt: timestamp("created_at", { mode: "string" }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.storeId, table.productId] })],
+);
+
 export const shoppingLists = pgTable(
   "shopping_lists",
   {

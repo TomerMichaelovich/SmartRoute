@@ -32,6 +32,7 @@ interface ShelfGroupPanelProps {
   removeShelfGroupFromNode: (storeId: string, nodeId: string, groupId: string) => Promise<void>;
   moveProductsToNode: (storeId: string, productIds: string[], nodeId: string) => Promise<void>;
   removeProductsFromNode: (storeId: string, nodeId: string, productIds: string[]) => Promise<void>;
+  markProductsNotSold: (storeId: string, productIds: string[]) => Promise<void>;
   setProductsShelfGroup: (productIds: string[], groupId: string) => Promise<void>;
 }
 
@@ -40,7 +41,8 @@ const singleLine = (label: string) => label.replace(/\s*\n\s*/g, " ");
 /**
  * The shelf-group half of a department node's panel: place a whole group of imported
  * products here at once, see which groups stand here, and open a group to handle its
- * exceptions item by item - move some to another node, take them off, or fix their group.
+ * exceptions item by item - move some to another node, take them off, mark them as not
+ * sold at this store, or fix their group.
  */
 export function ShelfGroupPanel(props: ShelfGroupPanelProps) {
   const { storeId, nodeId, groupsHere, groupOptions, hasPriceBranch } = props;
@@ -263,14 +265,30 @@ function GroupRow({ group, ...props }: ShelfGroupPanelProps & { group: NodeShelf
                       </button>
                     </div>
                   )}
-                  <button
-                    type="button"
-                    disabled={isPending}
-                    onClick={() => run(() => props.removeProductsFromNode(storeId, nodeId, selectedIds))}
-                    className="self-start text-xs text-red-600 hover:underline disabled:opacity-40"
-                  >
-                    הסר את הנבחרים מהנקודה
-                  </button>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1">
+                    <button
+                      type="button"
+                      disabled={isPending}
+                      onClick={() => run(() => props.removeProductsFromNode(storeId, nodeId, selectedIds))}
+                      className="text-xs text-red-600 hover:underline disabled:opacity-40"
+                      title="הפריט נמכר בסניף אבל לא כאן - נשאר ממתין לשיוך לנקודה אחרת"
+                    >
+                      הסר מהנקודה
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isPending}
+                      onClick={() => {
+                        if (confirm(`לסמן ${selectedIds.length} פריטים כלא נמכרים בסניף הזה? הם יוסרו מהמפה ולא יחזרו בשיוך קבוצה.`)) {
+                          run(() => props.markProductsNotSold(storeId, selectedIds));
+                        }
+                      }}
+                      className="text-xs text-red-600 hover:underline disabled:opacity-40"
+                      title="אין את הפריט על המדף בסניף - לא ייספר כממתין לשיוך"
+                    >
+                      לא נמכר בסניף
+                    </button>
+                  </div>
                 </div>
               )}
             </>

@@ -19,6 +19,7 @@ import {
   deleteEdge,
   deleteNode,
   deleteStore,
+  markProductsNotSold,
   moveProductsToNode,
   placeShelfGroupOnNode,
   removeProductFromNode,
@@ -29,6 +30,7 @@ import {
   updateNodeLabel,
   updateNodePosition,
   updateStore,
+  unmarkProductsNotSold,
   uploadStoreImage,
 } from "@/src/presentation/actions/admin-store-actions";
 import { setProductsShelfGroup } from "@/src/presentation/actions/admin-product-actions";
@@ -56,13 +58,14 @@ export default async function AdminStoreDetailPage({
 
   // Imported products (whole price files) are too many to send with the page: the editor
   // gets the hand-made ones, a per-shelf-group summary, and searches on demand.
-  const [nodes, edges, products, allListings, storeGroups, hasPriceBranch, walkableMask, priceBranches, allStores] = await Promise.all([
+  const [nodes, edges, products, allListings, storeGroups, hasPriceBranch, excludedProducts, walkableMask, priceBranches, allStores] = await Promise.all([
     nodeRepository.findByStore(storeId),
     edgeRepository.findByStore(storeId),
     catalogAdminRepository.listedHandMadeProducts(storeId),
     productListingRepository.findByStore(storeId),
     catalogAdminRepository.shelfGroupsForStore(storeId),
     catalogAdminRepository.hasPriceBranch(storeId),
+    catalogAdminRepository.excludedProducts(storeId),
     walkableMapRepository.findMask(storeId),
     manages ? priceRepository.findLinkableBranches() : [],
     manages ? storeRepository.findAll() : [],
@@ -161,6 +164,7 @@ export default async function AdminStoreDetailPage({
         removeShelfGroupFromNode={removeShelfGroupFromNode}
         moveProductsToNode={moveProductsToNode}
         removeProductsFromNode={removeProductsFromNode}
+        markProductsNotSold={markProductsNotSold}
         setProductsShelfGroup={setProductsShelfGroup}
         uploadStoreImage={boundUploadStoreImage}
         mapPixelSourceUrl={mapPixelSourceUrl}
@@ -259,6 +263,33 @@ export default async function AdminStoreDetailPage({
               </div>
             </>
           )}
+        </section>
+      )}
+
+      {excludedProducts.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-base font-semibold text-neutral-900">לא נמכרים בסניף ({excludedProducts.length})</h2>
+          <p className="text-xs text-neutral-500">
+            פריטים מקובץ המחירים שסומנו כלא נמצאים על המדף. הם לא נספרים כממתינים לשיוך ולא נכנסים בשיוך קבוצה.
+            ביטול הסימון מחזיר אותם לממתינים; שיוך ידני לנקודה מבטל אותו לבד.
+          </p>
+          <ul className="flex flex-col divide-y divide-neutral-100 rounded-xl border border-neutral-200 bg-white">
+            {excludedProducts.map((p) => (
+              <li key={p.id} className="flex items-center justify-between gap-2 px-3 py-1.5 text-sm">
+                <span>
+                  {p.canonicalName}
+                  {p.shelfGroup && (
+                    <span className="ms-2 text-xs text-neutral-400">{findShelfGroup(p.shelfGroup)?.name}</span>
+                  )}
+                </span>
+                <form action={unmarkProductsNotSold.bind(null, storeId, [p.id])}>
+                  <button type="submit" className="text-xs text-cyan-700 hover:underline">
+                    בטל סימון
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 

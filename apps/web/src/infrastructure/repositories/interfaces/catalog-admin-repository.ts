@@ -3,7 +3,7 @@ import type { Product } from "@smartroute/core/domain/entities/product";
 /** One shelf group as a mapped store sees it. */
 export interface StoreShelfGroup {
   groupId: string;
-  /** Active products of the group in the store's linked price branch file. */
+  /** Active products of the group in the store's linked price branch file, less those marked as not sold here. */
   carried: number;
   /** Of those, not yet placed anywhere in the store. */
   unplaced: number;
@@ -21,6 +21,8 @@ export interface ProductSearchHit {
   imported: boolean;
   /** In the price file of the store's linked branch. */
   carried: boolean;
+  /** Marked as not sold at this store. */
+  excluded: boolean;
 }
 
 export interface AdminProductQuery {
@@ -51,5 +53,9 @@ export interface ICatalogAdminRepository {
   /** Active products matching the text that aren't placed in the store yet, best candidates first. */
   searchUnlisted(storeId: string, normalizedText: string, limit: number): Promise<ProductSearchHit[]>;
   searchProducts(query: AdminProductQuery): Promise<{ products: Product[]; total: number }>;
+  /** Products marked as not sold at the store, by name. */
+  excludedProducts(storeId: string): Promise<Array<{ id: string; canonicalName: string; shelfGroup: string | null }>>;
+  /** Marks products as not sold at the store (true) or clears the mark (false). */
+  setExcluded(storeId: string, productIds: string[], excluded: boolean): Promise<void>;
   departments(imported: boolean): Promise<string[]>;
 }

@@ -37,6 +37,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ stor
       // Imported products say which shelf group they belong to; hand-made ones their department.
       hint: (hit.shelfGroup && findShelfGroup(hit.shelfGroup)?.name) || hit.department,
       notCarried: hit.imported && !hit.carried,
+      excluded: hit.excluded,
     })),
   );
 }

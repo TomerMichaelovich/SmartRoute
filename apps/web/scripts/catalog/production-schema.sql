@@ -16,4 +16,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS "products_source_item_key_idx"
 CREATE INDEX IF NOT EXISTS "products_shelf_group_idx"
   ON "products" USING btree ("shelf_group");
 
+-- Products a store's price file lists but the store doesn't keep (marked while mapping).
+CREATE TABLE IF NOT EXISTS "store_excluded_products" (
+	"store_id" text NOT NULL,
+	"product_id" text NOT NULL,
+	"created_at" timestamp NOT NULL,
+	CONSTRAINT "store_excluded_products_store_id_product_id_pk" PRIMARY KEY("store_id","product_id")
+);
+
 COMMIT;

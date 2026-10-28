@@ -40,6 +40,7 @@ interface StoreLayoutEditorProps {
   removeShelfGroupFromNode: (storeId: string, nodeId: string, groupId: string) => Promise<void>;
   moveProductsToNode: (storeId: string, productIds: string[], nodeId: string) => Promise<void>;
   removeProductsFromNode: (storeId: string, nodeId: string, productIds: string[]) => Promise<void>;
+  markProductsNotSold: (storeId: string, productIds: string[]) => Promise<void>;
   setProductsShelfGroup: (productIds: string[], groupId: string) => Promise<void>;
   uploadStoreImage: (formData: FormData) => Promise<void>;
   /** Same-origin URL of the map image, for reading its pixels in the walkable-area mode. */
@@ -192,6 +193,7 @@ export function StoreLayoutEditor({
   removeShelfGroupFromNode,
   moveProductsToNode,
   removeProductsFromNode,
+  markProductsNotSold,
   setProductsShelfGroup,
   uploadStoreImage,
   mapPixelSourceUrl,
@@ -916,6 +918,7 @@ export function StoreLayoutEditor({
                 removeShelfGroupFromNode={removeShelfGroupFromNode}
                 moveProductsToNode={moveProductsToNode}
                 removeProductsFromNode={removeProductsFromNode}
+                markProductsNotSold={markProductsNotSold}
                 setProductsShelfGroup={setProductsShelfGroup}
               />
 

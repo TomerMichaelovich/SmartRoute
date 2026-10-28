@@ -11,6 +11,8 @@ interface SearchResult {
   hint: string;
   /** Imported from another branch's price file - this store's branch doesn't list it. */
   notCarried: boolean;
+  /** Marked as not sold at this store; adding it clears the mark. */
+  excluded: boolean;
 }
 
 interface ProductAutocompleteProps {
@@ -141,6 +143,7 @@ export function ProductAutocomplete({ storeId, onAdd }: ProductAutocompleteProps
                 <span className="shrink-0 text-xs text-neutral-400">
                   {product.hint}
                   {product.notCarried && " · לא בקובץ הסניף"}
+                  {product.excluded && " · סומן כלא נמכר בסניף"}
                 </span>
               </li>
             ))

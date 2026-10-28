@@ -59,6 +59,14 @@ export class PgProductListingRepository implements IProductListingRepository {
     }
   }
 
+  async deleteInStore(storeId: string, productIds: string[]): Promise<void> {
+    for (let i = 0; i < productIds.length; i += WRITE_BATCH) {
+      await db
+        .delete(productListings)
+        .where(and(eq(productListings.storeId, storeId), inArray(productListings.productId, productIds.slice(i, i + WRITE_BATCH))));
+    }
+  }
+
   async delete(id: string): Promise<void> {
     await db.delete(productListings).where(eq(productListings.id, id));
   }
