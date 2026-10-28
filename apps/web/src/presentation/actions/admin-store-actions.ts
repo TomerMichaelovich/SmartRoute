@@ -7,8 +7,10 @@ import type { MapEdge } from "@smartroute/core/domain/entities/map-edge";
 import type { MapNode, MapNodeType } from "@smartroute/core/domain/entities/map-node";
 import { generateNavGraph } from "@smartroute/core/map/walkable/generate-graph";
 import { type StoredWalkableMask, decodeRle, encodeRle } from "@smartroute/core/map/walkable/mask";
+import { findShelfGroup } from "@smartroute/core/domain/value-objects/shelf-group";
 import {
   adminUserRepository,
+  catalogAdminRepository,
   edgeRepository,
   nodeRepository,
   priceRepository,
@@ -242,6 +244,47 @@ export async function removeProductFromNode(storeId: string, nodeId: string, pro
   const match = storeListings.find((l) => l.productId === productId && l.nodeId === nodeId);
   if (!match) return;
   await productListingRepository.delete(match.id);
+  revalidatePath(`/admin/stores/${storeId}`);
+}
+
+/**
+ * Places a whole shelf group at a node: every product of the group in the store's
+ * price-branch file that isn't placed in the store yet (one product, one node per
+ * store - products already placed elsewhere stay where they are). Returns how many
+ * were placed.
+ */
+export async function placeShelfGroupOnNode(storeId: string, nodeId: string, groupId: string): Promise<number> {
+  await requireAdmin({ mapStore: storeId });
+  await assertNodeInStore(storeId, nodeId);
+  if (!findShelfGroup(groupId)) throw new Error(`Unknown shelf group ${groupId}`);
+  const productIds = await catalogAdminRepository.unplacedGroupProductIds(storeId, groupId);
+  await productListingRepository.createMany(
+    productIds.map((productId) => ({ id: crypto.randomUUID(), productId, storeId, nodeId })),
+  );
+  revalidatePath(`/admin/stores/${storeId}`);
+  return productIds.length;
+}
+
+/** Takes a shelf group's products off one node (they become unplaced again). */
+export async function removeShelfGroupFromNode(storeId: string, nodeId: string, groupId: string): Promise<void> {
+  await requireAdmin({ mapStore: storeId });
+  await assertNodeInStore(storeId, nodeId);
+  const products = await catalogAdminRepository.groupProductsAtNode(storeId, nodeId, groupId);
+  await productListingRepository.deleteAtNode(storeId, nodeId, products.map((p) => p.id));
+  revalidatePath(`/admin/stores/${storeId}`);
+}
+
+/** Moves products already placed in the store to another node - the exceptions of a shelf group. */
+export async function moveProductsToNode(storeId: string, productIds: string[], nodeId: string): Promise<void> {
+  await requireAdmin({ mapStore: storeId });
+  await assertNodeInStore(storeId, nodeId);
+  await productListingRepository.moveToNode(storeId, productIds, nodeId);
+  revalidatePath(`/admin/stores/${storeId}`);
+}
+
+export async function removeProductsFromNode(storeId: string, nodeId: string, productIds: string[]): Promise<void> {
+  await requireAdmin({ mapStore: storeId });
+  await productListingRepository.deleteAtNode(storeId, nodeId, productIds);
   revalidatePath(`/admin/stores/${storeId}`);
 }
 

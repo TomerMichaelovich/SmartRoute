@@ -1,9 +1,12 @@
 import Link from "next/link";
+import { normalizeHebrewText } from "@smartroute/core/application/classification/normalize-hebrew-text";
 import type { ProductCategory } from "@smartroute/core/domain/entities/product";
-import { productRepository, storeRepository } from "@/src/infrastructure/container";
+import { findShelfGroup } from "@smartroute/core/domain/value-objects/shelf-group";
+import { catalogAdminRepository, storeRepository } from "@/src/infrastructure/container";
 import { createProduct, updateProduct } from "@/src/presentation/actions/admin-product-actions";
 import { PRODUCT_CATEGORY_LABELS } from "@/src/presentation/product-category-labels";
 import { requireAdminPage } from "@/src/presentation/auth/admin";
+import { ShelfGroupSelect } from "@/src/presentation/components/admin/ShelfGroupSelect";
 
 const CATEGORIES: ProductCategory[] = [
   "produce",
@@ -18,6 +21,8 @@ const CATEGORIES: ProductCategory[] = [
   "personal_care",
   "other",
 ];
+
+const PAGE_SIZE = 50;
 
 const DEPARTMENT_HINT = "לקיבוץ וסינון המוצרים כאן ובמסכי הבחירה. המיקום בחנות נקבע בעורך הפריסה של הסניף.";
 
@@ -60,45 +65,87 @@ function ChainSelect({ chains, defaultValue }: { chains: string[]; defaultValue:
 export default async function AdminProductsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ department?: string }>;
+  searchParams: Promise<{ department?: string; q?: string; kind?: string; group?: string; page?: string }>;
 }) {
   await requireAdminPage("products");
-  const { department } = await searchParams;
-  const [allProducts, stores] = await Promise.all([productRepository.findAll(), storeRepository.findAll()]);
+  const params = await searchParams;
+  // Hand-made products (the generic catalog) and products imported from price files are
+  // listed apart: the imported ones run to thousands, so both are searched and paged here.
+  const imported = params.kind === "imported";
+  const department = params.department || undefined;
+  const group = imported ? params.group || undefined : undefined;
+  const q = params.q?.trim() ?? "";
+  const page = Math.max(1, Number(params.page) || 1);
+  const [{ products, total }, departments, stores] = await Promise.all([
+    catalogAdminRepository.searchProducts({
+      imported,
+      text: normalizeHebrewText(q) || undefined,
+      department,
+      shelfGroup: group,
+      offset: (page - 1) * PAGE_SIZE,
+      limit: PAGE_SIZE,
+    }),
+    catalogAdminRepository.departments(imported),
+    storeRepository.findAll(),
+  ]);
   const chains = Array.from(new Set(stores.map((s) => s.chainId))).sort();
-  const products = department ? allProducts.filter((p) => p.department === department) : allProducts;
-  const departments = Array.from(new Set(allProducts.map((p) => p.department))).sort();
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const link = (changes: Record<string, string | undefined>) => {
+    const next = new URLSearchParams();
+    const merged = { kind: imported ? "imported" : undefined, q: q || undefined, department, group, ...changes };
+    for (const [key, value] of Object.entries(merged)) if (value) next.set(key, value);
+    return `/admin/products${next.size ? `?${next}` : ""}`;
+  };
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-lg font-semibold text-neutral-900">
-        מוצרים ({products.length}
-        {products.length !== allProducts.length ? ` מתוך ${allProducts.length}` : ""})
-      </h1>
+      <h1 className="text-lg font-semibold text-neutral-900">מוצרים ({total})</h1>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm text-neutral-500">מחלקה:</span>
+      <div className="flex gap-2">
         <a
           href="/admin/products"
-          className={`rounded-full px-3 py-1 text-sm ${
-            !department ? "bg-cyan-600 text-white" : "bg-white text-neutral-600"
-          }`}
+          className={`rounded-lg px-4 py-2 text-sm font-semibold ${!imported ? "bg-cyan-600 text-white" : "bg-white text-neutral-600"}`}
         >
-          הכל
+          מוצרים כלליים
         </a>
-        {departments.map((d) => (
-          <a
-            key={d}
-            href={`/admin/products?department=${encodeURIComponent(d)}`}
-            className={`rounded-full px-3 py-1 text-sm ${
-              department === d ? "bg-cyan-600 text-white" : "bg-white text-neutral-600"
-            }`}
-          >
-            {d}
-          </a>
-        ))}
+        <a
+          href="/admin/products?kind=imported"
+          className={`rounded-lg px-4 py-2 text-sm font-semibold ${imported ? "bg-cyan-600 text-white" : "bg-white text-neutral-600"}`}
+        >
+          מיובאים מקבצי מחירים
+        </a>
       </div>
 
+      <form action="/admin/products" className="flex flex-wrap items-end gap-2 rounded-xl border border-neutral-200 bg-white p-3">
+        {imported && <input type="hidden" name="kind" value="imported" />}
+        <input
+          name="q"
+          defaultValue={q}
+          placeholder="חיפוש לפי שם או כינוי"
+          className="min-w-48 flex-1 rounded-lg border border-neutral-300 p-2 text-sm"
+        />
+        <select name="department" defaultValue={department ?? ""} className="rounded-lg border border-neutral-300 p-2 text-sm">
+          <option value="">כל המחלקות</option>
+          {departments.map((d) => (
+            <option key={d} value={d}>
+              {d}
+            </option>
+          ))}
+        </select>
+        {imported && (
+          <ShelfGroupSelect
+            name="group"
+            defaultValue={group}
+            emptyLabel="כל קבוצות המדף"
+            className="rounded-lg border border-neutral-300 p-2 text-sm"
+          />
+        )}
+        <button type="submit" className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white">
+          חפש
+        </button>
+      </form>
+
+      {!imported && (
       <form
         action={createProduct}
         className="flex flex-col gap-2 rounded-xl border border-neutral-200 bg-white p-4"
@@ -167,6 +214,7 @@ export default async function AdminProductsPage({
           </button>
         </div>
       </form>
+      )}
 
       <div className="flex flex-col gap-2">
         {products.map((product) => (
@@ -188,8 +236,13 @@ export default async function AdminProductsPage({
                 {product.chainId && (
                   <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">{product.chainId}</span>
                 )}
+                {product.manuallyEdited && (
+                  <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-500">נערך ידנית</span>
+                )}
               </span>
-              <span className="text-sm text-neutral-400">{product.department}</span>
+              <span className="text-sm text-neutral-400">
+                {(product.shelfGroup && findShelfGroup(product.shelfGroup)?.name) || product.department}
+              </span>
             </summary>
             <form
               action={updateProduct.bind(null, product.id)}
@@ -200,15 +253,35 @@ export default async function AdminProductsPage({
                 defaultValue={product.canonicalName}
                 className="rounded-lg border border-neutral-300 p-2"
               />
-              <label className="flex flex-col gap-1 text-sm text-neutral-700">
-                מחלקה
-                <input
-                  name="department"
-                  defaultValue={product.department}
-                  className="rounded-lg border border-neutral-300 p-2"
-                />
-                <span className="text-xs text-neutral-500">{DEPARTMENT_HINT}</span>
-              </label>
+              {product.sourceItemKey ? (
+                <>
+                  <span className="text-xs text-neutral-500" dir="ltr">
+                    {product.sourceItemKey}
+                  </span>
+                  <label className="flex flex-col gap-1 text-sm text-neutral-700">
+                    קבוצת מדף
+                    <ShelfGroupSelect
+                      lazy
+                      name="shelfGroup"
+                      defaultValue={product.shelfGroup ?? undefined}
+                      className="rounded-lg border border-neutral-300 p-2"
+                    />
+                    <span className="text-xs text-neutral-500">
+                      איפה הפריט עומד בחנות; המחלקה נקבעת לפי הקבוצה. עריכה כאן נשמרת גם בייבוא הבא.
+                    </span>
+                  </label>
+                </>
+              ) : (
+                <label className="flex flex-col gap-1 text-sm text-neutral-700">
+                  מחלקה
+                  <input
+                    name="department"
+                    defaultValue={product.department}
+                    className="rounded-lg border border-neutral-300 p-2"
+                  />
+                  <span className="text-xs text-neutral-500">{DEPARTMENT_HINT}</span>
+                </label>
+              )}
               <CategorySelect defaultValue={product.category} />
               <input
                 name="aliases"
@@ -246,7 +319,26 @@ export default async function AdminProductsPage({
             </Link>
           </details>
         ))}
+        {products.length === 0 && <p className="text-sm text-neutral-400">לא נמצאו מוצרים</p>}
       </div>
+
+      {pages > 1 && (
+        <div className="flex items-center justify-center gap-3 text-sm">
+          {page > 1 && (
+            <a href={link({ page: String(page - 1) })} className="text-cyan-700 hover:underline">
+              → הקודם
+            </a>
+          )}
+          <span className="text-neutral-500">
+            עמוד {page} מתוך {pages}
+          </span>
+          {page < pages && (
+            <a href={link({ page: String(page + 1) })} className="text-cyan-700 hover:underline">
+              הבא ←
+            </a>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -10,6 +10,7 @@ import { NODE_TYPE_LABELS } from "@/src/presentation/node-type-labels";
 import type { StoredWalkableMask } from "@smartroute/core/map/walkable/mask";
 import type { WalkableMapSaveResult } from "@/src/presentation/actions/admin-store-actions";
 import { ProductAutocomplete } from "./ProductAutocomplete";
+import { type ShelfGroupOption, ShelfGroupPanel } from "./ShelfGroupPanel";
 import { WalkableAreaEditor } from "./WalkableAreaEditor";
 
 interface StoreLayoutEditorProps {
@@ -20,8 +21,13 @@ interface StoreLayoutEditorProps {
   nodes: MapNode[];
   edges: MapEdge[];
   nodeTypes: MapNodeType[];
+  /** Hand-made products placed in the store; imported ones are shown by shelf group. */
   products: Product[];
   listings: ProductListing[];
+  /** The store's shelf groups: what's left to place, and where each group stands. */
+  shelfGroups: Array<ShelfGroupOption & { nodes: Array<{ nodeId: string; count: number }> }>;
+  hasPriceBranch: boolean;
+  canEditProducts: boolean;
   createNode: (formData: FormData) => Promise<void>;
   createEdge: (formData: FormData) => Promise<void>;
   deleteNode: (storeId: string, nodeId: string) => Promise<void>;
@@ -30,6 +36,11 @@ interface StoreLayoutEditorProps {
   updateNodeLabel: (storeId: string, nodeId: string, formData: FormData) => Promise<void>;
   addProductToNode: (storeId: string, nodeId: string, formData: FormData) => Promise<void>;
   removeProductFromNode: (storeId: string, nodeId: string, productId: string) => Promise<void>;
+  placeShelfGroupOnNode: (storeId: string, nodeId: string, groupId: string) => Promise<number>;
+  removeShelfGroupFromNode: (storeId: string, nodeId: string, groupId: string) => Promise<void>;
+  moveProductsToNode: (storeId: string, productIds: string[], nodeId: string) => Promise<void>;
+  removeProductsFromNode: (storeId: string, nodeId: string, productIds: string[]) => Promise<void>;
+  setProductsShelfGroup: (productIds: string[], groupId: string) => Promise<void>;
   uploadStoreImage: (formData: FormData) => Promise<void>;
   /** Same-origin URL of the map image, for reading its pixels in the walkable-area mode. */
   mapPixelSourceUrl: string;
@@ -166,6 +177,9 @@ export function StoreLayoutEditor({
   nodeTypes,
   products,
   listings,
+  shelfGroups,
+  hasPriceBranch,
+  canEditProducts,
   createNode,
   createEdge,
   deleteNode,
@@ -174,6 +188,11 @@ export function StoreLayoutEditor({
   updateNodeLabel,
   addProductToNode,
   removeProductFromNode,
+  placeShelfGroupOnNode,
+  removeShelfGroupFromNode,
+  moveProductsToNode,
+  removeProductsFromNode,
+  setProductsShelfGroup,
   uploadStoreImage,
   mapPixelSourceUrl,
   walkableMask,
@@ -462,17 +481,23 @@ export function StoreLayoutEditor({
       ? listings.filter((l) => l.nodeId === singleSelectedNode!.id).map((l) => l.productId)
       : [],
   );
-  const listedProductIdsInStore = new Set(listings.map((l) => l.productId));
   const productsAtNode = showsProductPanel
     ? products
         .filter((p) => listedProductIdsAtNode.has(p.id))
         .sort((a, b) => a.canonicalName.localeCompare(b.canonicalName, "he"))
     : [];
-  const availableProducts = showsProductPanel
-    ? products
-        .filter((p) => !listedProductIdsInStore.has(p.id))
-        .sort((a, b) => a.canonicalName.localeCompare(b.canonicalName, "he"))
+  const groupsAtNode = showsProductPanel
+    ? shelfGroups
+        .flatMap((g) => {
+          const here = g.nodes.find((n) => n.nodeId === singleSelectedNode!.id);
+          return here ? [{ groupId: g.groupId, name: g.name, count: here.count }] : [];
+        })
+        .sort((a, b) => a.name.localeCompare(b.name, "he"))
     : [];
+  const departmentNodes = nodes
+    .filter((n) => n.type === "department")
+    .map((n) => ({ id: n.id, label: n.label }))
+    .sort((a, b) => a.label.localeCompare(b.label, "he"));
 
   return (
     <section className="flex flex-col gap-3">
@@ -868,17 +893,31 @@ export function StoreLayoutEditor({
                 )}
               </div>
 
-              {availableProducts.length > 0 && (
-                <ProductAutocomplete
-                  key={singleSelectedNode.id}
-                  products={availableProducts}
-                  onAdd={async (productId) => {
-                    const formData = new FormData();
-                    formData.set("productId", productId);
-                    await addProductToNode(storeId, singleSelectedNode.id, formData);
-                  }}
-                />
-              )}
+              <ProductAutocomplete
+                key={singleSelectedNode.id}
+                storeId={storeId}
+                onAdd={async (productId) => {
+                  const formData = new FormData();
+                  formData.set("productId", productId);
+                  await addProductToNode(storeId, singleSelectedNode.id, formData);
+                }}
+              />
+
+              <ShelfGroupPanel
+                key={`groups-${singleSelectedNode.id}`}
+                storeId={storeId}
+                nodeId={singleSelectedNode.id}
+                departmentNodes={departmentNodes}
+                groupsHere={groupsAtNode}
+                groupOptions={shelfGroups.filter((g) => g.unplaced > 0)}
+                hasPriceBranch={hasPriceBranch}
+                canEditProducts={canEditProducts}
+                placeShelfGroupOnNode={placeShelfGroupOnNode}
+                removeShelfGroupFromNode={removeShelfGroupFromNode}
+                moveProductsToNode={moveProductsToNode}
+                removeProductsFromNode={removeProductsFromNode}
+                setProductsShelfGroup={setProductsShelfGroup}
+              />
 
               <form action={deleteNode.bind(null, storeId, singleSelectedNode.id)}>
                 <button type="submit" className="text-sm text-red-600 hover:underline">

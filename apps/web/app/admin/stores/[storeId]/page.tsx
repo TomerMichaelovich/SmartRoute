@@ -2,12 +2,13 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { hasSection } from "@smartroute/core/domain/entities/admin-user";
 import type { MapNodeType } from "@smartroute/core/domain/entities/map-node";
+import { findShelfGroup } from "@smartroute/core/domain/value-objects/shelf-group";
 import {
+  catalogAdminRepository,
   edgeRepository,
   nodeRepository,
   priceRepository,
   productListingRepository,
-  productRepository,
   storeRepository,
   walkableMapRepository,
 } from "@/src/infrastructure/container";
@@ -18,7 +19,11 @@ import {
   deleteEdge,
   deleteNode,
   deleteStore,
+  moveProductsToNode,
+  placeShelfGroupOnNode,
   removeProductFromNode,
+  removeProductsFromNode,
+  removeShelfGroupFromNode,
   saveWalkableMap,
   setStorePriceBranch,
   updateNodeLabel,
@@ -26,6 +31,7 @@ import {
   updateStore,
   uploadStoreImage,
 } from "@/src/presentation/actions/admin-store-actions";
+import { setProductsShelfGroup } from "@/src/presentation/actions/admin-product-actions";
 import { requireAdminPage } from "@/src/presentation/auth/admin";
 import { DeleteStoreButton } from "@/src/presentation/components/admin/DeleteStoreButton";
 import { StoreDetailsForm } from "@/src/presentation/components/admin/StoreDetailsForm";
@@ -48,11 +54,15 @@ export default async function AdminStoreDetailPage({
   const store = await storeRepository.findById(storeId);
   if (!store) notFound();
 
-  const [nodes, edges, products, listings, walkableMask, priceBranches, allStores] = await Promise.all([
+  // Imported products (whole price files) are too many to send with the page: the editor
+  // gets the hand-made ones, a per-shelf-group summary, and searches on demand.
+  const [nodes, edges, products, allListings, storeGroups, hasPriceBranch, walkableMask, priceBranches, allStores] = await Promise.all([
     nodeRepository.findByStore(storeId),
     edgeRepository.findByStore(storeId),
-    productRepository.findAllActive(),
+    catalogAdminRepository.listedHandMadeProducts(storeId),
     productListingRepository.findByStore(storeId),
+    catalogAdminRepository.shelfGroupsForStore(storeId),
+    catalogAdminRepository.hasPriceBranch(storeId),
     walkableMapRepository.findMask(storeId),
     manages ? priceRepository.findLinkableBranches() : [],
     manages ? storeRepository.findAll() : [],
@@ -68,6 +78,15 @@ export default async function AdminStoreDetailPage({
     .filter((n) => n.type === "department")
     .sort((a, b) => a.label.localeCompare(b.label, "he"));
   const productById = new Map(products.map((p) => [p.id, p]));
+  const listings = allListings.filter((l) => productById.has(l.productId));
+  const shelfGroups = storeGroups
+    .flatMap((g) => {
+      const group = findShelfGroup(g.groupId);
+      return group ? [{ ...g, name: group.name, department: group.department }] : [];
+    })
+    .sort((a, b) => a.department.localeCompare(b.department, "he") || a.name.localeCompare(b.name, "he"));
+  const unplacedGroups = shelfGroups.filter((g) => g.unplaced > 0);
+  const placedGroupRows = shelfGroups.flatMap((g) => g.nodes.map((n) => ({ group: g, ...n })));
   const storeInventory = listings
     .map((listing) => ({ listing, product: productById.get(listing.productId) }))
     .filter((item) => item.product !== undefined)
@@ -127,6 +146,9 @@ export default async function AdminStoreDetailPage({
         nodeTypes={NODE_TYPES}
         products={products}
         listings={listings}
+        shelfGroups={shelfGroups}
+        hasPriceBranch={hasPriceBranch}
+        canEditProducts={hasSection(principal, "products")}
         createNode={boundCreateNode}
         createEdge={boundCreateEdge}
         deleteNode={deleteNode}
@@ -135,6 +157,11 @@ export default async function AdminStoreDetailPage({
         updateNodeLabel={updateNodeLabel}
         addProductToNode={addProductToNode}
         removeProductFromNode={removeProductFromNode}
+        placeShelfGroupOnNode={placeShelfGroupOnNode}
+        removeShelfGroupFromNode={removeShelfGroupFromNode}
+        moveProductsToNode={moveProductsToNode}
+        removeProductsFromNode={removeProductsFromNode}
+        setProductsShelfGroup={setProductsShelfGroup}
         uploadStoreImage={boundUploadStoreImage}
         mapPixelSourceUrl={mapPixelSourceUrl}
         walkableMask={walkableMask}
@@ -142,7 +169,9 @@ export default async function AdminStoreDetailPage({
       />
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-base font-semibold text-neutral-900">מלאי הסניף ({storeInventory.length})</h2>
+        <h2 className="text-base font-semibold text-neutral-900">
+          מלאי הסניף ({storeInventory.length + placedGroupRows.reduce((sum, r) => sum + r.count, 0)})
+        </h2>
         <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white">
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 text-neutral-500">
@@ -174,7 +203,27 @@ export default async function AdminStoreDetailPage({
                   </td>
                 </tr>
               ))}
-              {storeInventory.length === 0 && (
+              {placedGroupRows.map(({ group, nodeId, count }) => (
+                <tr key={`${group.groupId}-${nodeId}`} className="border-t border-neutral-100 bg-cyan-50/40">
+                  <td className="p-2">
+                    קבוצת מדף: <strong>{group.name}</strong> <span className="text-neutral-400">({count} פריטים)</span>
+                  </td>
+                  <td className="p-2">{group.department}</td>
+                  <td className="whitespace-pre-line p-2">
+                    {nodeLabelById.get(nodeId) ?? (
+                      <span className="font-semibold text-red-600">מחלקה שנמחקה - הסירו ושייכו מחדש</span>
+                    )}
+                  </td>
+                  <td className="p-2">
+                    <form action={removeShelfGroupFromNode.bind(null, storeId, nodeId, group.groupId)}>
+                      <button type="submit" className="text-red-600 hover:underline">
+                        הסר
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              ))}
+              {storeInventory.length === 0 && placedGroupRows.length === 0 && (
                 <tr>
                   <td colSpan={4} className="p-4 text-center text-neutral-400">
                     אין עדיין מוצרים משויכים לסניף זה
@@ -185,6 +234,33 @@ export default async function AdminStoreDetailPage({
           </table>
         </div>
       </section>
+
+      {hasPriceBranch && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-base font-semibold text-neutral-900">
+            קבוצות מדף שלא שויכו ({unplacedGroups.length} מתוך {shelfGroups.filter((g) => g.carried > 0).length})
+          </h2>
+          {unplacedGroups.length === 0 ? (
+            <p className="text-sm text-neutral-500">כל הפריטים מקובץ המחירים של הסניף שויכו לנקודות.</p>
+          ) : (
+            <>
+              <p className="text-xs text-neutral-500">
+                פריטים מקובץ המחירים של הסניף שעוד לא נמצאים באף נקודה. בחרו נקודת מחלקה במפה ושייכו אליה קבוצה.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {unplacedGroups.map((g) => (
+                  <span
+                    key={g.groupId}
+                    className="rounded-full border border-neutral-200 bg-white px-3 py-1 text-sm text-neutral-700"
+                  >
+                    {g.name} <span className="text-neutral-400">{g.unplaced}/{g.carried}</span>
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
+        </section>
+      )}
 
       <section className="flex flex-col gap-3">
         <h2 className="text-base font-semibold text-neutral-900">מחלקות ({departments.length})</h2>
