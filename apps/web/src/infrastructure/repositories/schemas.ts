@@ -101,6 +101,9 @@ export const productSchema = z.object({
   imageUrl: z.string().optional(),
   isActive: z.boolean(),
   chainId: z.string().nullable().optional(),
+  sourceItemKey: z.string().nullable().optional(),
+  shelfGroup: z.string().nullable().optional(),
+  manuallyEdited: z.boolean().optional(),
 });
 
 export const productListingSchema = z.object({
