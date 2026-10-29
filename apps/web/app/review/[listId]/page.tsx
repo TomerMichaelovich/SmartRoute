@@ -1,9 +1,6 @@
 import { notFound } from "next/navigation";
-import {
-  productListingRepository,
-  productRepository,
-  shoppingListRepository,
-} from "@/src/infrastructure/container";
+import { productListingRepository, shoppingListRepository } from "@/src/infrastructure/container";
+import { productsFor } from "@/src/presentation/lib/products-for";
 import { ReviewForm } from "@/src/presentation/components/classification/ReviewForm";
 import { ShareListButton } from "@/src/presentation/components/my-list/ShareListButton";
 import { he } from "@smartroute/core/i18n/he";
@@ -18,7 +15,7 @@ export default async function ReviewPage({
   if (!shoppingList) notFound();
 
   const [allProducts, listings] = await Promise.all([
-    productRepository.findAllActive(),
+    productsFor({ items: shoppingList.items, storeId: shoppingList.storeId }),
     productListingRepository.findByStore(shoppingList.storeId),
   ]);
   // Only offer products this store actually carries in the manual-pick dropdown -

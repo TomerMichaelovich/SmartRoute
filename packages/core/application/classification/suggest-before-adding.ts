@@ -5,7 +5,7 @@ import { dictionaryLayer } from "./layers/dictionary-layer";
 import { HIGH_CONFIDENCE_THRESHOLD, MAX_ALTERNATIVES, fuzzyMatchLayer } from "./layers/fuzzy-match-layer";
 import { normalizationLayer } from "./layers/normalization-layer";
 import { normalizeHebrewText } from "./normalize-hebrew-text";
-import { resolveBeforeBranch } from "./resolve-before-branch";
+import { isGenericProduct, resolveBeforeBranch } from "./resolve-before-branch";
 
 /** Below this, a "suggestion" is noise rather than a plausible correction. */
 const MIN_SUGGESTION_CONFIDENCE = 0.3;
@@ -75,7 +75,7 @@ export async function suggestBeforeAdding(rawText: string, products: Product[]):
   if (resolved.matchedProductId && resolved.confidence >= HIGH_CONFIDENCE_THRESHOLD) return [];
 
   // Only generic products, as everywhere before a branch is picked.
-  const suggestions = rankSuggestions(normalized, products.filter((p) => !p.chainId));
+  const suggestions = rankSuggestions(normalized, products.filter(isGenericProduct));
   // A weak match with nothing else close is still worth confirming.
   if (suggestions.length === 0 && resolved.matchedProductId) {
     return [{ productId: resolved.matchedProductId, confidence: resolved.confidence }];

@@ -32,7 +32,7 @@ export async function classifyLines(
   const [rawClassifications, listings, products] = await Promise.all([
     classificationService.classifyBatch(rawTexts),
     productListingRepository.findByStore(storeId),
-    productRepository.findAllActive(),
+    productRepository.findCatalog(),
   ]);
   return rawTexts.map((rawText, i) => {
     // "3 חלב" / "חלב x2": the count the shopper typed into the line.

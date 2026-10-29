@@ -8,10 +8,11 @@ import { effectiveVariant } from "@smartroute/core/application/basket/effective-
 import { needsVariantChoice } from "@smartroute/core/application/basket/needs-variant-choice";
 import type { ShoppingList, ShoppingListItem, ShoppingListItemVariant } from "@smartroute/core/domain/entities/shopping-list";
 import { resolveBeforeBranch } from "@smartroute/core/application/classification/resolve-before-branch";
-import { classificationService, priceRepository, productRepository } from "@/src/infrastructure/container";
+import { classificationService, priceRepository } from "@/src/infrastructure/container";
 import { MAX_PRICE_FILE_AGE_HOURS } from "@/src/infrastructure/prices/pilot-config";
 import { cityName } from "@/src/infrastructure/prices/settlements";
 import { shortBranchName } from "@/src/infrastructure/prices/branch-name";
+import { productsFor } from "@/src/presentation/lib/products-for";
 import { dedupeByName, equivalentKeys, scaledFallbacks } from "@/src/infrastructure/prices/sku-equivalence";
 import type {
   PriceBranch,
@@ -32,7 +33,7 @@ async function openItems(list: ShoppingList): Promise<ShoppingListItem[]> {
   const unclassified = items.filter((i) => !i.classification?.matchedProductId);
   const [results, products] = await Promise.all([
     unclassified.length > 0 ? classificationService.classifyBatch(unclassified.map((i) => i.rawText)) : [],
-    productRepository.findAllActive(),
+    productsFor({ items }),
   ]);
   const byId = new Map(unclassified.map((item, idx) => [item.id, results[idx]]));
   return items.map((item) => {

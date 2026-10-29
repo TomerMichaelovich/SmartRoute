@@ -7,7 +7,6 @@ import type { ShoppingTrip } from "@smartroute/core/domain/entities/shopping-tri
 import { he } from "@smartroute/core/i18n/he";
 import {
   householdRepository,
-  productRepository,
   routeRepository,
   shoppingListRepository,
   shoppingTripRepository,
@@ -15,6 +14,7 @@ import {
 } from "@/src/infrastructure/container";
 import { getCurrentUser } from "@/src/presentation/auth/dal";
 import { notifyListChanged } from "@/src/presentation/lib/list-push";
+import { productsFor } from "@/src/presentation/lib/products-for";
 
 const itemIdsSchema = {
   collectedItemIds: z.array(z.string()).default([]),
@@ -79,7 +79,7 @@ export async function POST(request: Request) {
 
   const [store, products] = await Promise.all([
     storeRepository.findById(route.storeId),
-    productRepository.findAllActive(),
+    productsFor({ items: list.items }),
   ]);
   const productNameById = new Map(products.map((p) => [p.id, p.canonicalName]));
 
@@ -133,7 +133,7 @@ async function recordListModeTrip(listCode: string, collectedItemIds: string[], 
     return new NextResponse(null, { status: 204 });
   }
 
-  const products = await productRepository.findAllActive();
+  const products = await productsFor({ items: list.items });
   const productNameById = new Map(products.map((p) => [p.id, p.canonicalName]));
   const now = new Date().toISOString();
   const trip: ShoppingTrip = {

@@ -33,7 +33,10 @@ export class ClassificationService {
     const cached = await this.cacheRepo.get(normalized);
     if (cached && cached.source !== "unresolved" && cached.source !== "fuzzy") return { ...cached, rawText };
 
-    const products = await this.productRepo.findAllActive();
+    // The hand-made catalog only: a line names a kind of product ("יוגורט"), and the
+    // answer is cached for everyone. Which of a branch's thousands of imported
+    // products it means is decided per branch, when routing (place-choice).
+    const products = await this.productRepo.findCatalog();
     if (cached) {
       // A cached "unresolved" or fuzzy guess isn't final: the catalog grows, and a
       // text nothing matched yesterday ("פתיתים") may be an alias today ("שוקו" was

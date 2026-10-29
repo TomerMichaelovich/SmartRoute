@@ -4,6 +4,15 @@ import { fuzzyMatch, MAX_ALTERNATIVES, scoreCandidates } from "./layers/fuzzy-ma
 import { normalizeHebrewText } from "./normalize-hebrew-text";
 
 /**
+ * A product any shopper may mean before picking a branch: neither one chain's own
+ * (Product.chainId) nor one barcode imported from a price file (Product.sourceItemKey),
+ * which says nothing about other branches.
+ */
+export function isGenericProduct(product: Product): boolean {
+  return !product.chainId && !product.sourceItemKey;
+}
+
+/**
  * How a list item reads before any branch is picked (the app's home list and
  * list screen). Classification matches against the whole catalog, including
  * products exclusive to one chain (Product.chainId) - but until the shopper
@@ -21,12 +30,12 @@ import { normalizeHebrewText } from "./normalize-hebrew-text";
  * re-resolves it against what that branch carries (resolveAvailability).
  */
 export function resolveBeforeBranch(result: ClassificationResult, products: Product[]): ClassificationResult {
-  const generic = products.filter((p) => !p.chainId);
+  const generic = products.filter(isGenericProduct);
   const normalized = normalizeHebrewText(result.rawText);
   const matched = result.matchedProductId ? products.find((p) => p.id === result.matchedProductId) : undefined;
   const genericSuggestions = () => scoreCandidates(normalized, generic).slice(0, MAX_ALTERNATIVES);
 
-  if (matched && !matched.chainId) {
+  if (matched && isGenericProduct(matched)) {
     return result.alternativeMatches ? { ...result, alternativeMatches: genericSuggestions() } : result;
   }
 

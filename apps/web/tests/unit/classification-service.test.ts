@@ -20,6 +20,15 @@ class FakeProductRepository implements IProductRepository {
   async findAllActive() {
     return this.products.filter((p) => p.isActive);
   }
+  async findCatalog() {
+    return this.products.filter((p) => p.isActive && !p.sourceItemKey);
+  }
+  async findForStore() {
+    return this.findCatalog();
+  }
+  async findByIds(ids: string[]) {
+    return this.products.filter((p) => p.isActive && ids.includes(p.id));
+  }
   async findAll() {
     return this.products;
   }
@@ -198,6 +207,24 @@ describe("ClassificationService", () => {
       new FakeProductRepository([barista, ...demoProducts]),
     );
     expect((await withBarista.classify("קפה נמס")).matchedProductId).toBe(generic.id);
+  });
+
+  it("never matches a product imported from a price file, even by its exact alias", async () => {
+    const generic = productByName("קפה נמס");
+    const imported: Product = {
+      ...generic,
+      id: "sku-bio",
+      canonicalName: "יוגורט ביו 3% תנובה 200 גרם",
+      aliases: ["יוגורט ביו"],
+      normalizedAliases: ["יוגורט ביו 3% תנובה 200 גרם", "יוגורט ביו"],
+      sourceItemKey: "7290000000001",
+    };
+    const withImported = new ClassificationService(
+      [dictionaryLayer, normalizationLayer, fuzzyMatchLayer],
+      new FakeCacheRepository(),
+      new FakeProductRepository([imported, ...demoProducts]),
+    );
+    expect((await withImported.classify("יוגורט ביו")).matchedProductId).not.toBe(imported.id);
   });
 
   it("classifyBatch resolves every item and preserves order", async () => {

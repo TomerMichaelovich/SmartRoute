@@ -122,3 +122,65 @@ describe("place choice", () => {
     expect(choose(items, listings, products).get("1")).toBe(generic.id);
   });
 });
+
+describe("place choice with products imported from a price file", () => {
+  const yogurt = productByName("יוגורט טבעי"); // alias "יוגורט", at n-dairy
+  const yellowCheese = productByName("גבינה צהובה פרוסה");
+  const imported = (id: string, name: string, aliases: string[], itemKey: string): Product => ({
+    ...yogurt,
+    id,
+    canonicalName: name,
+    aliases,
+    normalizedAliases: [name, ...aliases].map(normalizeHebrewText),
+    sourceItemKey: itemKey,
+    shelfGroup: "yogurt",
+  });
+  const bio = imported("sku-bio", "יוגורט ביו 3% תנובה", ["יוגורט", "יוגורט ביו"], "729-bio");
+  const goat = imported("sku-goat", "יוגורט עיזים 3%", ["יוגורט", "יוגורט עיזים"], "729-goat");
+  const at = (product: Product, nodeId: string): ProductListing => ({ id: `l-${product.id}`, productId: product.id, storeId: STORE_ID, nodeId });
+
+  it("doesn't ask when every product answering the line stands at one place", () => {
+    const products = [...demoProducts, bio, goat];
+    const listings = [...demoProductListings, at(bio, "n-dairy"), at(goat, "n-dairy")];
+    const line = item("1", "יוגורט", yogurt.id);
+    expect(placeCandidates(line, STORE_ID, listings, products)).toHaveLength(3);
+    expect(placeQuestions([line], STORE_ID, listings, products)).toEqual([]);
+    const { chosen, flexible } = placeDecisions([line], STORE_ID, listings, products);
+    expect(chosen.get("1")).toBe(yogurt.id);
+    expect(flexible.size).toBe(0);
+  });
+
+  it("asks with one option per place, the classified product standing for its own", () => {
+    const products = [...demoProducts, bio, goat];
+    const listings = [...demoProductListings, at(bio, "n-dairy"), at(goat, "n-produce")];
+    const [question] = placeQuestions([item("1", "יוגורט", yogurt.id)], STORE_ID, listings, products);
+    expect(question.options.map((o) => [o.nodeId, o.productId, o.productIds.length])).toEqual([
+      ["n-dairy", yogurt.id, 2],
+      ["n-produce", goat.id, 1],
+    ]);
+    expect(question.productIds).toEqual([yogurt.id, goat.id]);
+    expect(placeDecisions([item("1", "יוגורט", yogurt.id)], STORE_ID, listings, products).flexible.get("1")).toEqual([yogurt.id, goat.id]);
+  });
+
+  it("finds imported products through the generic product's linked barcodes", () => {
+    const emek = imported("sku-emek", "גבינה עמק 28%", ["עמק"], "729-emek");
+    const products = [...demoProducts, emek];
+    // The generic yellow cheese isn't placed here; the store's own cheese is.
+    const listings = [...demoProductListings.filter((l) => l.productId !== yellowCheese.id), at(emek, "n-dairy")];
+    const line = item("1", "גבינה צהובה", yellowCheese.id);
+    expect(placeCandidates(line, STORE_ID, listings, products)).toEqual([]);
+    const linked = new Map([[yellowCheese.id, new Set(["729-emek"])]]);
+    expect(placeCandidates(line, STORE_ID, listings, products, linked)).toEqual([emek.id]);
+    expect(placeDecisions([line], STORE_ID, listings, products, undefined, linked).chosen.get("1")).toBe(emek.id);
+  });
+
+  it("goes straight to the product of a barcode picked in the cheapest basket", () => {
+    const products = [...demoProducts, bio, goat];
+    const listings = [...demoProductListings, at(bio, "n-dairy"), at(goat, "n-produce")];
+    const line = item("1", "יוגורט", yogurt.id, {
+      variant: { kind: "sku", productId: yogurt.id, itemKey: "729-goat", chosenAt: "x" },
+    });
+    expect(placeQuestions([line], STORE_ID, listings, products)).toEqual([]);
+    expect(placeDecisions([line], STORE_ID, listings, products).chosen.get("1")).toBe(goat.id);
+  });
+});

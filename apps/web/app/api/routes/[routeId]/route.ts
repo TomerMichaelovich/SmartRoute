@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import {
   nodeRepository,
-  productRepository,
   routeRepository,
   shoppingListRepository,
   storeRepository,
 } from "@/src/infrastructure/container";
 import { resolveListAccess } from "@/src/presentation/auth/list-access";
+import { productsFor } from "@/src/presentation/lib/products-for";
 
 // GET-by-id counterpart to POST /api/routes (route.ts, one level up), which creates routes.
 // Needed because the web app's /route/[routeId] page fetches route/store/nodes/shoppingList/
@@ -22,11 +22,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ rou
     return NextResponse.json({ error: `Route not found: ${routeId}` }, { status: 404 });
   }
 
-  const [store, nodes, shoppingList, products] = await Promise.all([
+  const [store, nodes, shoppingList] = await Promise.all([
     storeRepository.findById(route.storeId),
     nodeRepository.findByStore(route.storeId),
     shoppingListRepository.findById(route.shoppingListId),
-    productRepository.findAllActive(),
   ]);
   if (!store || !shoppingList) {
     return NextResponse.json({ error: `Store or shopping list not found for route: ${routeId}` }, { status: 404 });
@@ -36,6 +35,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ rou
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
+  const products = await productsFor({ items: shoppingList.items });
   const productById = new Map(products.map((p) => [p.id, p]));
   const itemById = new Map(shoppingList.items.map((i) => [i.id, i]));
 
