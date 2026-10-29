@@ -8,6 +8,7 @@ import { PgAdminUserRepository } from "./repositories/postgres/pg-admin-user-rep
 import { PgAnalyticsRepository } from "./repositories/postgres/pg-analytics-repository";
 import { PgBranchLocationRepository } from "./repositories/postgres/pg-branch-location-repository";
 import { PgCatalogAdminRepository } from "./repositories/postgres/pg-catalog-admin-repository";
+import { PgImportedCatalogRepository } from "./repositories/postgres/pg-imported-catalog-repository";
 import { PgClassificationCacheRepository } from "./repositories/postgres/pg-classification-cache-repository";
 import { PgEdgeRepository } from "./repositories/postgres/pg-edge-repository";
 import { PgHouseholdRepository } from "./repositories/postgres/pg-household-repository";
@@ -39,6 +40,7 @@ export const edgeRepository = new PgEdgeRepository();
 export const productRepository = new PgProductRepository();
 export const productListingRepository = new PgProductListingRepository();
 export const catalogAdminRepository = new PgCatalogAdminRepository();
+export const importedCatalogRepository = new PgImportedCatalogRepository();
 export const shoppingListRepository = new PgShoppingListRepository();
 export const shoppingTripRepository = new PgShoppingTripRepository();
 export const routeRepository = new PgRouteRepository();

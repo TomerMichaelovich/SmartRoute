@@ -7,8 +7,10 @@ import {
 import { effectiveVariant } from "@smartroute/core/application/basket/effective-variant";
 import { needsVariantChoice } from "@smartroute/core/application/basket/needs-variant-choice";
 import type { ShoppingList, ShoppingListItem, ShoppingListItemVariant } from "@smartroute/core/domain/entities/shopping-list";
+import { listLineCores } from "@smartroute/core/application/classification/list-line";
+import { normalizeHebrewText } from "@smartroute/core/application/classification/normalize-hebrew-text";
 import { resolveBeforeBranch } from "@smartroute/core/application/classification/resolve-before-branch";
-import { classificationService, priceRepository } from "@/src/infrastructure/container";
+import { classificationService, importedCatalogRepository, priceRepository } from "@/src/infrastructure/container";
 import { MAX_PRICE_FILE_AGE_HOURS } from "@/src/infrastructure/prices/pilot-config";
 import { cityName } from "@/src/infrastructure/prices/settlements";
 import { shortBranchName } from "@/src/infrastructure/prices/branch-name";
@@ -43,23 +45,50 @@ async function openItems(list: ShoppingList): Promise<ShoppingListItem[]> {
   });
 }
 
+/** Where an item's price options are kept: under its generic product, or under the line itself (see withLineOptions). */
+const optionsKey = (item: ShoppingListItem) => item.classification?.matchedProductId ?? `line:${item.id}`;
+
+/**
+ * A line no generic product matches ("פיקניקית") may still be in the price files:
+ * the products imported for exactly that text (or its form without counts and
+ * brand) are its options, so it's priced - and asked about - like any other.
+ */
+async function withLineOptions(items: ShoppingListItem[], options: Map<string, SkuOption[]>): Promise<Map<string, SkuOption[]>> {
+  const lines = items.filter((i) => !i.classification?.matchedProductId);
+  if (lines.length === 0) return options;
+  const textsOf = (item: ShoppingListItem) => {
+    const normalized = normalizeHebrewText(item.rawText);
+    return [normalized, ...listLineCores(normalized)];
+  };
+  const byText = await importedCatalogRepository.skuOptionsByAlias([...new Set(lines.flatMap(textsOf))]);
+  const merged = new Map(options);
+  for (const item of lines) {
+    const found = textsOf(item)
+      .map((text) => byText.get(text))
+      .find((o) => o && o.length > 0);
+    if (found) merged.set(optionsKey(item), found);
+  }
+  return merged;
+}
+
 // Enough that a specific product is there to find (the popup searches them).
 const MAX_OPTIONS = 60;
 
 export async function variantOptionsFor(list: ShoppingList) {
   const items = await openItems(list);
   const productIds = [...new Set(items.map((i) => i.classification?.matchedProductId).filter((id): id is string => !!id))];
-  const options = await priceRepository.findSkuOptions(productIds);
+  const options = await withLineOptions(items, await priceRepository.findSkuOptions(productIds));
   return items
     .map((item) => {
-      const itemOptions = options.get(item.classification?.matchedProductId ?? "") ?? [];
+      const itemOptions = options.get(optionsKey(item)) ?? [];
       return { item, itemOptions };
     })
     .filter(({ item, itemOptions }) => needsVariantChoice(item, itemOptions))
     .map(({ item, itemOptions }) => ({
       itemId: item.id,
       rawText: item.rawText,
-      productId: item.classification!.matchedProductId!,
+      // None for a line priced through imported products: its pick is saved without one.
+      productId: item.classification?.matchedProductId,
       options: dedupeByName(itemOptions).slice(0, MAX_OPTIONS).map((o) => ({
         itemKey: o.itemKey,
         name: o.name,
@@ -113,7 +142,7 @@ function buildRequirements(
     const override = overrides.get(item.id);
     const variant = override ? effectiveVariant({ ...item, variant: override }) : effectiveVariant(item);
     const quantity = item.quantity && item.quantity > 0 ? item.quantity : 1;
-    const productOptions = options.get(item.classification?.matchedProductId ?? "") ?? [];
+    const productOptions = options.get(optionsKey(item)) ?? [];
     if (variant?.kind === "sku" && variant.itemKey) {
       requirements.push({
         itemId: item.id,
@@ -172,7 +201,7 @@ export async function quoteBasket(
     distanceKm: distanceKm(input.location, b),
   }));
   const productIds = [...new Set(items.map((i) => i.classification?.matchedProductId).filter((id): id is string => !!id))];
-  const options = await priceRepository.findSkuOptions(productIds);
+  const options = await withLineOptions(items, await priceRepository.findSkuOptions(productIds));
   const { requirements, unpriceable } = buildRequirements(items, options, input.overrides);
 
   const rows = await priceRepository.findCheapestPrices(
