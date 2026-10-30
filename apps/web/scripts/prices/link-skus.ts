@@ -55,9 +55,11 @@ async function main() {
     branchCount: r.branch_count,
   }));
   // Chain-exclusive products (private labels) are left out for now: their
-  // stores.chain_id isn't mapped to the retail chains yet.
+  // stores.chain_id isn't mapped to the retail chains yet. So are products imported
+  // from price files (source_item_key): each stands for its own one barcode.
   const allProducts = (await sql`SELECT id, canonical_name, normalized_aliases, department FROM products
-                                 WHERE is_active AND chain_id IS NULL ORDER BY canonical_name`) as ProductRow[];
+                                 WHERE is_active AND chain_id IS NULL AND source_item_key IS NULL
+                                 ORDER BY canonical_name`) as ProductRow[];
   const candidatesOf = new Map(allProducts.map((p) => [p.id, findSkuCandidates(p.normalized_aliases, items)]));
   // item key -> the longest alias (in words) any product matches it by, and which product.
   const claims = new Map<string, { productId: string; words: number }[]>();
@@ -190,22 +192,22 @@ async function main() {
     }
   };
   await Promise.all(Array.from({ length: verifier === "claude" ? CLAUDE_CONCURRENCY : 1 }, worker));
-  // Chain-exclusive products are linked by hand only: rules rows on them are leftovers from
-  // before they were marked exclusive (they'd outvote the one barcode the product stands for).
+  // Chain-exclusive and imported products are linked by hand (or by the import) only: rules
+  // rows on them are leftovers (they'd outvote the one barcode the product stands for).
   if (verifier === "rules") {
     const filter = productIds ? `AND p.id = ANY($1::text[])` : "";
     const params = productIds ? [productIds] : [];
     if (dryRun) {
       const [{ n }] = (await sql.query(
         `SELECT count(*)::int AS n FROM product_sku_links l JOIN products p ON p.id = l.product_id
-         WHERE p.chain_id IS NOT NULL AND l.source = 'rules' ${filter}`,
+         WHERE (p.chain_id IS NOT NULL OR p.source_item_key IS NOT NULL) AND l.source = 'rules' ${filter}`,
         params,
       )) as { n: number }[];
-      if (n) console.log(`\nchain-exclusive products: would remove ${n} rules links`);
+      if (n) console.log(`\nchain-exclusive and imported products: would remove ${n} rules links`);
     } else {
       await sql.query(
         `DELETE FROM product_sku_links l USING products p
-         WHERE p.id = l.product_id AND p.chain_id IS NOT NULL AND l.source = 'rules' ${filter}`,
+         WHERE p.id = l.product_id AND (p.chain_id IS NOT NULL OR p.source_item_key IS NOT NULL) AND l.source = 'rules' ${filter}`,
         params,
       );
     }
