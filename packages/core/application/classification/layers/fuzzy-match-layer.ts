@@ -43,8 +43,12 @@ function editDistance(a: string, b: string): number {
   return prev[b.length];
 }
 
-// Leading words that qualify the noun after them: "דג סלמון" / "פילה סלמון" are both salmon.
-const QUALIFIERS = new Set(["דג", "דגי", "פילה", "מיני", "שימורי", "שימורים"]);
+// Leading words that qualify the noun after them: "דג סלמון" / "פילה סלמון" are both salmon,
+// and a package says nothing about what's in it - "שקיות פח" are bin bags, not tea bags.
+const QUALIFIERS = new Set([
+  "דג", "דגי", "פילה", "מיני", "שימורי", "שימורים",
+  "שקית", "שקיות", "קופסת", "בקבוק", "פחית", "צנצנת", "חבילת",
+]);
 
 const contentWords = (text: string) =>
   text

@@ -40,6 +40,8 @@ Then check it: `npx tsx scripts/catalog/validate-enrichment.ts --chain=<chain> -
 - Brand + type ("חלב תנובה", "שמפו הד אנד שולדרס"), and the brand alone where people
   use it as the product's name ("במבה", "ביסלי", "נס קפה", "קוטג'").
 - Common spelling variants and abbreviations ("קוטג", "שוקו", "עגבניות שרי" / "שרי").
+- The colloquial name, even when it isn't literally true: malt is "בירה שחורה" (though
+  it has no alcohol), Bamba is "במבה", disposable cups are "כוסות חד פעמי".
 - Hebrew, the way it's spoken - not English, unless that's how people write it.
 - Not the size alone, not the barcode, not a repeat of the name.
 - **Test every alias: if a shopper writes exactly this, is this item a sensible answer?**

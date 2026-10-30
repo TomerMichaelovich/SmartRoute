@@ -186,6 +186,23 @@ describe("ClassificationService", () => {
     expect((await service.classify("צלי בקר")).matchedProductId).not.toBe(productByName("בצל יבש").id);
   });
 
+  it("looks past a package word to what's in it", async () => {
+    const tea: Product = {
+      ...productByName("קפה נמס"),
+      id: "tea",
+      canonicalName: "תה",
+      aliases: ["שקיות תה"],
+      normalizedAliases: ["תה", "שקיות תה"],
+    };
+    const withTea = new ClassificationService(
+      [dictionaryLayer, normalizationLayer, fuzzyMatchLayer],
+      new FakeCacheRepository(),
+      new FakeProductRepository([...demoProducts, tea]),
+    );
+    expect((await withTea.classify("שקיות פח")).matchedProductId).not.toBe(tea.id);
+    expect((await withTea.classify("שקית תה")).matchedProductId).toBe(tea.id);
+  });
+
   it("fuzzy-matches past a qualifier word or a swapped word order", async () => {
     expect((await service.classify("דג סלמון")).matchedProductId).toBe(productByName("פילה סלמון").id);
     expect((await service.classify("תירס שימורים")).matchedProductId).toBe(productByName("שימורי תירס").id);
