@@ -190,6 +190,7 @@ export const SHELF_GROUPS: readonly ShelfGroup[] = [
   ...department("בית וגן", "other", [
     ["tools-hardware", "כלי עבודה ותחזוקה"],
     ["garden", "גינה, זרעים ועציצים"],
+    ["furniture", "ריהוט (כיסאות, כורסאות, שולחנות)"],
     ["bbq-camping", "מנגל, פחמים וקמפינג"],
     ["seasonal-holiday", "מוצרי חג ועונה"],
   ]),

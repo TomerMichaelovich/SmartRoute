@@ -68,7 +68,9 @@ physically sits in an Israeli supermarket, not just what it is:
   chickpeas `canned-legumes`; frozen schnitzel `frozen-chicken`.
 - Weighted items are usually produce, the deli or butcher counter, fresh bread, or
   nuts/dried fruit sold by weight.
-- Non-food has groups too (clothing, toys, small appliances, garden, tools...).
+- Non-food has groups too (clothing, toys, small appliances, garden, furniture, tools...).
+  Indoor chairs, armchairs and tables are `furniture`; beach chairs go with camping
+  (`bbq-camping`), garden chairs with `garden`.
 - Not something taken off a shelf - delivery fees, coupons ("ה.נ קופון"), deposits,
   club sign-up, "פריט כללי" - is `not-a-product`, with `aliases: []`.
 
