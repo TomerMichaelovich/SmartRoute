@@ -102,10 +102,16 @@ async function main() {
         },
         setWhere: drizzleSql`${products.manuallyEdited} = false`,
       });
+    // The product's own barcode: an "import" link even if the nightly linker got there
+    // first ("rules" links on imported products are cleaned up, and would take it along).
     await db
       .insert(productSkuLinks)
       .values(batch.map((p) => ({ productId: p.id, itemKey: p.sourceItemKey!, source: "import", score: 1, isTypical: true, updatedAt: now })))
-      .onConflictDoNothing();
+      .onConflictDoUpdate({
+        target: [productSkuLinks.productId, productSkuLinks.itemKey],
+        set: { source: "import", score: 1, isTypical: true, updatedAt: now },
+        setWhere: drizzleSql`${productSkuLinks.source} = 'rules'`,
+      });
     console.log(`  wrote ${Math.min(i + WRITE_BATCH, plan.upsert.length)}/${plan.upsert.length}`);
   }
   for (const [ids, isActive] of [
