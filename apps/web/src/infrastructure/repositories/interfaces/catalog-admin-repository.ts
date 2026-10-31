@@ -46,8 +46,12 @@ export interface ICatalogAdminRepository {
   shelfGroupsForStore(storeId: string): Promise<StoreShelfGroup[]>;
   /** The group's active products in the store's branch file that aren't placed in the store yet. */
   unplacedGroupProductIds(storeId: string, groupId: string): Promise<string[]>;
-  /** The group's products placed at this node. */
-  groupProductsAtNode(storeId: string, nodeId: string, groupId: string): Promise<Array<{ id: string; canonicalName: string }>>;
+  /** The group's products placed at this node, with the aliases shoppers find them by. */
+  groupProductsAtNode(
+    storeId: string,
+    nodeId: string,
+    groupId: string,
+  ): Promise<Array<{ id: string; canonicalName: string; aliases: string[] }>>;
   /** Hand-made (not imported) products placed in the store - few enough to load whole. */
   listedHandMadeProducts(storeId: string): Promise<Product[]>;
   /** Active products matching the text that aren't placed in the store yet, best candidates first. */

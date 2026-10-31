@@ -119,7 +119,7 @@ export function ShelfGroupPanel(props: ShelfGroupPanelProps) {
 
 function GroupRow({ group, ...props }: ShelfGroupPanelProps & { group: NodeShelfGroup }) {
   const { storeId, nodeId } = props;
-  const [items, setItems] = useState<Array<{ id: string; canonicalName: string }> | null>(null);
+  const [items, setItems] = useState<Array<{ id: string; canonicalName: string; aliases: string[] }> | null>(null);
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [moveTo, setMoveTo] = useState("");
@@ -188,10 +188,11 @@ function GroupRow({ group, ...props }: ShelfGroupPanelProps & { group: NodeShelf
               </label>
               <ul className="flex max-h-64 flex-col overflow-y-auto">
                 {items.map((item) => (
-                  <li key={item.id} className="flex items-center justify-between gap-2 py-0.5">
-                    <label className="flex items-center gap-2">
+                  <li key={item.id} className="flex items-start justify-between gap-2 py-1">
+                    <label className="flex items-start gap-2">
                       <input
                         type="checkbox"
+                        className="mt-1"
                         checked={selected.has(item.id)}
                         onChange={(e) => {
                           const next = new Set(selected);
@@ -200,7 +201,13 @@ function GroupRow({ group, ...props }: ShelfGroupPanelProps & { group: NodeShelf
                           setSelected(next);
                         }}
                       />
-                      {item.canonicalName}
+                      <span className="flex flex-col">
+                        {item.canonicalName}
+                        {/* What a shopper's list matches this item by - a wrong one shows here. */}
+                        <span className="text-xs text-neutral-500">
+                          {item.aliases.length > 0 ? item.aliases.join(" · ") : "אין כינויים"}
+                        </span>
+                      </span>
                     </label>
                     {props.canEditProducts && (
                       <a
