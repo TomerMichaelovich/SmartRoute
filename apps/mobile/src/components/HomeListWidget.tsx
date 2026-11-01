@@ -10,6 +10,7 @@ import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ShoppingList } from "@smartroute/core/domain/entities/shopping-list";
 import { he } from "@smartroute/core/i18n/he";
 import { apiFetch } from "@/lib/api";
+import { isKnownLine } from "@/lib/known-line";
 import { Button } from "@/components/Button";
 import { DidYouMeanModal } from "@/components/DidYouMeanModal";
 import { PhotoListModal, type PhotoListStage } from "@/components/PhotoListModal";
@@ -319,7 +320,7 @@ export function HomeListWidget({
   async function handleSubmitAdd() {
     const rawText = addText.trim();
     if (!rawText || !selected?.shareCode) return;
-    const suggestions = (await suggestBeforeAdding(rawText, products))
+    const suggestions = (await suggestBeforeAdding(rawText, products, isKnownLine))
       .map((s) => productById.get(s.productId))
       .filter((p): p is Product => p !== undefined);
     if (suggestions.length === 0) {
@@ -787,7 +788,7 @@ export function HomeListWidget({
                 const product = matchedId ? productById.get(matchedId) : undefined;
                 // What was typed, and under it what was chosen for it (popup / in store).
                 const { name, chosen } = itemDisplay(item, products);
-                const icon = CATEGORY_ICON[product?.category ?? "other"];
+                const icon = CATEGORY_ICON[product?.category ?? item.classification?.category ?? "other"];
                 // No checkbox: the list is for writing only - items are marked
                 // as collected on the route screen, which tracks that itself.
                 return (

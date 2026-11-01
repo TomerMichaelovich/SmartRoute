@@ -116,6 +116,7 @@ export const productListingSchema = z.object({
 export const classificationSourceSchema = z.enum([
   "dictionary",
   "normalization",
+  "alias",
   "fuzzy",
   "llm",
   "unresolved",
@@ -124,6 +125,9 @@ export const classificationSourceSchema = z.enum([
 export const classificationResultSchema = z.object({
   rawText: z.string(),
   matchedProductId: z.string().optional(),
+  matchedAlias: z.string().max(120).optional(),
+  department: z.string().max(120).optional(),
+  category: productCategorySchema.optional(),
   confidence: z.number(),
   source: classificationSourceSchema,
   alternativeMatches: z

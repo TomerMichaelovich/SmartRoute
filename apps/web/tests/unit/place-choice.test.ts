@@ -174,6 +174,19 @@ describe("place choice with products imported from a price file", () => {
     expect(placeDecisions([line], STORE_ID, listings, products, undefined, linked).chosen.get("1")).toBe(emek.id);
   });
 
+  it("finds imported products by the alias classification corrected a typo to", () => {
+    const gin = imported("sku-gin", "בומביי ג'ין 1 ליטר", ["ג'ין", "בומביי"], "729-gin");
+    const products = [...demoProducts, gin];
+    const listings = [...demoProductListings, at(gin, "n-beverages")];
+    const line: ShoppingListItem = {
+      id: "1",
+      rawText: "בומבאי",
+      classification: { rawText: "בומבאי", matchedAlias: "בומביי", confidence: 0.7, source: "fuzzy" },
+    };
+    expect(placeCandidates(line, STORE_ID, listings, products)).toEqual([gin.id]);
+    expect(placeDecisions([line], STORE_ID, listings, products).chosen.get("1")).toBe(gin.id);
+  });
+
   it("goes straight to the product of a barcode picked in the cheapest basket", () => {
     const products = [...demoProducts, bio, goat];
     const listings = [...demoProductListings, at(bio, "n-dairy"), at(goat, "n-produce")];

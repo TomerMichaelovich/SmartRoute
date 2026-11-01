@@ -6,6 +6,7 @@ import { sameInstant } from "@smartroute/core/application/shopping-list/same-ins
 import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ShoppingList, ShoppingListItem } from "@smartroute/core/domain/entities/shopping-list";
 import type { Store } from "@smartroute/core/domain/entities/store";
+import { isRecognized } from "@smartroute/core/domain/entities/classification-result";
 import { he } from "@smartroute/core/i18n/he";
 import { apiFetch } from "@/lib/api";
 import { siteUrl } from "@/lib/app-links";
@@ -257,7 +258,7 @@ export default function MyListScreen() {
     }
   }
 
-  const unresolvedCount = items.filter((item) => !item.classification?.matchedProductId).length;
+  const unresolvedCount = items.filter((item) => !isRecognized(item.classification)).length;
 
   // The branch is picked on the next screen, which builds the route from the
   // saved list - so save pending edits first or they'd be left out.

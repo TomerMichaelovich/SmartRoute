@@ -10,6 +10,7 @@ import type { ShoppingList, ShoppingListItem, ShoppingListItemVariant } from "@s
 import { listLineCores } from "@smartroute/core/application/classification/list-line";
 import { normalizeHebrewText } from "@smartroute/core/application/classification/normalize-hebrew-text";
 import { resolveBeforeBranch } from "@smartroute/core/application/classification/resolve-before-branch";
+import { isRecognized } from "@smartroute/core/domain/entities/classification-result";
 import { classificationService, importedCatalogRepository, priceRepository } from "@/src/infrastructure/container";
 import { MAX_PRICE_FILE_AGE_HOURS } from "@/src/infrastructure/prices/pilot-config";
 import { cityName } from "@/src/infrastructure/prices/settlements";
@@ -32,7 +33,7 @@ import type {
  */
 async function openItems(list: ShoppingList): Promise<ShoppingListItem[]> {
   const items = list.items.filter((i) => !i.checked);
-  const unclassified = items.filter((i) => !i.classification?.matchedProductId);
+  const unclassified = items.filter((i) => !isRecognized(i.classification));
   const [results, products] = await Promise.all([
     unclassified.length > 0 ? classificationService.classifyBatch(unclassified.map((i) => i.rawText)) : [],
     productsFor({ items }),
@@ -40,7 +41,7 @@ async function openItems(list: ShoppingList): Promise<ShoppingListItem[]> {
   const byId = new Map(unclassified.map((item, idx) => [item.id, results[idx]]));
   return items.map((item) => {
     const fresh = byId.get(item.id);
-    const classification = fresh?.matchedProductId ? fresh : item.classification;
+    const classification = isRecognized(fresh) ? fresh : item.classification;
     return classification ? { ...item, classification: resolveBeforeBranch(classification, products) } : item;
   });
 }
@@ -58,7 +59,9 @@ async function withLineOptions(items: ShoppingListItem[], options: Map<string, S
   if (lines.length === 0) return options;
   const textsOf = (item: ShoppingListItem) => {
     const normalized = normalizeHebrewText(item.rawText);
-    return [normalized, ...listLineCores(normalized)];
+    // The alias a typo was recognized as ("במבע" -> "במבה") names them too.
+    const alias = item.classification?.matchedAlias;
+    return [normalized, ...listLineCores(normalized), ...(alias ? [normalizeHebrewText(alias)] : [])];
   };
   const byText = await importedCatalogRepository.skuOptionsByAlias([...new Set(lines.flatMap(textsOf))]);
   const merged = new Map(options);

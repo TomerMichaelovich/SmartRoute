@@ -1,7 +1,8 @@
+import type { IImportedAliasRepository } from "@smartroute/core/application/ports/imported-alias-repository";
 import type { SkuOption } from "./price-repository";
 
 /** Products imported from price files, read by what shoppers type. */
-export interface IImportedCatalogRepository {
+export interface IImportedCatalogRepository extends IImportedAliasRepository {
   /**
    * The barcodes of imported products answering exactly to each normalized text
    * (their name or an alias), for a list line no generic product matches: the

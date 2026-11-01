@@ -87,7 +87,8 @@ export default function ListChecklistScreen() {
         ? resolveBeforeBranch(item.classification, state.products).matchedProductId
         : undefined;
       const product = matchedId ? productById.get(matchedId) : undefined;
-      const department = product?.department || he.listMode.otherDepartment;
+      // A line recognized as the stores' products' alias goes where those stand.
+      const department = product?.department || item.classification?.department || he.listMode.otherDepartment;
       const rows = byDepartment.get(department) ?? [];
       // What was typed, and under it what was chosen for it (popup / in store).
       const { name, chosen } = itemDisplay(item, state.products);

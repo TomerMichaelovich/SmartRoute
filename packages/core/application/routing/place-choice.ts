@@ -69,7 +69,8 @@ function storePlaces(storeId: string, listings: ProductListing[], products: Prod
  * Products carried at this store that the item's text names, the classified one
  * first. Fewer than two: nothing to choose. A product named by exactly what was
  * typed settles it: "שישיית קולה" is the six-pack, even though without its pack
- * word ("קולה") it would also name the single bottle. Only when nothing matches
+ * word ("קולה") it would also name the single bottle - and so does the imported
+ * products' alias classification corrected a typo to. Only when nothing matches
  * the line as typed does its cleaner form count ("2 טחינה" -> "טחינה"), along with
  * the imported products linked to the classified generic product (`genericSkuKeys`).
  */
@@ -85,6 +86,10 @@ export function placeCandidates(
   const matched = item.classification?.matchedProductId;
   const exact = places.byAlias.get(normalized) ?? [];
   if (exact.length > 0) return [...exact].sort((a, b) => Number(b === matched) - Number(a === matched));
+  // Recognized as an imported products' alias up to a typo ("במבע" -> "במבה"): that alias.
+  const alias = item.classification?.matchedAlias;
+  const byAlias = alias ? (places.byAlias.get(normalizeHebrewText(alias)) ?? []) : [];
+  if (byAlias.length > 0) return [...byAlias];
 
   const candidates = new Set<string>();
   if (matched && places.carried.has(matched)) candidates.add(matched);

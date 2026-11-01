@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { normalizeHebrewText } from "@smartroute/core/application/classification/normalize-hebrew-text";
 import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ShoppingListItem } from "@smartroute/core/domain/entities/shopping-list";
 import { he } from "@smartroute/core/i18n/he";
@@ -33,8 +34,12 @@ function confidenceBadge(
 ): { label: string; color: string; background: string } | null {
   const c = item.classification;
   // Only a missing product means "not found": a hand-picked product keeps the
-  // item's original source, which may well be "unresolved" (e.g. a typo).
+  // item's original source, which may well be "unresolved" (e.g. a typo). A line
+  // recognized as what the stores' own products are called ("ג'ין") has none either.
   if (!c?.matchedProductId) {
+    if (c?.matchedAlias) {
+      return c.confidence < 0.85 ? { label: he.review.checkThis, color: "#b45309", background: "#fffbeb" } : null;
+    }
     return { label: he.review.notFound, color: "#b91c1c", background: "#fef2f2" };
   }
   if (showAvailability && c.availableAtStore === false) {
@@ -67,7 +72,14 @@ export function ClassificationReviewRow({
   const [showFullList, setShowFullList] = useState(suggestions.length === 0);
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const selectedProductName = selectedProductId ? productById.get(selectedProductId)?.canonicalName : undefined;
+  // A line recognized only as the stores' products' alias reads as that alias - when a
+  // typo was corrected ("במבע" -> "במבה"); as typed otherwise.
+  const alias = selectedProductId ? undefined : item.classification?.matchedAlias;
+  const selectedProductName = selectedProductId
+    ? productById.get(selectedProductId)?.canonicalName
+    : alias && normalizeHebrewText(alias) !== normalizeHebrewText(item.rawText)
+      ? alias
+      : alias && item.rawText;
 
   const picker = (
     <ProductPickerModal

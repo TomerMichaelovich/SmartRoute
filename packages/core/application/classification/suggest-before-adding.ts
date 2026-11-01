@@ -50,9 +50,16 @@ function rankSuggestions(normalized: string, products: Product[]): Classificatio
  *
  * Returns [] when the text is fine as typed (a confident match) or when
  * nothing comes close - then it's simply added and the server classifies it.
- * Otherwise returns the closest generic products, best first.
+ * Otherwise returns the closest generic products, best first - unless
+ * `isKnownLine` (asked only then) says the server recognizes the line as it is:
+ * the device has the generic catalog, not the aliases of the thousands of
+ * products imported from price files ("ג'ין" isn't a typo of anything).
  */
-export async function suggestBeforeAdding(rawText: string, products: Product[]): Promise<ClassificationAlternative[]> {
+export async function suggestBeforeAdding(
+  rawText: string,
+  products: Product[],
+  isKnownLine?: (rawText: string) => Promise<boolean>,
+): Promise<ClassificationAlternative[]> {
   const normalized = normalizeHebrewText(rawText);
   if (!normalized) return [];
 
@@ -73,6 +80,7 @@ export async function suggestBeforeAdding(rawText: string, products: Product[]):
 
   const resolved = resolveBeforeBranch(result, products);
   if (resolved.matchedProductId && resolved.confidence >= HIGH_CONFIDENCE_THRESHOLD) return [];
+  if (isKnownLine && (await isKnownLine(rawText).catch(() => false))) return [];
 
   // Only generic products, as everywhere before a branch is picked.
   const suggestions = rankSuggestions(normalized, products.filter(isGenericProduct));

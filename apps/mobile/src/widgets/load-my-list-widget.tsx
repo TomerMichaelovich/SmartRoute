@@ -60,7 +60,7 @@ export async function loadMyListWidget() {
         id: item.id,
         // As typed, like the in-app list (the widget has room for one line).
         name: item.rawText,
-        category: product?.category ?? "other",
+        category: product?.category ?? item.classification?.category ?? "other",
       };
     });
 

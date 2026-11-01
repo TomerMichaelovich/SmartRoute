@@ -1,6 +1,7 @@
 import { ClassificationService } from "@smartroute/core/application/classification/classification-service";
 import { dictionaryLayer } from "@smartroute/core/application/classification/layers/dictionary-layer";
 import { fuzzyMatchLayer } from "@smartroute/core/application/classification/layers/fuzzy-match-layer";
+import { importedAliasLayer } from "@smartroute/core/application/classification/layers/imported-alias-layer";
 import { createLlmFallbackLayer } from "@smartroute/core/application/classification/layers/llm-fallback-layer";
 import { normalizationLayer } from "@smartroute/core/application/classification/layers/normalization-layer";
 import { AnthropicClassifier } from "./llm/anthropic-classifier";
@@ -61,7 +62,8 @@ export const adminUserRepository = new PgAdminUserRepository();
 const llmClassifier = new AnthropicClassifier();
 
 export const classificationService = new ClassificationService(
-  [dictionaryLayer, normalizationLayer, fuzzyMatchLayer, createLlmFallbackLayer(llmClassifier)],
+  [dictionaryLayer, normalizationLayer, importedAliasLayer, fuzzyMatchLayer, createLlmFallbackLayer(llmClassifier)],
   classificationCacheRepository,
   productRepository,
+  importedCatalogRepository,
 );
