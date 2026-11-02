@@ -1,4 +1,4 @@
-import { and, asc, count, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, count, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import type { Product } from "@smartroute/core/domain/entities/product";
 import { db, rawSql } from "../../db/client";
 import { products } from "../../db/schema";
@@ -184,9 +184,18 @@ export class PgCatalogAdminRepository implements ICatalogAdminRepository {
   }
 
   async searchProducts(query: AdminProductQuery): Promise<{ products: Product[]; total: number }> {
+    // Chain-internal keys are "<chainId>:<code>"; only the code is compared.
+    const code = query.barcode?.replace(/^0+/, "");
     const where = and(
       query.imported ? isNotNull(products.sourceItemKey) : isNull(products.sourceItemKey),
-      query.text ? sql`${products.normalizedAliases}::text LIKE ${likePattern(query.text)}` : undefined,
+      or(
+        query.text ? sql`${products.normalizedAliases}::text LIKE ${likePattern(query.text)}` : undefined,
+        code
+          ? sql`(ltrim(regexp_replace(${products.sourceItemKey}, '^.*:', ''), '0') = ${code}
+              OR ${products.id} IN (SELECT s.product_id FROM product_sku_links s
+                WHERE NOT s.is_rejected AND ltrim(regexp_replace(s.item_key, '^.*:', ''), '0') = ${code}))`
+          : undefined,
+      ),
       query.department ? eq(products.department, query.department) : undefined,
       query.shelfGroup ? eq(products.shelfGroup, query.shelfGroup) : undefined,
     );

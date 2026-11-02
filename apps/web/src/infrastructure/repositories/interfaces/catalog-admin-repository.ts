@@ -37,6 +37,11 @@ export interface AliasProduct {
 export interface AdminProductQuery {
   /** Hebrew-normalized text matched against name and aliases. */
   text?: string;
+  /**
+   * Digits matched (leading zeros aside) against the product's own barcode or a chain SKU
+   * linked to it. Given with `text`, a product matching either one is found.
+   */
+  barcode?: string;
   department?: string;
   shelfGroup?: string;
   /** true: only products imported from price files; false: only hand-made ones. */

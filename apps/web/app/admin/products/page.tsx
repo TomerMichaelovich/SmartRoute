@@ -80,6 +80,8 @@ export default async function AdminProductsPage({
     catalogAdminRepository.searchProducts({
       imported,
       text: normalizeHebrewText(q) || undefined,
+      // All digits: a barcode, though a name or alias holding those digits still matches.
+      barcode: /^\d+$/.test(q) ? q : undefined,
       department,
       shelfGroup: group,
       offset: (page - 1) * PAGE_SIZE,
@@ -121,7 +123,7 @@ export default async function AdminProductsPage({
         <input
           name="q"
           defaultValue={q}
-          placeholder="חיפוש לפי שם או כינוי"
+          placeholder="חיפוש לפי שם, כינוי או ברקוד"
           className="min-w-48 flex-1 rounded-lg border border-neutral-300 p-2 text-sm"
         />
         <select name="department" defaultValue={department ?? ""} className="rounded-lg border border-neutral-300 p-2 text-sm">
@@ -231,7 +233,14 @@ export default async function AdminProductsPage({
                 ) : (
                   <span className="h-8 w-8 shrink-0 rounded-lg border border-dashed border-neutral-200" />
                 )}
-                {product.canonicalName}
+                <span className="flex flex-col">
+                  {product.canonicalName}
+                  {product.aliases.some((a) => a !== product.canonicalName) && (
+                    <span className="text-xs font-normal text-neutral-500">
+                      {product.aliases.filter((a) => a !== product.canonicalName).join(" · ")}
+                    </span>
+                  )}
+                </span>
                 {!product.isActive && <span className="ms-2 text-xs text-red-500">(לא פעיל)</span>}
                 {product.chainId && (
                   <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">{product.chainId}</span>
