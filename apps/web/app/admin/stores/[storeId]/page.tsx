@@ -21,6 +21,7 @@ import {
   deleteStore,
   markProductsNotSold,
   moveProductsToNode,
+  placeAliasOnNode,
   placeShelfGroupOnNode,
   removeProductFromNode,
   removeProductsFromNode,
@@ -161,6 +162,7 @@ export default async function AdminStoreDetailPage({
         addProductToNode={addProductToNode}
         removeProductFromNode={removeProductFromNode}
         placeShelfGroupOnNode={placeShelfGroupOnNode}
+        placeAliasOnNode={placeAliasOnNode}
         removeShelfGroupFromNode={removeShelfGroupFromNode}
         moveProductsToNode={moveProductsToNode}
         removeProductsFromNode={removeProductsFromNode}

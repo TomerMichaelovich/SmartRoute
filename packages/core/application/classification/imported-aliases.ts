@@ -37,7 +37,7 @@ export interface ImportedAliasIndex {
  * The forms a line may take for an alias: normalizing turns a geresh into a space
  * ("ג'ין" -> "ג ין"), which a shopper writing "גין" doesn't type.
  */
-function aliasKeys(alias: string): string[] {
+export function aliasKeys(alias: string): string[] {
   return [...new Set([normalizeHebrewText(alias), normalizeHebrewText(alias.replace(/['׳"״]/g, ""))])].filter(Boolean);
 }
 

@@ -4,6 +4,7 @@ import { db, rawSql } from "../../db/client";
 import { products } from "../../db/schema";
 import type {
   AdminProductQuery,
+  AliasProduct,
   ICatalogAdminRepository,
   ProductSearchHit,
   StoreShelfGroup,
@@ -21,6 +22,9 @@ const CARRIED_BY_STORE = `
   JOIN retail_branches b ON b.id = bp.branch_id
   WHERE b.navio_store_id = $1 AND p.is_active
     AND NOT EXISTS (SELECT 1 FROM store_excluded_products x WHERE x.store_id = $1 AND x.product_id = p.id)`;
+
+// regexp_replace arguments dropping a geresh/gershayim (or the quotes typed for them).
+const WITHOUT_GERESH = `'[''׳"״]', '', 'g'`;
 
 // Search candidates are fetched by a plain LIKE on the aliases, then ranked in code.
 const SEARCH_CANDIDATES = 300;
@@ -80,6 +84,47 @@ export class PgCatalogAdminRepository implements ICatalogAdminRepository {
       [storeId, groupId],
     )) as Record<string, unknown>[];
     return rows.map((r) => String(r.id));
+  }
+
+  async aliasProducts(storeId: string, normalizedAliases: string[]): Promise<AliasProduct[]> {
+    if (normalizedAliases.length === 0) return [];
+    const rows = (await rawSql.query(
+      // A stored alias is normalized with its geresh as a space ("ג'ין" -> "ג ין"): "גין"
+      // is matched against the aliases as written, without one.
+      `WITH carried AS (${CARRIED_BY_STORE} AND (p.normalized_aliases ?| $2::text[] OR EXISTS (
+         SELECT 1 FROM jsonb_array_elements_text(p.aliases) AS a(alias)
+         WHERE regexp_replace(a.alias, ${WITHOUT_GERESH}) = ANY($2::text[]))))
+       SELECT DISTINCT ON (pr.id) pr.id, pr.canonical_name, pr.aliases, l.node_id
+       FROM carried c JOIN products pr ON pr.id = c.id
+       LEFT JOIN product_listings l ON l.store_id = $1 AND l.product_id = pr.id
+       ORDER BY pr.id`,
+      [storeId, normalizedAliases],
+    )) as Record<string, unknown>[];
+    return rows
+      .map((r) => ({
+        id: String(r.id),
+        canonicalName: String(r.canonical_name),
+        aliases: (r.aliases as string[] | null) ?? [],
+        nodeId: (r.node_id as string | null) ?? null,
+      }))
+      .sort((a, b) => a.canonicalName.localeCompare(b.canonicalName, "he"));
+  }
+
+  async aliasSuggestions(storeId: string, text: string, limit: number) {
+    const contains = likePattern(text.replace(/['׳"״]/g, ""));
+    const rows = (await rawSql.query(
+      `WITH carried AS (${CARRIED_BY_STORE})
+       SELECT a.alias, count(DISTINCT pr.id)::int AS products
+       FROM carried c JOIN products pr ON pr.id = c.id
+       CROSS JOIN LATERAL jsonb_array_elements_text(pr.aliases) AS a(alias)
+       WHERE regexp_replace(a.alias, ${WITHOUT_GERESH}) LIKE $2
+       GROUP BY a.alias
+       ORDER BY bool_or(regexp_replace(a.alias, ${WITHOUT_GERESH}) LIKE $3) DESC, products DESC, a.alias
+       LIMIT $4`,
+      // Starting with the text: the same pattern without its leading wildcard.
+      [storeId, contains, contains.slice(1), limit],
+    )) as Record<string, unknown>[];
+    return rows.map((r) => ({ alias: String(r.alias), products: Number(r.products) }));
   }
 
   async groupProductsAtNode(storeId: string, nodeId: string, groupId: string) {

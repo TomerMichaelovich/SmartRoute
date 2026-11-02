@@ -7,6 +7,7 @@ import type { MapEdge } from "@smartroute/core/domain/entities/map-edge";
 import type { MapNode, MapNodeType } from "@smartroute/core/domain/entities/map-node";
 import { generateNavGraph } from "@smartroute/core/map/walkable/generate-graph";
 import { type StoredWalkableMask, decodeRle, encodeRle } from "@smartroute/core/map/walkable/mask";
+import { aliasKeys } from "@smartroute/core/application/classification/imported-aliases";
 import { findShelfGroup } from "@smartroute/core/domain/value-objects/shelf-group";
 import {
   adminUserRepository,
@@ -265,6 +266,31 @@ export async function placeShelfGroupOnNode(storeId: string, nodeId: string, gro
   );
   revalidatePath(`/admin/stores/${storeId}`);
   return productIds.length;
+}
+
+/**
+ * Places at a node every product of the store's branch file answering exactly to an
+ * alias ("ג'ין") - those not placed anywhere in the store yet, and with `moveOthers` also
+ * those placed at other nodes (one product, one node per store). Products marked as not
+ * sold here are left out. Returns how many were placed and moved.
+ */
+export async function placeAliasOnNode(
+  storeId: string,
+  nodeId: string,
+  alias: string,
+  moveOthers: boolean,
+): Promise<{ placed: number; moved: number }> {
+  await requireAdmin({ mapStore: storeId });
+  await assertNodeInStore(storeId, nodeId);
+  const products = await catalogAdminRepository.aliasProducts(storeId, aliasKeys(alias.trim()));
+  const unplaced = products.filter((p) => p.nodeId === null).map((p) => p.id);
+  const elsewhere = moveOthers ? products.filter((p) => p.nodeId !== null && p.nodeId !== nodeId).map((p) => p.id) : [];
+  await productListingRepository.createMany(
+    unplaced.map((productId) => ({ id: crypto.randomUUID(), productId, storeId, nodeId })),
+  );
+  if (elsewhere.length > 0) await productListingRepository.moveToNode(storeId, elsewhere, nodeId);
+  revalidatePath(`/admin/stores/${storeId}`);
+  return { placed: unplaced.length, moved: elsewhere.length };
 }
 
 /** Takes a shelf group's products off one node (they become unplaced again). */

@@ -25,6 +25,15 @@ export interface ProductSearchHit {
   excluded: boolean;
 }
 
+/** An imported product the store's branch carries, found by one of its aliases. */
+export interface AliasProduct {
+  id: string;
+  canonicalName: string;
+  aliases: string[];
+  /** Where it's placed in the store; null when it isn't yet. */
+  nodeId: string | null;
+}
+
 export interface AdminProductQuery {
   /** Hebrew-normalized text matched against name and aliases. */
   text?: string;
@@ -46,6 +55,13 @@ export interface ICatalogAdminRepository {
   shelfGroupsForStore(storeId: string): Promise<StoreShelfGroup[]>;
   /** The group's active products in the store's branch file that aren't placed in the store yet. */
   unplacedGroupProductIds(storeId: string, groupId: string): Promise<string[]>;
+  /**
+   * The products of the store's branch file answering exactly to one of these normalized
+   * texts (an alias or the name) - less those marked as not sold here - and where each is placed.
+   */
+  aliasProducts(storeId: string, normalizedAliases: string[]): Promise<AliasProduct[]>;
+  /** Aliases of the store's branch products containing the text (those starting with it first), with how many products have each. */
+  aliasSuggestions(storeId: string, text: string, limit: number): Promise<Array<{ alias: string; products: number }>>;
   /** The group's products placed at this node, with the aliases shoppers find them by. */
   groupProductsAtNode(
     storeId: string,

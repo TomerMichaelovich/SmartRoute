@@ -10,6 +10,7 @@ import { NODE_TYPE_LABELS } from "@/src/presentation/node-type-labels";
 import type { StoredWalkableMask } from "@smartroute/core/map/walkable/mask";
 import type { WalkableMapSaveResult } from "@/src/presentation/actions/admin-store-actions";
 import { ProductAutocomplete } from "./ProductAutocomplete";
+import { AliasPlacePanel } from "./AliasPlacePanel";
 import { type ShelfGroupOption, ShelfGroupPanel } from "./ShelfGroupPanel";
 import { WalkableAreaEditor } from "./WalkableAreaEditor";
 
@@ -37,6 +38,12 @@ interface StoreLayoutEditorProps {
   addProductToNode: (storeId: string, nodeId: string, formData: FormData) => Promise<void>;
   removeProductFromNode: (storeId: string, nodeId: string, productId: string) => Promise<void>;
   placeShelfGroupOnNode: (storeId: string, nodeId: string, groupId: string) => Promise<number>;
+  placeAliasOnNode: (
+    storeId: string,
+    nodeId: string,
+    alias: string,
+    moveOthers: boolean,
+  ) => Promise<{ placed: number; moved: number }>;
   removeShelfGroupFromNode: (storeId: string, nodeId: string, groupId: string) => Promise<void>;
   moveProductsToNode: (storeId: string, productIds: string[], nodeId: string) => Promise<void>;
   removeProductsFromNode: (storeId: string, nodeId: string, productIds: string[]) => Promise<void>;
@@ -190,6 +197,7 @@ export function StoreLayoutEditor({
   addProductToNode,
   removeProductFromNode,
   placeShelfGroupOnNode,
+  placeAliasOnNode,
   removeShelfGroupFromNode,
   moveProductsToNode,
   removeProductsFromNode,
@@ -921,6 +929,16 @@ export function StoreLayoutEditor({
                 markProductsNotSold={markProductsNotSold}
                 setProductsShelfGroup={setProductsShelfGroup}
               />
+
+              {hasPriceBranch && (
+                <AliasPlacePanel
+                  key={`alias-${singleSelectedNode.id}`}
+                  storeId={storeId}
+                  nodeId={singleSelectedNode.id}
+                  departmentNodes={departmentNodes}
+                  placeAliasOnNode={placeAliasOnNode}
+                />
+              )}
 
               <form action={deleteNode.bind(null, storeId, singleSelectedNode.id)}>
                 <button type="submit" className="text-sm text-red-600 hover:underline">
