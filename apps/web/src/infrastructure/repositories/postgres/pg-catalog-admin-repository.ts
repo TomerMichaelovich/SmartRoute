@@ -128,6 +128,19 @@ export class PgCatalogAdminRepository implements ICatalogAdminRepository {
     return rows.map((r) => ({ alias: String(r.alias), products: Number(r.products) }));
   }
 
+  async aliasPlacements(storeId: string, aliases: string[]) {
+    if (aliases.length === 0) return [];
+    const rows = (await rawSql.query(
+      `SELECT a.alias, l.node_id, count(DISTINCT l.product_id)::int AS n
+       FROM product_listings l JOIN products p ON p.id = l.product_id
+       CROSS JOIN LATERAL jsonb_array_elements_text(p.aliases) AS a(alias)
+       WHERE l.store_id = $1 AND a.alias = ANY($2::text[])
+       GROUP BY a.alias, l.node_id`,
+      [storeId, aliases],
+    )) as Record<string, unknown>[];
+    return rows.map((r) => ({ alias: String(r.alias), nodeId: String(r.node_id), count: Number(r.n) }));
+  }
+
   async groupProductsAtNode(storeId: string, nodeId: string, groupId: string) {
     const rows = (await rawSql.query(
       `SELECT p.id, p.canonical_name, p.aliases, p.source_item_key FROM product_listings l JOIN products p ON p.id = l.product_id
@@ -159,7 +172,7 @@ export class PgCatalogAdminRepository implements ICatalogAdminRepository {
   async searchUnlisted(storeId: string, normalizedText: string, limit: number): Promise<ProductSearchHit[]> {
     if (!normalizedText) return [];
     const rows = (await rawSql.query(
-      `SELECT p.id, p.canonical_name, p.department, p.shelf_group, p.normalized_aliases,
+      `SELECT p.id, p.canonical_name, p.department, p.shelf_group, p.aliases, p.normalized_aliases,
               p.source_item_key IS NOT NULL AS imported,
               EXISTS (SELECT 1 FROM retail_items ri
                       JOIN branch_prices bp ON bp.retail_item_id = ri.id
@@ -177,6 +190,7 @@ export class PgCatalogAdminRepository implements ICatalogAdminRepository {
       canonicalName: String(r.canonical_name),
       department: String(r.department),
       shelfGroup: (r.shelf_group as string | null) ?? null,
+      aliases: (r.aliases as string[] | null) ?? [],
       normalizedAliases: r.normalized_aliases as string[],
       imported: Boolean(r.imported),
       carried: Boolean(r.carried),

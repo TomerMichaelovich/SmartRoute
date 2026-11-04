@@ -15,7 +15,8 @@ interface AliasProduct {
 
 interface AliasResult {
   products: AliasProduct[];
-  suggestions: Array<{ alias: string; products: number }>;
+  /** With where the store's products answering to each suggested alias already stand. */
+  suggestions: Array<{ alias: string; products: number; placedAt: Array<{ nodeId: string; count: number }> }>;
 }
 
 interface AliasPlacePanelProps {
@@ -38,6 +39,8 @@ const singleLine = (label: string) => label.replace(/\s*\n\s*/g, " ");
  * alias ("ג'ין"), whatever shelf group each got - the products already placed at other
  * nodes only when asked to move them too. Typing shows the products answering to exactly
  * that alias (with their aliases, to catch a wrong one) and other aliases containing it.
+ * An alias already placed at another node is called out (and its chip colored), so one
+ * kind of product doesn't end up split between two places by mistake.
  */
 export function AliasPlacePanel({ storeId, nodeId, departmentNodes, placeAliasOnNode }: AliasPlacePanelProps) {
   const [query, setQuery] = useState("");
@@ -75,6 +78,12 @@ export function AliasPlacePanel({ storeId, nodeId, departmentNodes, placeAliasOn
   const here = products.filter((p) => p.nodeId === nodeId);
   const elsewhere = products.filter((p) => p.nodeId !== null && p.nodeId !== nodeId);
   const toPlace = unplaced.length + (moveOthers ? elsewhere.length : 0);
+  const elsewhereByNode = new Map<string, number>();
+  for (const p of elsewhere) elsewhereByNode.set(p.nodeId!, (elsewhereByNode.get(p.nodeId!) ?? 0) + 1);
+  const placedElsewhere = (placedAt: Array<{ nodeId: string; count: number }>) =>
+    placedAt.filter((p) => p.nodeId !== nodeId);
+  const describePlaces = (places: Array<{ nodeId: string; count: number }>) =>
+    places.map((p) => `${labelOf.get(p.nodeId) ?? "נקודה אחרת"} (${p.count})`).join(" · ");
   const otherAliases = (shown?.suggestions ?? []).filter((s) => s.alias.trim() !== query.trim()).slice(0, 6);
 
   function place() {
@@ -105,19 +114,37 @@ export function AliasPlacePanel({ storeId, nodeId, departmentNodes, placeAliasOn
           {otherAliases.length > 0 ? "אין פריטים עם הכינוי הזה בדיוק. אולי:" : "אין בסניף פריטים עם כינוי כזה"}
         </p>
       )}
+      {elsewhereByNode.size > 0 && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+          <p className="font-semibold">⚠ הכינוי &quot;{query.trim()}&quot; כבר מוקם בנקודה אחרת</p>
+          <p className="mt-0.5">
+            {describePlaces([...elsewhereByNode].map(([id, count]) => ({ nodeId: id, count })))}
+          </p>
+        </div>
+      )}
       {otherAliases.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          {otherAliases.map((s) => (
-            <button
-              key={s.alias}
-              type="button"
-              onClick={() => setQuery(s.alias)}
-              className="rounded-full border border-neutral-300 px-2 py-0.5 text-xs text-neutral-600 hover:border-cyan-600 hover:text-cyan-700"
-            >
-              {s.alias} ({s.products})
-            </button>
-          ))}
+          {otherAliases.map((s) => {
+            const places = placedElsewhere(s.placedAt);
+            return (
+              <button
+                key={s.alias}
+                type="button"
+                onClick={() => setQuery(s.alias)}
+                title={places.length > 0 ? `כבר מוקם ב: ${describePlaces(places)}` : undefined}
+                className={`rounded-full border px-2 py-0.5 text-xs hover:border-cyan-600 hover:text-cyan-700 ${
+                  places.length > 0 ? "border-amber-400 bg-amber-50 text-amber-800" : "border-neutral-300 text-neutral-600"
+                }`}
+              >
+                {places.length > 0 && "📍 "}
+                {s.alias} ({s.products})
+              </button>
+            );
+          })}
         </div>
+      )}
+      {otherAliases.some((s) => placedElsewhere(s.placedAt).length > 0) && (
+        <p className="text-xs text-amber-700">📍 כינוי שכבר מוקם בנקודה אחרת (העבירו את העכבר לראות איפה)</p>
       )}
 
       {products.length > 0 && (

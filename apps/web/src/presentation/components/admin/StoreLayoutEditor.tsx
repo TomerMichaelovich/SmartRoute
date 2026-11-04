@@ -887,6 +887,8 @@ export function StoreLayoutEditor({
               <ProductAutocomplete
                 key={singleSelectedNode.id}
                 storeId={storeId}
+                nodeId={singleSelectedNode.id}
+                departmentNodes={departmentNodes}
                 onAdd={async (productId) => {
                   const formData = new FormData();
                   formData.set("productId", productId);

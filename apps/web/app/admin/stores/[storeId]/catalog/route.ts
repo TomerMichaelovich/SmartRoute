@@ -10,10 +10,12 @@ const MAX_ALIAS_SUGGESTIONS = 8;
 /**
  * Reads for the store's map editor, too large to send with the page now that whole
  * price files are imported:
- *   ?q=<text>                    products to add, not yet placed in the store
+ *   ?q=<text>                    products to add, not yet placed in the store, with where
+ *                                products sharing an alias with each already stand
  *   ?node=<id>&group=<groupId>   a shelf group's products placed at one node
  *   ?alias=<text>                the branch's products answering exactly to an alias (and
  *                                where each is placed), and aliases containing the text
+ *                                (with where their products already stand)
  */
 export async function GET(request: Request, { params }: { params: Promise<{ storeId: string }> }) {
   const { storeId } = await params;
@@ -35,7 +37,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ stor
       catalogAdminRepository.aliasProducts(storeId, aliasKeys(alias)),
       catalogAdminRepository.aliasSuggestions(storeId, alias, MAX_ALIAS_SUGGESTIONS),
     ]);
-    return Response.json({ products, suggestions });
+    const placements = await catalogAdminRepository.aliasPlacements(
+      storeId,
+      suggestions.map((s) => s.alias),
+    );
+    return Response.json({
+      products,
+      suggestions: suggestions.map((s) => ({
+        ...s,
+        placedAt: placements.filter((p) => p.alias === s.alias).map(({ nodeId, count }) => ({ nodeId, count })),
+      })),
+    });
   }
 
   const hits = await catalogAdminRepository.searchUnlisted(
@@ -43,6 +55,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ stor
     normalizeHebrewText(url.searchParams.get("q") ?? ""),
     MAX_RESULTS,
   );
+  const placements = await catalogAdminRepository.aliasPlacements(storeId, [
+    ...new Set(hits.flatMap((hit) => hit.aliases)),
+  ]);
   return Response.json(
     hits.map((hit) => ({
       id: hit.id,
@@ -51,6 +66,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ stor
       hint: (hit.shelfGroup && findShelfGroup(hit.shelfGroup)?.name) || hit.department,
       notCarried: hit.imported && !hit.carried,
       excluded: hit.excluded,
+      placedAliases: placements.filter((p) => hit.aliases.includes(p.alias)),
     })),
   );
 }

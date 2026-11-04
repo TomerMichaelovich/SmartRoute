@@ -16,6 +16,8 @@ export interface ProductSearchHit {
   canonicalName: string;
   department: string;
   shelfGroup: string | null;
+  /** As written, the way shoppers find it. */
+  aliases: string[];
   normalizedAliases: string[];
   /** Imported from a price file. */
   imported: boolean;
@@ -69,6 +71,8 @@ export interface ICatalogAdminRepository {
   aliasProducts(storeId: string, normalizedAliases: string[]): Promise<AliasProduct[]>;
   /** Aliases of the store's branch products containing the text (those starting with it first), with how many products have each. */
   aliasSuggestions(storeId: string, text: string, limit: number): Promise<Array<{ alias: string; products: number }>>;
+  /** Where the store's placed products answering to these aliases (as written) stand, per alias and node. */
+  aliasPlacements(storeId: string, aliases: string[]): Promise<Array<{ alias: string; nodeId: string; count: number }>>;
   /** The group's products placed at this node, with the aliases shoppers find them by. */
   groupProductsAtNode(
     storeId: string,
