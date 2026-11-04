@@ -128,11 +128,13 @@ export function WhatsAppSimulator() {
     const { messages } = (await res.json()) as {
       messages: Array<{ seq: number; to: string; payload: OutgoingPayload }>;
     };
-    if (messages.length === 0) return;
-    seqRef.current = messages[messages.length - 1].seq;
+    // The timer and the after-send poll can overlap and fetch the same messages - keep only unseen ones.
+    const unseen = messages.filter((m) => m.seq > seqRef.current);
+    if (unseen.length === 0) return;
+    seqRef.current = unseen[unseen.length - 1].seq;
     setEntries((prev) => [
       ...prev,
-      ...messages.map((m): ChatEntry => ({ key: `bot-${m.seq}`, phone: m.to, from: "bot", payload: m.payload })),
+      ...unseen.map((m): ChatEntry => ({ key: `bot-${m.seq}`, phone: m.to, from: "bot", payload: m.payload })),
     ]);
   }, []);
 
