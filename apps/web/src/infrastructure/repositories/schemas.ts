@@ -101,6 +101,9 @@ export const productSchema = z.object({
   imageUrl: z.string().optional(),
   isActive: z.boolean(),
   chainId: z.string().nullable().optional(),
+  sourceItemKey: z.string().nullable().optional(),
+  shelfGroup: z.string().nullable().optional(),
+  manuallyEdited: z.boolean().optional(),
 });
 
 export const productListingSchema = z.object({
@@ -113,6 +116,7 @@ export const productListingSchema = z.object({
 export const classificationSourceSchema = z.enum([
   "dictionary",
   "normalization",
+  "alias",
   "fuzzy",
   "llm",
   "unresolved",
@@ -121,6 +125,9 @@ export const classificationSourceSchema = z.enum([
 export const classificationResultSchema = z.object({
   rawText: z.string(),
   matchedProductId: z.string().optional(),
+  matchedAlias: z.string().max(120).optional(),
+  department: z.string().max(120).optional(),
+  category: productCategorySchema.optional(),
   confidence: z.number(),
   source: classificationSourceSchema,
   alternativeMatches: z
@@ -134,6 +141,12 @@ export const shoppingListItemVariantSchema = z.object({
   productId: z.string().optional(),
   itemKey: z.string().max(64).optional(),
   name: z.string().max(120).optional(),
+  chosenAt: z.string(),
+});
+
+export const shoppingListItemPlaceChoiceSchema = z.object({
+  productId: z.string().nullable(),
+  text: z.string().max(200),
   chosenAt: z.string(),
 });
 
@@ -151,6 +164,8 @@ export const shoppingListItemSchema = z.object({
   // Must be listed: zod strips unknown keys, so without it every read and every
   // full-list save would silently drop the shopper's refinement choice.
   variant: shoppingListItemVariantSchema.optional(),
+  // Same: which of a store's same-name products the shopper meant (see place-choice.ts).
+  placeChoice: shoppingListItemPlaceChoiceSchema.optional(),
 });
 
 export const shoppingListSchema = z.object({

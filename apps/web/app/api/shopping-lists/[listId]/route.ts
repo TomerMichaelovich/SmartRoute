@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { productListingRepository, productRepository, shoppingListRepository } from "@/src/infrastructure/container";
+import { productListingRepository, shoppingListRepository } from "@/src/infrastructure/container";
+import { productsFor } from "@/src/presentation/lib/products-for";
 import { resolveListAccess } from "@/src/presentation/auth/list-access";
 
 // Backs the mobile app's Classification Review screen the same data the web app's
@@ -8,7 +9,8 @@ import { resolveListAccess } from "@/src/presentation/auth/list-access";
 // classify()/buildRoute() can route to - offering the rest in the manual-pick list
 // would let a shopper "fix" an item to something the store doesn't even stock).
 //
-// ?scope=catalog returns the whole active catalog instead: the app's list screen
+// ?scope=catalog returns the catalog instead (hand-made products, plus whatever the
+// items already point to - not the thousands imported from price files): the app's list screen
 // edits a list before any branch is picked, while the list is only filed under a
 // placeholder store - limiting it to that store would hide products that other
 // branches carry (and that classification already matched against). The app
@@ -30,12 +32,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ list
   }
 
   if (wholeCatalog) {
-    return NextResponse.json({ shoppingList, products: await productRepository.findAllActive() });
+    return NextResponse.json({ shoppingList, products: await productsFor({ items: shoppingList.items }) });
   }
 
+  const storeId = searchParams.get("storeId") || shoppingList.storeId;
   const [allProducts, listings] = await Promise.all([
-    productRepository.findAllActive(),
-    productListingRepository.findByStore(searchParams.get("storeId") || shoppingList.storeId),
+    productsFor({ items: shoppingList.items, storeId }),
+    productListingRepository.findByStore(storeId),
   ]);
   const carriedProductIds = new Set(listings.map((l) => l.productId));
   const products = allProducts.filter((p) => carriedProductIds.has(p.id));

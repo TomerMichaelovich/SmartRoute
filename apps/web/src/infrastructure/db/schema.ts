@@ -11,6 +11,7 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import type { ClassificationResult } from "@smartroute/core/domain/entities/classification-result";
 import type { RouteStop } from "@smartroute/core/domain/entities/route";
 import type { ShoppingListItem } from "@smartroute/core/domain/entities/shopping-list";
@@ -283,7 +284,17 @@ export const products = pgTable("products", {
   isActive: boolean("is_active").notNull(),
   // Null = generic product; otherwise the one chain (stores.chain_id) selling it.
   chainId: text("chain_id"),
-});
+  // Imported from a price file (scripts/catalog): the barcode (retail_items.item_key) the
+  // product stands for - one product per barcode, across chains - and where it stands
+  // (packages/core/domain/value-objects/shelf-group).
+  sourceItemKey: text("source_item_key"),
+  shelfGroup: text("shelf_group"),
+  // An admin edited an imported product; re-imports leave its name, aliases and group alone.
+  manuallyEdited: boolean("manually_edited").notNull().default(false),
+}, (table) => [
+  uniqueIndex("products_source_item_key_idx").on(table.sourceItemKey).where(sql`${table.sourceItemKey} IS NOT NULL`),
+  index("products_shelf_group_idx").on(table.shelfGroup),
+]);
 
 export const productListings = pgTable(
   "product_listings",
@@ -297,6 +308,21 @@ export const productListings = pgTable(
     index("product_listings_product_id_idx").on(table.productId),
     index("product_listings_store_id_idx").on(table.storeId),
   ],
+);
+
+/**
+ * Products a store's price file lists but the store doesn't actually keep on its shelves
+ * (marked by the admin while mapping). Not counted as waiting to be placed, skipped when
+ * a whole shelf group is placed; placing the product by hand clears the mark.
+ */
+export const storeExcludedProducts = pgTable(
+  "store_excluded_products",
+  {
+    storeId: text("store_id").notNull(),
+    productId: text("product_id").notNull(),
+    createdAt: timestamp("created_at", { mode: "string" }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.storeId, table.productId] })],
 );
 
 export const shoppingLists = pgTable(

@@ -1,4 +1,5 @@
 import "server-only";
+import { parseLineQuantity } from "@smartroute/core/application/classification/list-line";
 import { resolveAvailability } from "@smartroute/core/application/classification/resolve-availability";
 import { generateShareCode } from "@smartroute/core/application/shopping-list/generate-share-code";
 import type { ShoppingList, ShoppingListItem } from "@smartroute/core/domain/entities/shopping-list";
@@ -31,14 +32,20 @@ export async function classifyLines(
   const [rawClassifications, listings, products] = await Promise.all([
     classificationService.classifyBatch(rawTexts),
     productListingRepository.findByStore(storeId),
-    productRepository.findAllActive(),
+    productRepository.findCatalog(),
   ]);
-  return rawTexts.map((rawText, i) => ({
-    id: crypto.randomUUID(),
-    rawText,
-    classification: resolveAvailability(rawClassifications[i], storeId, listings, products),
-    ...(addedByUserId ? { addedByUserId } : {}),
-  }));
+  return rawTexts.map((rawText, i) => {
+    // "3 חלב" / "חלב x2": the count the shopper typed into the line.
+    const quantity = parseLineQuantity(rawText);
+    return {
+      id: crypto.randomUUID(),
+      rawText,
+      // No same-name swap here: the store is often a placeholder; the route picks the shelf.
+      classification: resolveAvailability(rawClassifications[i], storeId, listings, products, { switchToCarried: false }),
+      ...(quantity ? { quantity } : {}),
+      ...(addedByUserId ? { addedByUserId } : {}),
+    };
+  });
 }
 
 /**

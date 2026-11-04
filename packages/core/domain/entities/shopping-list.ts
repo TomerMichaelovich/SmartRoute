@@ -17,6 +17,18 @@ export interface ShoppingListItem {
   // Which concrete product the shopper meant, chosen in the cheapest-basket
   // refinement popup ("חלב" -> "תנובה 3% 1 ל'"). Shared like the rest of the item.
   variant?: ShoppingListItemVariant;
+  // Which product the shopper meant when a mapped store carries several that
+  // answer to the item's text in different places ("טחינה" -> the generic one or
+  // the chain's own). Asked before routing; shared like the rest of the item.
+  placeChoice?: ShoppingListItemPlaceChoice;
+}
+
+export interface ShoppingListItemPlaceChoice {
+  // The chosen product; null = "לא משנה לי": whichever makes the route shortest.
+  productId: string | null;
+  // normalizeHebrewText(rawText) when chosen: editing the item asks again.
+  text: string;
+  chosenAt: string;
 }
 
 export interface ShoppingListItemVariant {

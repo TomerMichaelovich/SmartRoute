@@ -49,3 +49,11 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.PRICES_DATABASE_URL }}
         run: npx tsx scripts/prices/link-skus.ts --verifier=rules
+      # Coordinates for new branches or changed addresses (OpenStreetMap, 1 req/s; usually
+      # nothing to do). Hand-set coordinates from the admin are never overwritten.
+      - name: Geocode branches
+        if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' && inputs.mode == 'full' || github.event.schedule == '30 3 * * *') }}
+        working-directory: apps/web
+        env:
+          DATABASE_URL: ${{ secrets.PRICES_DATABASE_URL }}
+        run: npx tsx scripts/prices/geocode-branches.ts

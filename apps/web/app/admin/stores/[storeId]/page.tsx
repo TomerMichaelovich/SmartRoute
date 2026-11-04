@@ -2,12 +2,13 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { hasSection } from "@smartroute/core/domain/entities/admin-user";
 import type { MapNodeType } from "@smartroute/core/domain/entities/map-node";
+import { findShelfGroup } from "@smartroute/core/domain/value-objects/shelf-group";
 import {
+  catalogAdminRepository,
   edgeRepository,
   nodeRepository,
   priceRepository,
   productListingRepository,
-  productRepository,
   storeRepository,
   walkableMapRepository,
 } from "@/src/infrastructure/container";
@@ -18,14 +19,23 @@ import {
   deleteEdge,
   deleteNode,
   deleteStore,
+  markProductsNotSold,
+  moveAliasToNode,
+  moveProductsToNode,
+  placeAliasOnNode,
+  placeShelfGroupOnNode,
   removeProductFromNode,
+  removeProductsFromNode,
+  removeShelfGroupFromNode,
   saveWalkableMap,
   setStorePriceBranch,
   updateNodeLabel,
   updateNodePosition,
   updateStore,
+  unmarkProductsNotSold,
   uploadStoreImage,
 } from "@/src/presentation/actions/admin-store-actions";
+import { setProductsShelfGroup } from "@/src/presentation/actions/admin-product-actions";
 import { requireAdminPage } from "@/src/presentation/auth/admin";
 import { DeleteStoreButton } from "@/src/presentation/components/admin/DeleteStoreButton";
 import { StoreDetailsForm } from "@/src/presentation/components/admin/StoreDetailsForm";
@@ -48,14 +58,20 @@ export default async function AdminStoreDetailPage({
   const store = await storeRepository.findById(storeId);
   if (!store) notFound();
 
-  const [nodes, edges, products, listings, walkableMask, priceBranches, allStores] = await Promise.all([
+  // Imported products (whole price files) are too many to send with the page: the editor
+  // gets the hand-made ones, a per-shelf-group summary, and searches on demand.
+  const [nodes, edges, products, allListings, storeGroups, hasPriceBranch, excludedProducts, walkableMask, priceBranches, allStores, splitAliases] = await Promise.all([
     nodeRepository.findByStore(storeId),
     edgeRepository.findByStore(storeId),
-    productRepository.findAllActive(),
+    catalogAdminRepository.listedHandMadeProducts(storeId),
     productListingRepository.findByStore(storeId),
+    catalogAdminRepository.shelfGroupsForStore(storeId),
+    catalogAdminRepository.hasPriceBranch(storeId),
+    catalogAdminRepository.excludedProducts(storeId),
     walkableMapRepository.findMask(storeId),
     manages ? priceRepository.findLinkableBranches() : [],
     manages ? storeRepository.findAll() : [],
+    catalogAdminRepository.splitAliases(storeId),
   ]);
   const priceCityNames = new Map<number, string>();
   for (const b of priceBranches) {
@@ -68,6 +84,17 @@ export default async function AdminStoreDetailPage({
     .filter((n) => n.type === "department")
     .sort((a, b) => a.label.localeCompare(b.label, "he"));
   const productById = new Map(products.map((p) => [p.id, p]));
+  const listings = allListings.filter((l) => productById.has(l.productId));
+  const shelfGroups = storeGroups
+    .flatMap((g) => {
+      const group = findShelfGroup(g.groupId);
+      return group ? [{ ...g, name: group.name, department: group.department }] : [];
+    })
+    .sort((a, b) => a.department.localeCompare(b.department, "he") || a.name.localeCompare(b.name, "he"));
+  const carriedGroups = shelfGroups.filter((g) => g.carried > 0);
+  const unplacedGroups = carriedGroups.filter((g) => g.unplaced > 0);
+  const completeGroups = carriedGroups.filter((g) => g.unplaced === 0);
+  const placedGroupRows = shelfGroups.flatMap((g) => g.nodes.map((n) => ({ group: g, ...n })));
   const storeInventory = listings
     .map((listing) => ({ listing, product: productById.get(listing.productId) }))
     .filter((item) => item.product !== undefined)
@@ -127,6 +154,10 @@ export default async function AdminStoreDetailPage({
         nodeTypes={NODE_TYPES}
         products={products}
         listings={listings}
+        shelfGroups={shelfGroups}
+        splitAliases={splitAliases}
+        hasPriceBranch={hasPriceBranch}
+        canEditProducts={hasSection(principal, "products")}
         createNode={boundCreateNode}
         createEdge={boundCreateEdge}
         deleteNode={deleteNode}
@@ -135,6 +166,14 @@ export default async function AdminStoreDetailPage({
         updateNodeLabel={updateNodeLabel}
         addProductToNode={addProductToNode}
         removeProductFromNode={removeProductFromNode}
+        placeShelfGroupOnNode={placeShelfGroupOnNode}
+        placeAliasOnNode={placeAliasOnNode}
+        removeShelfGroupFromNode={removeShelfGroupFromNode}
+        moveProductsToNode={moveProductsToNode}
+        moveAliasToNode={moveAliasToNode}
+        removeProductsFromNode={removeProductsFromNode}
+        markProductsNotSold={markProductsNotSold}
+        setProductsShelfGroup={setProductsShelfGroup}
         uploadStoreImage={boundUploadStoreImage}
         mapPixelSourceUrl={mapPixelSourceUrl}
         walkableMask={walkableMask}
@@ -142,7 +181,9 @@ export default async function AdminStoreDetailPage({
       />
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-base font-semibold text-neutral-900">מלאי הסניף ({storeInventory.length})</h2>
+        <h2 className="text-base font-semibold text-neutral-900">
+          מלאי הסניף ({storeInventory.length + placedGroupRows.reduce((sum, r) => sum + r.count, 0)})
+        </h2>
         <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white">
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 text-neutral-500">
@@ -174,7 +215,27 @@ export default async function AdminStoreDetailPage({
                   </td>
                 </tr>
               ))}
-              {storeInventory.length === 0 && (
+              {placedGroupRows.map(({ group, nodeId, count }) => (
+                <tr key={`${group.groupId}-${nodeId}`} className="border-t border-neutral-100 bg-cyan-50/40">
+                  <td className="p-2">
+                    קבוצת מדף: <strong>{group.name}</strong> <span className="text-neutral-400">({count} פריטים)</span>
+                  </td>
+                  <td className="p-2">{group.department}</td>
+                  <td className="whitespace-pre-line p-2">
+                    {nodeLabelById.get(nodeId) ?? (
+                      <span className="font-semibold text-red-600">מחלקה שנמחקה - הסירו ושייכו מחדש</span>
+                    )}
+                  </td>
+                  <td className="p-2">
+                    <form action={removeShelfGroupFromNode.bind(null, storeId, nodeId, group.groupId)}>
+                      <button type="submit" className="text-red-600 hover:underline">
+                        הסר
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              ))}
+              {storeInventory.length === 0 && placedGroupRows.length === 0 && (
                 <tr>
                   <td colSpan={4} className="p-4 text-center text-neutral-400">
                     אין עדיין מוצרים משויכים לסניף זה
@@ -185,6 +246,151 @@ export default async function AdminStoreDetailPage({
           </table>
         </div>
       </section>
+
+      {hasPriceBranch && (
+        <section className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-base font-semibold text-neutral-900">
+              שיוך קבוצות מדף ({completeGroups.length} מתוך {carriedGroups.length} שויכו במלואן)
+            </h2>
+            <div className="flex gap-3 text-xs">
+              <span className="flex items-center gap-1.5 text-red-700">
+                <span className="size-2.5 rounded-full bg-red-500" />
+                ממתינות לשיוך ({unplacedGroups.length})
+              </span>
+              <span className="flex items-center gap-1.5 text-green-700">
+                <span className="size-2.5 rounded-full bg-green-500" />
+                שויכו במלואן ({completeGroups.length})
+              </span>
+            </div>
+          </div>
+          <p className="text-xs text-neutral-500">
+            {unplacedGroups.length === 0
+              ? "כל הפריטים מקובץ המחירים של הסניף שויכו לנקודות."
+              : "פריטים מקובץ המחירים של הסניף שעוד לא נמצאים באף נקודה. בחרו נקודת מחלקה במפה ושייכו אליה קבוצה."}
+          </p>
+          <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white">
+            <table className="w-full text-sm">
+              <thead className="bg-neutral-50 text-neutral-500">
+                <tr>
+                  <th className="p-2 text-start">קבוצת מדף</th>
+                  <th className="p-2 text-start">מחלקה</th>
+                  <th className="w-48 p-2 text-start">שויכו</th>
+                  <th className="p-2 text-start">נקודות</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...unplacedGroups, ...completeGroups].map((g) => {
+                  const complete = g.unplaced === 0;
+                  const placed = g.carried - g.unplaced;
+                  return (
+                    <tr
+                      key={g.groupId}
+                      className={`border-t border-neutral-100 ${complete ? "bg-green-50/60" : "bg-red-50/60"}`}
+                    >
+                      <td
+                        className={`border-s-4 p-2 font-medium ${complete ? "border-green-500 text-green-800" : "border-red-500 text-red-800"}`}
+                      >
+                        {g.name}
+                      </td>
+                      <td className="p-2 text-neutral-600">{g.department}</td>
+                      <td className="p-2">
+                        <div className="flex items-center gap-2">
+                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-200">
+                            <div
+                              className={`h-full rounded-full ${complete ? "bg-green-500" : "bg-red-500"}`}
+                              style={{ width: `${(placed / g.carried) * 100}%` }}
+                            />
+                          </div>
+                          <span className="shrink-0 text-xs tabular-nums text-neutral-600">
+                            {placed}/{g.carried}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="p-2 text-xs text-neutral-600">
+                        {g.nodes.length === 0
+                          ? "—"
+                          : g.nodes
+                              .map((n) => nodeLabelById.get(n.nodeId)?.replace(/\s*\n\s*/g, " ") ?? "מחלקה שנמחקה")
+                              .join(" · ")}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {splitAliases.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-base font-semibold text-neutral-900">
+            כינויים שממוקמים בכמה נקודות ({splitAliases.length})
+          </h2>
+          <p className="text-xs text-neutral-500">
+            מוצרים עם אותו כינוי שעומדים ביותר מנקודה אחת. לפעמים זה נכון (אותו סוג מוצר בשני מדפים), אבל לרוב זו
+            טעות שיוך. בחרו את הנקודה במפה, פתחו את קבוצת המדף והעבירו את הפריטים המסומנים ב-📍.
+          </p>
+          <div className="overflow-x-auto rounded-xl border border-amber-200 bg-white">
+            <table className="w-full text-sm">
+              <thead className="bg-amber-50 text-amber-900">
+                <tr>
+                  <th className="p-2 text-start">כינוי</th>
+                  <th className="p-2 text-start">נקודות (מספר פריטים)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {splitAliases.map((split) => (
+                  <tr key={split.alias} className="border-t border-neutral-100">
+                    <td className="border-s-4 border-amber-400 p-2 font-medium text-amber-900">{split.alias}</td>
+                    <td className="p-2">
+                      <div className="flex flex-wrap gap-1.5">
+                        {split.nodes.map((n) => (
+                          <span
+                            key={n.nodeId}
+                            className="rounded-full border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-xs text-neutral-700"
+                          >
+                            {nodeLabelById.get(n.nodeId)?.replace(/\s*\n\s*/g, " ") ?? "מחלקה שנמחקה"}{" "}
+                            <span className="text-neutral-400">({n.count})</span>
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {excludedProducts.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-base font-semibold text-neutral-900">לא נמכרים בסניף ({excludedProducts.length})</h2>
+          <p className="text-xs text-neutral-500">
+            פריטים מקובץ המחירים שסומנו כלא נמצאים על המדף. הם לא נספרים כממתינים לשיוך ולא נכנסים בשיוך קבוצה.
+            ביטול הסימון מחזיר אותם לממתינים; שיוך ידני לנקודה מבטל אותו לבד.
+          </p>
+          <ul className="flex flex-col divide-y divide-neutral-100 rounded-xl border border-neutral-200 bg-white">
+            {excludedProducts.map((p) => (
+              <li key={p.id} className="flex items-center justify-between gap-2 px-3 py-1.5 text-sm">
+                <span>
+                  {p.canonicalName}
+                  {p.shelfGroup && (
+                    <span className="ms-2 text-xs text-neutral-400">{findShelfGroup(p.shelfGroup)?.name}</span>
+                  )}
+                </span>
+                <form action={unmarkProductsNotSold.bind(null, storeId, [p.id])}>
+                  <button type="submit" className="text-xs text-cyan-700 hover:underline">
+                    בטל סימון
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="flex flex-col gap-3">
         <h2 className="text-base font-semibold text-neutral-900">מחלקות ({departments.length})</h2>

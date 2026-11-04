@@ -1,11 +1,15 @@
 import { ClassificationService } from "@smartroute/core/application/classification/classification-service";
 import { dictionaryLayer } from "@smartroute/core/application/classification/layers/dictionary-layer";
 import { fuzzyMatchLayer } from "@smartroute/core/application/classification/layers/fuzzy-match-layer";
+import { importedAliasLayer } from "@smartroute/core/application/classification/layers/imported-alias-layer";
 import { createLlmFallbackLayer } from "@smartroute/core/application/classification/layers/llm-fallback-layer";
 import { normalizationLayer } from "@smartroute/core/application/classification/layers/normalization-layer";
 import { AnthropicClassifier } from "./llm/anthropic-classifier";
 import { PgAdminUserRepository } from "./repositories/postgres/pg-admin-user-repository";
 import { PgAnalyticsRepository } from "./repositories/postgres/pg-analytics-repository";
+import { PgBranchLocationRepository } from "./repositories/postgres/pg-branch-location-repository";
+import { PgCatalogAdminRepository } from "./repositories/postgres/pg-catalog-admin-repository";
+import { PgImportedCatalogRepository } from "./repositories/postgres/pg-imported-catalog-repository";
 import { PgClassificationCacheRepository } from "./repositories/postgres/pg-classification-cache-repository";
 import { PgEdgeRepository } from "./repositories/postgres/pg-edge-repository";
 import { PgHouseholdRepository } from "./repositories/postgres/pg-household-repository";
@@ -37,6 +41,8 @@ export const nodeRepository = new PgNodeRepository();
 export const edgeRepository = new PgEdgeRepository();
 export const productRepository = new PgProductRepository();
 export const productListingRepository = new PgProductListingRepository();
+export const catalogAdminRepository = new PgCatalogAdminRepository();
+export const importedCatalogRepository = new PgImportedCatalogRepository();
 export const shoppingListRepository = new PgShoppingListRepository();
 export const shoppingTripRepository = new PgShoppingTripRepository();
 export const routeRepository = new PgRouteRepository();
@@ -51,13 +57,15 @@ export const pushTokenRepository = new PgPushTokenRepository();
 export const walkableMapRepository = new PgWalkableMapRepository();
 export const ocrUsageRepository = new PgOcrUsageRepository();
 export const priceRepository = new PgPriceRepository();
+export const branchLocationRepository = new PgBranchLocationRepository();
 export const adminUserRepository = new PgAdminUserRepository();
 export const whatsappRepository = new PgWhatsAppRepository();
 
 const llmClassifier = new AnthropicClassifier();
 
 export const classificationService = new ClassificationService(
-  [dictionaryLayer, normalizationLayer, fuzzyMatchLayer, createLlmFallbackLayer(llmClassifier)],
+  [dictionaryLayer, normalizationLayer, importedAliasLayer, fuzzyMatchLayer, createLlmFallbackLayer(llmClassifier)],
   classificationCacheRepository,
   productRepository,
+  importedCatalogRepository,
 );

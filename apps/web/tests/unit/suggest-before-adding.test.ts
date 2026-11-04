@@ -43,6 +43,20 @@ describe("suggestBeforeAdding", () => {
     expect(suggestions.map((s) => s.productId)).not.toContain("barista");
   });
 
+  it("adds a line the stores carry under that name without asking", async () => {
+    const asked: string[] = [];
+    const known = async (text: string) => (asked.push(text), true);
+    expect(await suggestBeforeAdding("קלה", products, known)).toEqual([]);
+    // A confident match never needs the server.
+    expect(await suggestBeforeAdding("קולה", products, known)).toEqual([]);
+    expect(asked).toEqual(["קלה"]);
+  });
+
+  it("still suggests when the server can't be asked", async () => {
+    const offline = async () => Promise.reject(new Error("offline"));
+    expect((await suggestBeforeAdding("קלה", products, offline))[0]?.productId).toBe("cola");
+  });
+
   it("adds text nothing resembles without asking", async () => {
     expect(await suggestBeforeAdding("זזזז", products)).toEqual([]);
   });

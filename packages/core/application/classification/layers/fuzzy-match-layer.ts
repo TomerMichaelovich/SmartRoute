@@ -1,6 +1,11 @@
 import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ClassificationLayer } from "../classification-layer.interface";
 import { diceCoefficient } from "../dice-coefficient";
+import { sameHeadWord } from "../head-word";
+import { fuzzyAliasMatch } from "../imported-aliases";
+import { fuzzyCore } from "../list-line";
+
+export { sameHeadWord };
 
 export const HIGH_CONFIDENCE_THRESHOLD = 0.85;
 export const MIN_THRESHOLD = 0.6;
@@ -28,16 +33,42 @@ export function scoreCandidates(
   return scored;
 }
 
+/**
+ * The fuzzy layer's pick: scored over the line without counts and brands, and
+ * only over aliases that pass sameHeadWord; null below MIN_THRESHOLD. `scored`
+ * is every candidate that clears it, best first.
+ */
+export function fuzzyMatch(
+  normalized: string,
+  products: Product[],
+): { match: { productId: string; confidence: number } | null; scored: Array<{ productId: string; confidence: number }> } {
+  const core = fuzzyCore(normalized);
+  const scored: Array<{ productId: string; confidence: number }> = [];
+  for (const product of products) {
+    let best = 0;
+    for (const alias of product.normalizedAliases) {
+      if (!sameHeadWord(core, alias)) continue;
+      const score = diceCoefficient(core, alias);
+      if (score > best) best = score;
+    }
+    if (best >= MIN_THRESHOLD) scored.push({ productId: product.id, confidence: best });
+  }
+  scored.sort((a, b) => b.confidence - a.confidence);
+  return { match: scored[0] ?? null, scored };
+}
+
 export const fuzzyMatchLayer: ClassificationLayer = {
   name: "fuzzy",
   acceptThreshold: MIN_THRESHOLD,
   async classify(_rawText, ctx) {
-    const scored = scoreCandidates(ctx.normalized, ctx.products).filter(
-      (c) => c.confidence >= MIN_THRESHOLD,
-    );
-
-    if (scored.length === 0) return null;
-    const top = scored[0];
+    const { match: top, scored } = fuzzyMatch(ctx.normalized, ctx.products);
+    // The imported products' aliases are typo targets too ("במבע" -> "במבה"): the closer
+    // spelling wins, a generic product on a tie.
+    const alias = ctx.aliases ? fuzzyAliasMatch(ctx.normalized, ctx.aliases, MIN_THRESHOLD) : null;
+    if (alias && (!top || alias.confidence > top.confidence)) {
+      return { alias: alias.hit, confidence: alias.confidence };
+    }
+    if (!top) return null;
 
     if (top.confidence >= HIGH_CONFIDENCE_THRESHOLD) {
       return { productId: top.productId, confidence: top.confidence };

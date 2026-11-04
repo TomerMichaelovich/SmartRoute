@@ -1,10 +1,7 @@
 import { redirect } from "next/navigation";
 import { getUserHousehold } from "@/src/presentation/auth/household";
-import {
-  productRepository,
-  shoppingListRepository,
-  storeRepository,
-} from "@/src/infrastructure/container";
+import { shoppingListRepository, storeRepository } from "@/src/infrastructure/container";
+import { productsFor } from "@/src/presentation/lib/products-for";
 import { SharedListEditor } from "@/src/presentation/components/household/SharedListEditor";
 import { he } from "@smartroute/core/i18n/he";
 
@@ -17,7 +14,7 @@ export default async function HouseholdListPage() {
 
   const [store, products] = await Promise.all([
     storeRepository.findById(list.storeId),
-    productRepository.findAllActive(),
+    productsFor({ items: list.items }),
   ]);
   const productNameById: Record<string, string> = {};
   for (const p of products) productNameById[p.id] = p.canonicalName;

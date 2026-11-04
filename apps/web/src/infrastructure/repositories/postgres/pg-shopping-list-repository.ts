@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import type {
   ShoppingList,
   ShoppingListItem,
+  ShoppingListItemPlaceChoice,
   ShoppingListItemVariant,
 } from "@smartroute/core/domain/entities/shopping-list";
 import { db } from "../../db/client";
@@ -164,6 +165,11 @@ export class PgShoppingListRepository implements IShoppingListRepository {
 
   async setItemVariant(listId: string, itemId: string, variant: ShoppingListItemVariant | null): Promise<void> {
     const patch = variant === null ? sql`(e - 'variant')` : sql`(e || ${JSON.stringify({ variant })}::jsonb)`;
+    await this.mapMatchingItem(listId, itemId, patch);
+  }
+
+  async setItemPlaceChoice(listId: string, itemId: string, placeChoice: ShoppingListItemPlaceChoice | null): Promise<void> {
+    const patch = placeChoice === null ? sql`(e - 'placeChoice')` : sql`(e || ${JSON.stringify({ placeChoice })}::jsonb)`;
     await this.mapMatchingItem(listId, itemId, patch);
   }
 

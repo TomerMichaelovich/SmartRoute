@@ -1,8 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { normalizeHebrewText } from "@smartroute/core/application/classification/normalize-hebrew-text";
 import type { ProductCategory } from "@smartroute/core/domain/entities/product";
+import { findShelfGroup } from "@smartroute/core/domain/value-objects/shelf-group";
 import { productRepository } from "@/src/infrastructure/container";
 import { saveUploadedImage } from "@/src/infrastructure/image-upload";
 import { requireAdmin } from "@/src/presentation/auth/admin";
@@ -48,15 +50,24 @@ export async function createProduct(formData: FormData): Promise<void> {
   });
 
   revalidatePath("/admin/products");
+  // "צור ועבור למוצרים ברשתות": straight to linking its barcodes, searching by its name.
+  if (formData.get("then") === "skus") {
+    redirect(`/admin/products/${id}/skus?q=${encodeURIComponent(canonicalName)}`);
+  }
 }
 
 export async function updateProduct(productId: string, formData: FormData): Promise<void> {
   await requireAdmin("products");
   const canonicalName = String(formData.get("canonicalName") ?? "").trim();
   const category = String(formData.get("category") ?? "other") as ProductCategory;
-  const department = String(formData.get("department") ?? "").trim();
   const aliases = parseAliases(String(formData.get("aliases") ?? ""));
   const isActive = formData.get("isActive") === "on";
+  const current = await productRepository.findById(productId);
+  if (!current) return;
+  // An imported product's department follows its shelf group; the admin's edit is
+  // marked so the next price-file import keeps it.
+  const shelfGroup = current.sourceItemKey ? findShelfGroup(String(formData.get("shelfGroup") ?? "")) : undefined;
+  const department = shelfGroup?.department ?? String(formData.get("department") ?? "").trim();
   if (!canonicalName || !department) return;
 
   const imageFile = formData.get("image");
@@ -71,6 +82,7 @@ export async function updateProduct(productId: string, formData: FormData): Prom
     normalizedAliases: computeNormalizedAliases(canonicalName, aliases),
     isActive,
     chainId: parseChainId(formData),
+    ...(current.sourceItemKey ? { manuallyEdited: true, ...(shelfGroup ? { shelfGroup: shelfGroup.id } : {}) } : {}),
     // Only touch imageUrl when a new file was actually uploaded - update()
     // merges partials, so omitting the key here (rather than setting it to
     // undefined) leaves an existing image alone when the admin just edits
@@ -79,4 +91,18 @@ export async function updateProduct(productId: string, formData: FormData): Prom
   });
 
   revalidatePath("/admin/products");
+}
+
+/**
+ * Moves imported products to another shelf group (and that group's department) -
+ * fixing what enrichment got wrong. Marked as edited, so re-imports keep it.
+ */
+export async function setProductsShelfGroup(productIds: string[], groupId: string): Promise<void> {
+  await requireAdmin("products");
+  const group = findShelfGroup(groupId);
+  if (!group) throw new Error(`Unknown shelf group ${groupId}`);
+  for (const productId of productIds) {
+    await productRepository.update(productId, { shelfGroup: group.id, department: group.department, manuallyEdited: true });
+  }
+  revalidatePath("/admin", "layout");
 }

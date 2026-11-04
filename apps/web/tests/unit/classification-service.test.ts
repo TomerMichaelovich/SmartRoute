@@ -20,6 +20,15 @@ class FakeProductRepository implements IProductRepository {
   async findAllActive() {
     return this.products.filter((p) => p.isActive);
   }
+  async findCatalog() {
+    return this.products.filter((p) => p.isActive && !p.sourceItemKey);
+  }
+  async findForStore() {
+    return this.findCatalog();
+  }
+  async findByIds(ids: string[]) {
+    return this.products.filter((p) => p.isActive && ids.includes(p.id));
+  }
   async findAll() {
     return this.products;
   }
@@ -147,6 +156,92 @@ describe("ClassificationService", () => {
     expect(result.matchedProductId).toBe(productByName("עגבניות").id);
     expect(llm.calls).toBe(0);
     expect((await cacheRepo.get("עגבניות"))?.source).not.toBe("unresolved");
+  });
+
+  it("re-checks a cached fuzzy guess against today's catalog", async () => {
+    const wrong = productByName("שוקולד חלב").id;
+    await cacheRepo.set("מיץ תפוזים", { rawText: "מיץ תפוזים", matchedProductId: wrong, confidence: 0.7, source: "fuzzy" });
+    const result = await service.classify("מיץ תפוזים");
+    expect(result.matchedProductId).toBe(productByName("מיץ תפוזים").id);
+    expect((await cacheRepo.get("מיץ תפוזים"))?.source).toBe("dictionary");
+  });
+
+  it("matches a line without its count, units or brand", async () => {
+    for (const [line, product] of [
+      ["3 חלב תנובה", "חלב 3% תנובה 1 ליטר"],
+      ['2 ק"ג עגבניות', "עגבניות"],
+      ["שישיית מים", "מים מינרליים"],
+      ["קוטג' תנובה 5%", "קוטג'"],
+      ["פיירי", "סבון כלים"],
+    ]) {
+      const result = await service.classify(line);
+      expect(result.source, line).toBe("normalization");
+      expect(result.matchedProductId, line).toBe(productByName(product).id);
+    }
+  });
+
+  it("doesn't fuzzy-match a different kind of product that merely looks alike", async () => {
+    expect((await service.classify("שוקו")).matchedProductId).not.toBe(productByName("שוקולד חלב").id);
+    expect((await service.classify("תה שחור")).matchedProductId).not.toBe(productByName("קפה נמס").id);
+    expect((await service.classify("צלי בקר")).matchedProductId).not.toBe(productByName("בצל יבש").id);
+  });
+
+  it("looks past a package word to what's in it", async () => {
+    const tea: Product = {
+      ...productByName("קפה נמס"),
+      id: "tea",
+      canonicalName: "תה",
+      aliases: ["שקיות תה"],
+      normalizedAliases: ["תה", "שקיות תה"],
+    };
+    const withTea = new ClassificationService(
+      [dictionaryLayer, normalizationLayer, fuzzyMatchLayer],
+      new FakeCacheRepository(),
+      new FakeProductRepository([...demoProducts, tea]),
+    );
+    expect((await withTea.classify("שקיות פח")).matchedProductId).not.toBe(tea.id);
+    expect((await withTea.classify("שקית תה")).matchedProductId).toBe(tea.id);
+  });
+
+  it("fuzzy-matches past a qualifier word or a swapped word order", async () => {
+    expect((await service.classify("דג סלמון")).matchedProductId).toBe(productByName("פילה סלמון").id);
+    expect((await service.classify("תירס שימורים")).matchedProductId).toBe(productByName("שימורי תירס").id);
+  });
+
+  it("prefers the product named exactly that over one that only has it as an alias", async () => {
+    const generic = productByName("קפה נמס");
+    const barista: Product = {
+      ...generic,
+      id: "barista",
+      canonicalName: "קפה נמס בריסטה",
+      aliases: ["קפה נמס"],
+      normalizedAliases: ["קפה נמס בריסטה", "קפה נמס"],
+    };
+    // The alias-only product listed first, as the catalog order may have it.
+    const withBarista = new ClassificationService(
+      [dictionaryLayer, normalizationLayer, fuzzyMatchLayer],
+      new FakeCacheRepository(),
+      new FakeProductRepository([barista, ...demoProducts]),
+    );
+    expect((await withBarista.classify("קפה נמס")).matchedProductId).toBe(generic.id);
+  });
+
+  it("never matches a product imported from a price file, even by its exact alias", async () => {
+    const generic = productByName("קפה נמס");
+    const imported: Product = {
+      ...generic,
+      id: "sku-bio",
+      canonicalName: "יוגורט ביו 3% תנובה 200 גרם",
+      aliases: ["יוגורט ביו"],
+      normalizedAliases: ["יוגורט ביו 3% תנובה 200 גרם", "יוגורט ביו"],
+      sourceItemKey: "7290000000001",
+    };
+    const withImported = new ClassificationService(
+      [dictionaryLayer, normalizationLayer, fuzzyMatchLayer],
+      new FakeCacheRepository(),
+      new FakeProductRepository([imported, ...demoProducts]),
+    );
+    expect((await withImported.classify("יוגורט ביו")).matchedProductId).not.toBe(imported.id);
   });
 
   it("classifyBatch resolves every item and preserves order", async () => {

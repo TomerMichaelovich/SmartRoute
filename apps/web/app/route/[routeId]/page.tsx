@@ -4,7 +4,6 @@ import { selectRoutePromotions } from "@smartroute/core/application/promotions/p
 import {
   analyticsRepository,
   nodeRepository,
-  productRepository,
   promotionRepository,
   routeRepository,
   shoppingListRepository,
@@ -12,6 +11,7 @@ import {
 } from "@/src/infrastructure/container";
 import type { ChecklistStopView } from "@/src/presentation/components/checklist/Checklist";
 import { RouteView } from "@/src/presentation/components/route/RouteView";
+import { productsFor } from "@/src/presentation/lib/products-for";
 import { SESSION_COOKIE_NAME } from "@/src/presentation/hooks/useAnalytics";
 
 export default async function RoutePage({
@@ -26,11 +26,10 @@ export default async function RoutePage({
   const route = await routeRepository.findById(routeId);
   if (!route) notFound();
 
-  const [store, nodes, shoppingList, products, promotions, cookieStore] = await Promise.all([
+  const [store, nodes, shoppingList, promotions, cookieStore] = await Promise.all([
     storeRepository.findById(route.storeId),
     nodeRepository.findByStore(route.storeId),
     shoppingListRepository.findById(route.shoppingListId),
-    productRepository.findAllActive(),
     promotionRepository.findAll(),
     cookies(),
   ]);
@@ -40,6 +39,7 @@ export default async function RoutePage({
   const sessionId = cookieStore.get(SESSION_COOKIE_NAME)?.value;
   const priorEvents = sessionId ? await analyticsRepository.readAll() : [];
 
+  const products = await productsFor({ items: shoppingList.items });
   const productById = new Map(products.map((p) => [p.id, p]));
   const itemById = new Map(shoppingList.items.map((i) => [i.id, i]));
   const promotionByNodeId = new Map(

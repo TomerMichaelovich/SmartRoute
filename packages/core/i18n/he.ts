@@ -368,6 +368,14 @@ export const he = {
     retry: "נסו שוב",
     useAsList: "השתמשו כרשימה",
   },
+  /** Before routing at a mapped store that carries several products for one item. */
+  placeChoice: {
+    title(rawText: string): string {
+      return `איזה ״${rawText}״ לקחת?`;
+    },
+    any: "לא משנה לי – מה שבדרך",
+    anyForRest: "מה שבדרך לכל השאר",
+  },
   cheapest: {
     entry: "הסל הזול ביותר",
     entrySubtitle: "השוו את מחיר הרשימה בסניפים בעיר שלכם",
@@ -397,6 +405,12 @@ export const he = {
     },
     missingEstimated: "הפריטים החסרים מחושבים לפי מחירם הטיפוסי בעיר",
     allItemsHere: "כל הפריטים",
+    /** Items no branch could be priced for (no linked products): not "all items here". */
+    unpricedShort(n: number): string {
+      return n === 1 ? "פריט אחד בלי מחיר" : `${n} פריטים בלי מחיר`;
+    },
+    noPrice: "אין מחיר במאגר",
+    nothingPriced: "לא מצאנו מחירים לאף פריט ברשימה, ולכן אין מה להשוות.",
     breakdown: "פירוט מחירים",
     hideBreakdown: "הסתרת הפירוט",
     buyHere: "קונים כאן",
@@ -429,6 +443,7 @@ export const he = {
       },
       any: "לא משנה לי – הכי זול",
       anyForRest: "הכי זול לכל השאר",
+      search: "חיפוש מוצר, למשל בריסטה",
       branchCount(n: number): string {
         return n === 1 ? "בסניף אחד" : `ב־${n} סניפים`;
       },
@@ -520,6 +535,8 @@ export const he = {
         ? "פריט אחד לא נכלל במסלול"
         : `${n} פריטים לא נכללו במסלול`;
     },
+    showUnresolved: "אילו?",
+    hideUnresolved: "הסתרה",
     finishShopping: "סיימתי לקנות",
     // Mobile's finish alert. finishedSavedBody only when /api/trips actually
     // wrote a history entry (logged-in owner) - guests get the plain body.

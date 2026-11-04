@@ -10,7 +10,7 @@ import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
 import { apiFetch } from "@/lib/api";
 import { detectCity, getSavedCity, saveCity } from "@/lib/location";
-import { startRouteAtStore } from "@/lib/start-route";
+import { useRouteStarter } from "@/lib/use-route-starter";
 
 interface City {
   code: number;
@@ -25,13 +25,17 @@ interface QuoteResult {
   comparedBranchCount: number;
   /** Every branch in the city, cheapest full basket first. */
   quotes: BranchQuote[];
-  unpricedItems: { itemId: string; rawText: string }[];
+  /** name: the refinement pick if there was one, else rawText. Absent from older servers. */
+  unpricedItems: { itemId: string; rawText: string; name?: string }[];
 }
 
 /** Shown before "show the other branches". */
 const TOP_COUNT = 3;
 /** Ask for every branch at once: revealing the rest needs no second request. */
 const MAX_BRANCHES = 50;
+
+/** No item priced at any branch (e.g. its products aren't linked to barcodes yet): ₪0 cards would mislead. */
+const nothingPriced = (result: QuoteResult) => result.quotes.every((q) => q.lines.length === 0 && q.missingItems.length === 0);
 
 type QuoteResponse =
   | ({ status: "ok" } & QuoteResult)
@@ -64,6 +68,7 @@ export default function CheapestBasketScreen() {
   // Popup answers, also sent with the quote in case saving one on the list failed.
   const choices = useRef(new Map<string, ShoppingListItemVariant>());
   const refined = useRef(false);
+  const { startRoute, choiceModal } = useRouteStarter(code);
 
   const quote = useCallback(async (): Promise<QuoteResponse> => {
     const res = await apiFetch(`/api/lists/${code}/basket-quote`, {
@@ -169,7 +174,7 @@ export default function CheapestBasketScreen() {
     setRouteError(null);
     if (q.branch.navioStoreId) {
       setChoosingBranch(q.branch.id);
-      const result = await startRouteAtStore(code, q.branch.navioStoreId);
+      const result = await startRoute(q.branch.navioStoreId);
       setChoosingBranch(null);
       if ("error" in result) setRouteError(result.error);
       else router.push(`/route/${result.routeId}`);
@@ -234,11 +239,17 @@ export default function CheapestBasketScreen() {
         <View style={styles.list}>
           {phase.result.quotes.length === 0 && <Text style={styles.hint}>{t.noBranches}</Text>}
           {routeError && <Text style={styles.errorText}>{routeError}</Text>}
+          {/* Up front, not under the cards: these items are in no total. */}
+          {phase.result.unpricedItems.length > 0 && (
+            <Text style={styles.warning}>{t.unpriced(phase.result.unpricedItems.map((u) => u.name ?? u.rawText).join(", "))}</Text>
+          )}
+          {nothingPriced(phase.result) && <Text style={styles.hint}>{t.nothingPriced}</Text>}
           {/* Cheapest full basket first, all the way down. */}
-          {(showAll ? phase.result.quotes : phase.result.quotes.slice(0, TOP_COUNT)).map((q, i) => (
+          {(nothingPriced(phase.result) ? [] : showAll ? phase.result.quotes : phase.result.quotes.slice(0, TOP_COUNT)).map((q, i) => (
             <BranchQuoteCard
               key={q.branch.id}
               quote={q}
+              unpriced={phase.result.unpricedItems}
               rank={i + 1}
               busy={choosingBranch === q.branch.id}
               disabled={choosingBranch !== null}
@@ -246,7 +257,7 @@ export default function CheapestBasketScreen() {
             />
           ))}
 
-          {phase.result.quotes.length > TOP_COUNT && (
+          {phase.result.quotes.length > TOP_COUNT && !nothingPriced(phase.result) && (
             <Pressable
               onPress={() => setShowAll((v) => !v)}
               style={({ pressed }) => [styles.moreButton, pressed && styles.cityOptionPressed]}
@@ -260,9 +271,6 @@ export default function CheapestBasketScreen() {
           )}
 
           {phase.result.quotes.some((q) => q.estimated) && <Text style={styles.note}>{t.estimated}</Text>}
-          {phase.result.unpricedItems.length > 0 && (
-            <Text style={styles.note}>{t.unpriced(phase.result.unpricedItems.map((u) => u.rawText).join(", "))}</Text>
-          )}
           <Text style={styles.disclaimer}>{t.disclaimer}</Text>
         </View>
       )}
@@ -285,6 +293,7 @@ export default function CheapestBasketScreen() {
         onAny={() => phase.kind === "refining" && answer(phase.questions, phase.index, phase.index + 1, anyVariant)}
         onAnyForRest={() => phase.kind === "refining" && answer(phase.questions, phase.index, phase.questions.length, anyVariant)}
       />
+      {choiceModal}
     </ScrollView>
   );
 }
@@ -386,6 +395,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: FONTS.regular,
     color: COLORS.neutral600,
+  },
+  warning: {
+    fontSize: 13,
+    fontFamily: FONTS.medium,
+    color: "#b45309",
+    backgroundColor: "#fffbeb",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   disclaimer: {
     fontSize: 12,

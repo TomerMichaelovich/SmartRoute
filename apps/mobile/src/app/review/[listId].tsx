@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ShoppingList, ShoppingListItem } from "@smartroute/core/domain/entities/shopping-list";
+import { isRecognized } from "@smartroute/core/domain/entities/classification-result";
 import { he } from "@smartroute/core/i18n/he";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/Button";
@@ -77,7 +78,7 @@ export default function ReviewScreen() {
     );
   }
 
-  const unresolvedCount = items.filter((item) => !item.classification?.matchedProductId).length;
+  const unresolvedCount = items.filter((item) => !isRecognized(item.classification)).length;
 
   async function handleSubmit() {
     if (state.status !== "ready") return;

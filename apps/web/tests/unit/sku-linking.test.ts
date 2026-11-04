@@ -32,6 +32,10 @@ const ITEMS = [
   item("עגבניות מרוסקות800ג יכין", { branchCount: 20 }),
   item("עגבניות קצוצות דק 3*400ג", { branchCount: 15 }),
   item("עגבניות שרי בודד", { branchCount: 8 }),
+  item("פטרוזיליה עלים משקל", { isWeighted: true, branchCount: 1 }),
+  item("פטרוזיליה יבשה במשקל", { isWeighted: true, branchCount: 1 }),
+  item("פטרוזיליה ארוזה (ק)", { quantity: 1, unitQty: "יחידות", branchCount: 10 }),
+  item("פטרוזיליה", { quantity: 1, unitQty: "יחידות", branchCount: 5 }),
 ];
 
 const names = (keys: string[]) => keys.map((k) => ITEMS.find((i) => i.itemKey === k)!.name);
@@ -91,5 +95,12 @@ describe("verifySkuCandidatesByRules", () => {
     expect(matched).not.toContain("עגבניות קצוצות דק 3*400ג");
     expect(matched).toContain("עגבניות שרי בודד");
     expect(typical).toEqual(["עגבניה"]);
+  });
+
+  it("herbs: the bunch most branches sell is typical, not one branch's by-the-kg or a dried spice", () => {
+    const { matched, typical } = verdictsFor("פטרוזיליה", ["פטרוזיליה"], "ירקות ופירות");
+    expect(matched).not.toContain("פטרוזיליה יבשה במשקל");
+    expect(typical).toEqual(expect.arrayContaining(["פטרוזיליה ארוזה (ק)", "פטרוזיליה"]));
+    expect(typical).not.toContain("פטרוזיליה עלים משקל");
   });
 });

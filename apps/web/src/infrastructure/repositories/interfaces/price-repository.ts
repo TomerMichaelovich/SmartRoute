@@ -13,6 +13,15 @@ export interface SkuLinkView {
   maxPriceAgorot: number | null;
 }
 
+export interface RetailItemSearchResult {
+  itemKey: string;
+  name: string;
+  manufacturer: string | null;
+  branchCount: number;
+  minPriceAgorot: number | null;
+  maxPriceAgorot: number | null;
+}
+
 /** One option of the refinement popup: a SKU a shopper could mean by a generic product. */
 export interface SkuOption {
   itemKey: string;
@@ -74,6 +83,10 @@ export interface IPriceRepository {
   findSkuLinks(productId: string): Promise<SkuLinkView[]>;
   /** An admin decision: marks the link "manual" so the nightly linker never overrides it. */
   updateSkuLink(productId: string, itemKey: string, patch: { isRejected?: boolean; isTypical?: boolean }): Promise<void>;
+  /** Admin search over every chain's products, by name words or barcode; most carried first. */
+  searchRetailItems(query: string, limit: number): Promise<RetailItemSearchResult[]>;
+  /** Links a retail item to a product by hand (an admin decision the nightly linker keeps). */
+  addManualSkuLink(productId: string, itemKey: string, options: { asOnlyTypical: boolean }): Promise<void>;
 
   /** Linked (not rejected) SKUs per product, most widely carried first. */
   findSkuOptions(productIds: string[]): Promise<Map<string, SkuOption[]>>;

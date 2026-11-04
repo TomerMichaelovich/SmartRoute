@@ -33,21 +33,32 @@ const IGNORED = new Set([
   "ארוז", "ארוזה", "ארוזות", "רגיל", "רגילה", "רגילות", "מארז",
 ]);
 
+// A chain's own brand, however its file spells or cuts it short ("טחינה 400ג רמילוי",
+// "סוכר לבן 1 ק"ג רמי ל", "מלח שולחן דק שופרסל 1 קג").
+const CHAIN_BRAND = "רמי לוי|רמי לו|רמי ל|רמילוי|רמילו|רמיל|שופרסל|שופרס|יוחננוף|יוחננו|אושר עד|קרפור";
+const CHAIN_BRAND_WORDS = new RegExp(`(^|\\s)(${CHAIN_BRAND})(?=\\s|$)|(^|\\s)רמי$`, "g");
+const hasChainBrand = (text: string) => new RegExp(CHAIN_BRAND_WORDS.source).test(text);
+
 interface Profile {
   size: Size | null;
   percent: string | null;
   words: Set<string>;
+  /** A chain's own brand: equivalent to another chain's own brand of the same kind, never to a national one. */
+  privateLabel: boolean;
 }
 
 function profile(option: EquivalenceOption, commonWords: Set<string>): Profile {
   const normalized = normalizeRetailName(option.name);
-  const brandWords = new Set(option.manufacturer ? normalizeRetailName(option.manufacturer).split(" ") : []);
+  const manufacturer = option.manufacturer ? normalizeRetailName(option.manufacturer) : "";
+  const brandWords = new Set(manufacturer.split(" "));
+  const privateLabel = hasChainBrand(normalized) || hasChainBrand(manufacturer);
   const words = normalized
+    .replace(CHAIN_BRAND_WORDS, " ")
     .split(" ")
     .filter(Boolean)
     .map((w) => SIZE_CLASS[w] ?? w)
     .filter((w) => !commonWords.has(w) && !/^[\d.%]+$/.test(w) && !IGNORED.has(w) && !brandWords.has(w));
-  return { size: sizeFromName(normalized), percent: percentOf(normalized), words: new Set(words) };
+  return { size: sizeFromName(normalized), percent: percentOf(normalized), words: new Set(words), privateLabel };
 }
 
 const sameSize = (a: Size | null, b: Size | null) =>
@@ -61,7 +72,10 @@ function commonWordsOf(options: EquivalenceOption[]): Set<string> {
 
 // Exactly the same distinguishing words: omega eggs aren't plain eggs either way round.
 const sameKind = (a: Profile, b: Profile) =>
-  a.percent === b.percent && a.words.size === b.words.size && [...a.words].every((w) => b.words.has(w));
+  a.privateLabel === b.privateLabel &&
+  a.percent === b.percent &&
+  a.words.size === b.words.size &&
+  [...a.words].every((w) => b.words.has(w));
 
 /** Item keys of the options equivalent to `chosenKey` (not including it). */
 export function equivalentKeys(chosenKey: string, options: EquivalenceOption[]): string[] {

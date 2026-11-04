@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import type { MapEdge } from "@smartroute/core/domain/entities/map-edge";
 import type { MapNode, MapNodeType } from "@smartroute/core/domain/entities/map-node";
 import type { Product } from "@smartroute/core/domain/entities/product";
@@ -10,6 +10,8 @@ import { NODE_TYPE_LABELS } from "@/src/presentation/node-type-labels";
 import type { StoredWalkableMask } from "@smartroute/core/map/walkable/mask";
 import type { WalkableMapSaveResult } from "@/src/presentation/actions/admin-store-actions";
 import { ProductAutocomplete } from "./ProductAutocomplete";
+import { AliasPlacePanel } from "./AliasPlacePanel";
+import { type ShelfGroupOption, ShelfGroupPanel } from "./ShelfGroupPanel";
 import { WalkableAreaEditor } from "./WalkableAreaEditor";
 
 interface StoreLayoutEditorProps {
@@ -20,8 +22,15 @@ interface StoreLayoutEditorProps {
   nodes: MapNode[];
   edges: MapEdge[];
   nodeTypes: MapNodeType[];
+  /** Hand-made products placed in the store; imported ones are shown by shelf group. */
   products: Product[];
   listings: ProductListing[];
+  /** The store's shelf groups: what's left to place, and where each group stands. */
+  shelfGroups: Array<ShelfGroupOption & { nodes: Array<{ nodeId: string; count: number }> }>;
+  /** Aliases whose products stand at more than one node - usually one kind of product split by mistake. */
+  splitAliases: Array<{ alias: string; nodes: Array<{ nodeId: string; count: number }> }>;
+  hasPriceBranch: boolean;
+  canEditProducts: boolean;
   createNode: (formData: FormData) => Promise<void>;
   createEdge: (formData: FormData) => Promise<void>;
   deleteNode: (storeId: string, nodeId: string) => Promise<void>;
@@ -30,6 +39,19 @@ interface StoreLayoutEditorProps {
   updateNodeLabel: (storeId: string, nodeId: string, formData: FormData) => Promise<void>;
   addProductToNode: (storeId: string, nodeId: string, formData: FormData) => Promise<void>;
   removeProductFromNode: (storeId: string, nodeId: string, productId: string) => Promise<void>;
+  placeShelfGroupOnNode: (storeId: string, nodeId: string, groupId: string) => Promise<number>;
+  placeAliasOnNode: (
+    storeId: string,
+    nodeId: string,
+    alias: string,
+    moveOthers: boolean,
+  ) => Promise<{ placed: number; moved: number }>;
+  removeShelfGroupFromNode: (storeId: string, nodeId: string, groupId: string) => Promise<void>;
+  moveProductsToNode: (storeId: string, productIds: string[], nodeId: string) => Promise<void>;
+  moveAliasToNode: (storeId: string, alias: string, fromNodeId: string, toNodeId: string) => Promise<number>;
+  removeProductsFromNode: (storeId: string, nodeId: string, productIds: string[]) => Promise<void>;
+  markProductsNotSold: (storeId: string, productIds: string[]) => Promise<void>;
+  setProductsShelfGroup: (productIds: string[], groupId: string) => Promise<void>;
   uploadStoreImage: (formData: FormData) => Promise<void>;
   /** Same-origin URL of the map image, for reading its pixels in the walkable-area mode. */
   mapPixelSourceUrl: string;
@@ -166,6 +188,10 @@ export function StoreLayoutEditor({
   nodeTypes,
   products,
   listings,
+  shelfGroups,
+  splitAliases,
+  hasPriceBranch,
+  canEditProducts,
   createNode,
   createEdge,
   deleteNode,
@@ -174,12 +200,23 @@ export function StoreLayoutEditor({
   updateNodeLabel,
   addProductToNode,
   removeProductFromNode,
+  placeShelfGroupOnNode,
+  placeAliasOnNode,
+  removeShelfGroupFromNode,
+  moveProductsToNode,
+  moveAliasToNode,
+  removeProductsFromNode,
+  markProductsNotSold,
+  setProductsShelfGroup,
   uploadStoreImage,
   mapPixelSourceUrl,
   walkableMask,
   saveWalkableMap,
 }: StoreLayoutEditorProps) {
   const [walkableMode, setWalkableMode] = useState(false);
+  // The split alias being moved to another node, while its move runs.
+  const [movingAlias, setMovingAlias] = useState<string | null>(null);
+  const [, startMoveTransition] = useTransition();
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const dragStartRef = useRef<{ nodeId: string; clientX: number; clientY: number; moved: boolean } | null>(
@@ -195,6 +232,9 @@ export function StoreLayoutEditor({
   // "move": clicks only select and drags only move - nothing gets added or connected by
   // accident. "build": a click on the map adds a waypoint, a click on a second node connects.
   const [editMode, setEditMode] = useState<"move" | "build">("move");
+  // Departments shrink to small dots, so their label boxes don't cover the corridors being edited.
+  // The dots still drag, select and connect like waypoints. View-only: nothing about the map changes.
+  const [hideDepartments, setHideDepartments] = useState(false);
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<Set<string>>(new Set());
   const marqueeStartRef = useRef<{ clientX: number; clientY: number; active: boolean } | null>(null);
@@ -458,17 +498,49 @@ export function StoreLayoutEditor({
       ? listings.filter((l) => l.nodeId === singleSelectedNode!.id).map((l) => l.productId)
       : [],
   );
-  const listedProductIdsInStore = new Set(listings.map((l) => l.productId));
   const productsAtNode = showsProductPanel
     ? products
         .filter((p) => listedProductIdsAtNode.has(p.id))
         .sort((a, b) => a.canonicalName.localeCompare(b.canonicalName, "he"))
     : [];
-  const availableProducts = showsProductPanel
-    ? products
-        .filter((p) => !listedProductIdsInStore.has(p.id))
-        .sort((a, b) => a.canonicalName.localeCompare(b.canonicalName, "he"))
+  const groupsAtNode = showsProductPanel
+    ? shelfGroups
+        .flatMap((g) => {
+          const here = g.nodes.find((n) => n.nodeId === singleSelectedNode!.id);
+          return here ? [{ groupId: g.groupId, name: g.name, count: here.count }] : [];
+        })
+        .sort((a, b) => a.name.localeCompare(b.name, "he"))
     : [];
+  const departmentNodes = nodes
+    .filter((n) => n.type === "department")
+    .map((n) => ({ id: n.id, label: n.label }))
+    .sort((a, b) => a.label.localeCompare(b.label, "he"));
+  // The aliases standing here that also stand elsewhere, and where else.
+  const splitHere = showsProductPanel
+    ? splitAliases.flatMap((split) => {
+        const here = split.nodes.find((n) => n.nodeId === singleSelectedNode!.id);
+        if (!here) return [];
+        const elsewhere = split.nodes
+          .filter((n) => n.nodeId !== singleSelectedNode!.id)
+          .map((n) => ({
+            ...n,
+            label: nodeById.get(n.nodeId)?.label.replace(/\s*\n\s*/g, " ") ?? "נקודה אחרת",
+          }));
+        return [{ alias: split.alias, count: here.count, elsewhere }];
+      })
+    : [];
+  const splitAliasesHere = new Map(
+    splitHere.map((s) => [s.alias, s.elsewhere.map((n) => `${n.label} (${n.count})`).join(" · ")]),
+  );
+
+  function moveSplitAlias(alias: string, toNodeId: string) {
+    const fromNodeId = singleSelectedNode!.id;
+    setMovingAlias(alias);
+    startMoveTransition(async () => {
+      await moveAliasToNode(storeId, alias, fromNodeId, toNodeId);
+      setMovingAlias(null);
+    });
+  }
 
   return (
     <section className="flex flex-col gap-3">
@@ -561,6 +633,19 @@ export function StoreLayoutEditor({
               </button>
               )}
               {placingNode && <span className="text-sm text-cyan-700">לחצו על המפה במיקום המחלקה</span>}
+              <button
+                type="button"
+                onClick={() => {
+                  closePopups();
+                  setHideDepartments((v) => !v);
+                }}
+                aria-pressed={hideDepartments}
+                className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                  hideDepartments ? "bg-cyan-600 text-white" : "border border-neutral-300 bg-white text-neutral-700"
+                }`}
+              >
+                {hideDepartments ? "הצגת מחלקות" : "הסתרת מחלקות"}
+              </button>
             </div>
 
             <p className="text-xs text-neutral-500">
@@ -660,9 +745,11 @@ export function StoreLayoutEditor({
                   const isDragging = dragState?.nodeId === node.id;
                   const x = (isDragging ? dragState!.x : node.position.x) * mapWidth;
                   const y = (isDragging ? dragState!.y : node.position.y) * mapHeight;
-                  const radius = nodeRadius(node.type);
+                  const isHiddenDepartment = hideDepartments && node.type === "department";
+                  const radius = nodeRadius(isHiddenDepartment ? "waypoint" : node.type);
                   const isSelected = selectedNodeIds.has(node.id);
-                  const isWaypoint = node.type === "waypoint";
+                  // A hidden department is drawn as a waypoint-sized dot, but stays draggable and connectable.
+                  const isDot = node.type === "waypoint" || isHiddenDepartment;
 
                   return (
                     <g
@@ -673,7 +760,7 @@ export function StoreLayoutEditor({
                       onPointerUp={(e) => void handleNodePointerUp(e, node)}
                       onClick={(e) => handleNodeClick(e, node)}
                     >
-                      {isWaypoint ? (
+                      {isDot ? (
                         <>
                           {isSelected && <circle cx={x} cy={y} r={radius + 6} fill="none" stroke="#059669" strokeWidth={3} />}
                           {/* Invisible, larger hit area so the small dot is still easy to click and drag. */}
@@ -809,6 +896,36 @@ export function StoreLayoutEditor({
                 <span className="text-xs text-neutral-400">{NODE_TYPE_LABELS[singleSelectedNode.type]}</span>
               </form>
 
+              {splitHere.length > 0 && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+                  <p className="font-semibold">⚠ כינויים בנקודה זו שממוקמים גם בנקודות אחרות ({splitHere.length})</p>
+                  <ul className="mt-1 flex max-h-60 flex-col divide-y divide-amber-200 overflow-y-auto">
+                    {splitHere.map((split) => (
+                      <li key={split.alias} className="flex flex-col gap-1 py-1.5">
+                        <span>
+                          <strong>{split.alias}</strong> ({split.count} כאן) - גם ב:{" "}
+                          {split.elsewhere.map((n) => `${n.label} (${n.count})`).join(" · ")}
+                        </span>
+                        <span className="flex flex-wrap gap-1.5">
+                          {split.elsewhere.map((n) => (
+                            <button
+                              key={n.nodeId}
+                              type="button"
+                              disabled={movingAlias !== null}
+                              onClick={() => moveSplitAlias(split.alias, n.nodeId)}
+                              title={`להעביר את ${split.count} הפריטים עם הכינוי "${split.alias}" מכאן ל${n.label}`}
+                              className="rounded-md border border-amber-500 bg-white px-2 py-0.5 font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-40"
+                            >
+                              {movingAlias === split.alias ? "מעביר..." : `העבר ${split.count} ל${n.label} ←`}
+                            </button>
+                          ))}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               <div className="flex flex-col gap-1">
                 <h3 className="text-sm font-semibold text-neutral-700">
                   מוצרים בנקודה זו ({productsAtNode.length})
@@ -831,15 +948,43 @@ export function StoreLayoutEditor({
                 )}
               </div>
 
-              {availableProducts.length > 0 && (
-                <ProductAutocomplete
-                  key={singleSelectedNode.id}
-                  products={availableProducts}
-                  onAdd={async (productId) => {
-                    const formData = new FormData();
-                    formData.set("productId", productId);
-                    await addProductToNode(storeId, singleSelectedNode.id, formData);
-                  }}
+              <ProductAutocomplete
+                key={singleSelectedNode.id}
+                storeId={storeId}
+                nodeId={singleSelectedNode.id}
+                departmentNodes={departmentNodes}
+                onAdd={async (productId) => {
+                  const formData = new FormData();
+                  formData.set("productId", productId);
+                  await addProductToNode(storeId, singleSelectedNode.id, formData);
+                }}
+              />
+
+              <ShelfGroupPanel
+                key={`groups-${singleSelectedNode.id}`}
+                storeId={storeId}
+                nodeId={singleSelectedNode.id}
+                departmentNodes={departmentNodes}
+                groupsHere={groupsAtNode}
+                splitAliases={splitAliasesHere}
+                groupOptions={shelfGroups.filter((g) => g.unplaced > 0)}
+                hasPriceBranch={hasPriceBranch}
+                canEditProducts={canEditProducts}
+                placeShelfGroupOnNode={placeShelfGroupOnNode}
+                removeShelfGroupFromNode={removeShelfGroupFromNode}
+                moveProductsToNode={moveProductsToNode}
+                removeProductsFromNode={removeProductsFromNode}
+                markProductsNotSold={markProductsNotSold}
+                setProductsShelfGroup={setProductsShelfGroup}
+              />
+
+              {hasPriceBranch && (
+                <AliasPlacePanel
+                  key={`alias-${singleSelectedNode.id}`}
+                  storeId={storeId}
+                  nodeId={singleSelectedNode.id}
+                  departmentNodes={departmentNodes}
+                  placeAliasOnNode={placeAliasOnNode}
                 />
               )}
 

@@ -3,7 +3,8 @@ import { buildTripItems } from "@smartroute/core/application/shopping-list/build
 import type { ShoppingList } from "@smartroute/core/domain/entities/shopping-list";
 import type { ShoppingTrip } from "@smartroute/core/domain/entities/shopping-trip";
 import { he } from "@smartroute/core/i18n/he";
-import { productRepository, shoppingTripRepository } from "@/src/infrastructure/container";
+import { shoppingTripRepository } from "@/src/infrastructure/container";
+import { productsFor } from "./products-for";
 
 /**
  * Saves a list shopped without a route (the app's "use as a list" mode, or the
@@ -17,7 +18,7 @@ export async function recordListTrip(
   collectedItemIds: Iterable<string>,
   notFoundItemIds: Iterable<string>,
 ): Promise<ShoppingTrip> {
-  const products = await productRepository.findAllActive();
+  const products = await productsFor({ items: list.items });
   const productNameById = new Map(products.map((p) => [p.id, p.canonicalName]));
   const now = new Date().toISOString();
   const trip: ShoppingTrip = {

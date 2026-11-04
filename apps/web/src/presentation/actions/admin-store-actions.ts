@@ -7,8 +7,11 @@ import type { MapEdge } from "@smartroute/core/domain/entities/map-edge";
 import type { MapNode, MapNodeType } from "@smartroute/core/domain/entities/map-node";
 import { generateNavGraph } from "@smartroute/core/map/walkable/generate-graph";
 import { type StoredWalkableMask, decodeRle, encodeRle } from "@smartroute/core/map/walkable/mask";
+import { aliasKeys } from "@smartroute/core/application/classification/imported-aliases";
+import { findShelfGroup } from "@smartroute/core/domain/value-objects/shelf-group";
 import {
   adminUserRepository,
+  catalogAdminRepository,
   edgeRepository,
   nodeRepository,
   priceRepository,
@@ -233,6 +236,8 @@ export async function addProductToNode(storeId: string, nodeId: string, formData
   const storeListings = await productListingRepository.findByStore(storeId);
   if (storeListings.some((l) => l.productId === productId)) return;
   await productListingRepository.create({ id: crypto.randomUUID(), productId, storeId, nodeId });
+  // Placed by hand: whatever "not sold here" said before, it's on the shelf now.
+  await catalogAdminRepository.setExcluded(storeId, [productId], false);
   revalidatePath(`/admin/stores/${storeId}`);
 }
 
@@ -242,6 +247,106 @@ export async function removeProductFromNode(storeId: string, nodeId: string, pro
   const match = storeListings.find((l) => l.productId === productId && l.nodeId === nodeId);
   if (!match) return;
   await productListingRepository.delete(match.id);
+  revalidatePath(`/admin/stores/${storeId}`);
+}
+
+/**
+ * Places a whole shelf group at a node: every product of the group in the store's
+ * price-branch file that isn't placed in the store yet (one product, one node per
+ * store - products already placed elsewhere stay where they are). Returns how many
+ * were placed.
+ */
+export async function placeShelfGroupOnNode(storeId: string, nodeId: string, groupId: string): Promise<number> {
+  await requireAdmin({ mapStore: storeId });
+  await assertNodeInStore(storeId, nodeId);
+  if (!findShelfGroup(groupId)) throw new Error(`Unknown shelf group ${groupId}`);
+  const productIds = await catalogAdminRepository.unplacedGroupProductIds(storeId, groupId);
+  await productListingRepository.createMany(
+    productIds.map((productId) => ({ id: crypto.randomUUID(), productId, storeId, nodeId })),
+  );
+  revalidatePath(`/admin/stores/${storeId}`);
+  return productIds.length;
+}
+
+/**
+ * Places at a node every product of the store's branch file answering exactly to an
+ * alias ("ג'ין") - those not placed anywhere in the store yet, and with `moveOthers` also
+ * those placed at other nodes (one product, one node per store). Products marked as not
+ * sold here are left out. Returns how many were placed and moved.
+ */
+export async function placeAliasOnNode(
+  storeId: string,
+  nodeId: string,
+  alias: string,
+  moveOthers: boolean,
+): Promise<{ placed: number; moved: number }> {
+  await requireAdmin({ mapStore: storeId });
+  await assertNodeInStore(storeId, nodeId);
+  const products = await catalogAdminRepository.aliasProducts(storeId, aliasKeys(alias.trim()));
+  const unplaced = products.filter((p) => p.nodeId === null).map((p) => p.id);
+  const elsewhere = moveOthers ? products.filter((p) => p.nodeId !== null && p.nodeId !== nodeId).map((p) => p.id) : [];
+  await productListingRepository.createMany(
+    unplaced.map((productId) => ({ id: crypto.randomUUID(), productId, storeId, nodeId })),
+  );
+  if (elsewhere.length > 0) await productListingRepository.moveToNode(storeId, elsewhere, nodeId);
+  revalidatePath(`/admin/stores/${storeId}`);
+  return { placed: unplaced.length, moved: elsewhere.length };
+}
+
+/** Takes a shelf group's products off one node (they become unplaced again). */
+export async function removeShelfGroupFromNode(storeId: string, nodeId: string, groupId: string): Promise<void> {
+  await requireAdmin({ mapStore: storeId });
+  await assertNodeInStore(storeId, nodeId);
+  const products = await catalogAdminRepository.groupProductsAtNode(storeId, nodeId, groupId);
+  await productListingRepository.deleteAtNode(storeId, nodeId, products.map((p) => p.id));
+  revalidatePath(`/admin/stores/${storeId}`);
+}
+
+/** Moves products already placed in the store to another node - the exceptions of a shelf group. */
+export async function moveProductsToNode(storeId: string, productIds: string[], nodeId: string): Promise<void> {
+  await requireAdmin({ mapStore: storeId });
+  await assertNodeInStore(storeId, nodeId);
+  await productListingRepository.moveToNode(storeId, productIds, nodeId);
+  revalidatePath(`/admin/stores/${storeId}`);
+}
+
+/** Moves the products at one node answering to an alias to another node - mending an alias split between two. */
+export async function moveAliasToNode(
+  storeId: string,
+  alias: string,
+  fromNodeId: string,
+  toNodeId: string,
+): Promise<number> {
+  await requireAdmin({ mapStore: storeId });
+  await assertNodeInStore(storeId, toNodeId);
+  const productIds = await catalogAdminRepository.aliasProductIdsAtNode(storeId, fromNodeId, alias);
+  if (productIds.length > 0) await productListingRepository.moveToNode(storeId, productIds, toNodeId);
+  revalidatePath(`/admin/stores/${storeId}`);
+  return productIds.length;
+}
+
+export async function removeProductsFromNode(storeId: string, nodeId: string, productIds: string[]): Promise<void> {
+  await requireAdmin({ mapStore: storeId });
+  await productListingRepository.deleteAtNode(storeId, nodeId, productIds);
+  revalidatePath(`/admin/stores/${storeId}`);
+}
+
+/**
+ * The store's price file lists these products but they aren't on its shelves: off the
+ * map, no longer counted as waiting to be placed, and skipped when their shelf group
+ * is placed again. Shoppers get "not at this branch", like any unplaced product.
+ */
+export async function markProductsNotSold(storeId: string, productIds: string[]): Promise<void> {
+  await requireAdmin({ mapStore: storeId });
+  await productListingRepository.deleteInStore(storeId, productIds);
+  await catalogAdminRepository.setExcluded(storeId, productIds, true);
+  revalidatePath(`/admin/stores/${storeId}`);
+}
+
+/** Undoes markProductsNotSold: the products are waiting to be placed again. */
+export async function unmarkProductsNotSold(storeId: string, productIds: string[]): Promise<void> {
+  await requireAdmin({ mapStore: storeId });
+  await catalogAdminRepository.setExcluded(storeId, productIds, false);
   revalidatePath(`/admin/stores/${storeId}`);
 }
 

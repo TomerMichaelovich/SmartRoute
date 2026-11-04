@@ -7,10 +7,15 @@ import {
 import { effectiveVariant } from "@smartroute/core/application/basket/effective-variant";
 import { needsVariantChoice } from "@smartroute/core/application/basket/needs-variant-choice";
 import type { ShoppingList, ShoppingListItem, ShoppingListItemVariant } from "@smartroute/core/domain/entities/shopping-list";
-import { classificationService, priceRepository } from "@/src/infrastructure/container";
+import { listLineCores } from "@smartroute/core/application/classification/list-line";
+import { normalizeHebrewText } from "@smartroute/core/application/classification/normalize-hebrew-text";
+import { resolveBeforeBranch } from "@smartroute/core/application/classification/resolve-before-branch";
+import { isRecognized } from "@smartroute/core/domain/entities/classification-result";
+import { classificationService, importedCatalogRepository, priceRepository } from "@/src/infrastructure/container";
 import { MAX_PRICE_FILE_AGE_HOURS } from "@/src/infrastructure/prices/pilot-config";
 import { cityName } from "@/src/infrastructure/prices/settlements";
 import { shortBranchName } from "@/src/infrastructure/prices/branch-name";
+import { productsFor } from "@/src/presentation/lib/products-for";
 import { dedupeByName, equivalentKeys, scaledFallbacks } from "@/src/infrastructure/prices/sku-equivalence";
 import type {
   PriceBranch,
@@ -22,35 +27,71 @@ import type {
  * Items still to buy: what the comparison is about. Items left unclassified
  * (e.g. classified before the catalog had their product) are re-classified
  * against today's catalog — for this comparison only; the list isn't changed.
+ * Comparing chains is the "no branch picked yet" case, so each item reads as
+ * it does on the list screen (resolveBeforeBranch): "אורז" is generic rice,
+ * not the one chain's private label that also answers to "אורז".
  */
 async function openItems(list: ShoppingList): Promise<ShoppingListItem[]> {
   const items = list.items.filter((i) => !i.checked);
-  const unclassified = items.filter((i) => !i.classification?.matchedProductId);
-  if (unclassified.length === 0) return items;
-  const results = await classificationService.classifyBatch(unclassified.map((i) => i.rawText));
+  const unclassified = items.filter((i) => !isRecognized(i.classification));
+  const [results, products] = await Promise.all([
+    unclassified.length > 0 ? classificationService.classifyBatch(unclassified.map((i) => i.rawText)) : [],
+    productsFor({ items }),
+  ]);
   const byId = new Map(unclassified.map((item, idx) => [item.id, results[idx]]));
   return items.map((item) => {
-    const result = byId.get(item.id);
-    return result?.matchedProductId ? { ...item, classification: result } : item;
+    const fresh = byId.get(item.id);
+    const classification = isRecognized(fresh) ? fresh : item.classification;
+    return classification ? { ...item, classification: resolveBeforeBranch(classification, products) } : item;
   });
 }
 
-const MAX_OPTIONS = 12;
+/** Where an item's price options are kept: under its generic product, or under the line itself (see withLineOptions). */
+const optionsKey = (item: ShoppingListItem) => item.classification?.matchedProductId ?? `line:${item.id}`;
+
+/**
+ * A line no generic product matches ("פיקניקית") may still be in the price files:
+ * the products imported for exactly that text (or its form without counts and
+ * brand) are its options, so it's priced - and asked about - like any other.
+ */
+async function withLineOptions(items: ShoppingListItem[], options: Map<string, SkuOption[]>): Promise<Map<string, SkuOption[]>> {
+  const lines = items.filter((i) => !i.classification?.matchedProductId);
+  if (lines.length === 0) return options;
+  const textsOf = (item: ShoppingListItem) => {
+    const normalized = normalizeHebrewText(item.rawText);
+    // The alias a typo was recognized as ("במבע" -> "במבה") names them too.
+    const alias = item.classification?.matchedAlias;
+    return [normalized, ...listLineCores(normalized), ...(alias ? [normalizeHebrewText(alias)] : [])];
+  };
+  const byText = await importedCatalogRepository.skuOptionsByAlias([...new Set(lines.flatMap(textsOf))]);
+  const merged = new Map(options);
+  for (const item of lines) {
+    const found = textsOf(item)
+      .map((text) => byText.get(text))
+      .find((o) => o && o.length > 0);
+    if (found) merged.set(optionsKey(item), found);
+  }
+  return merged;
+}
+
+// Enough that a specific product is there to find (the popup searches them).
+const MAX_OPTIONS = 60;
 
 export async function variantOptionsFor(list: ShoppingList) {
   const items = await openItems(list);
   const productIds = [...new Set(items.map((i) => i.classification?.matchedProductId).filter((id): id is string => !!id))];
-  const options = await priceRepository.findSkuOptions(productIds);
+  const options = await withLineOptions(items, await priceRepository.findSkuOptions(productIds));
   return items
     .map((item) => {
-      const itemOptions = options.get(item.classification?.matchedProductId ?? "") ?? [];
+      const itemOptions = options.get(optionsKey(item)) ?? [];
       return { item, itemOptions };
     })
     .filter(({ item, itemOptions }) => needsVariantChoice(item, itemOptions))
     .map(({ item, itemOptions }) => ({
       itemId: item.id,
       rawText: item.rawText,
-      productId: item.classification!.matchedProductId!,
+      // None for a line priced through imported products: its pick is saved without one.
+      productId: item.classification?.matchedProductId,
       options: dedupeByName(itemOptions).slice(0, MAX_OPTIONS).map((o) => ({
         itemKey: o.itemKey,
         name: o.name,
@@ -62,7 +103,15 @@ export async function variantOptionsFor(list: ShoppingList) {
     }));
 }
 
-type Requirement = BasketRequirement & { keys: RequirementKey[]; chosenKey?: string };
+/** Chains don't always flag by-weight items ("פטרוזיליה עלים משקל" is priced per kg). */
+const soldByWeight = (o: SkuOption) => o.isWeighted || /(^|\s)ב?משקל(\s|$)/.test(o.name);
+
+type Requirement = BasketRequirement & {
+  keys: RequirementKey[];
+  chosenKey?: string;
+  /** The pick's name from the refinement popup ("שמפו הד אנד שולדרס 400 מל"), for display. */
+  chosenName?: string;
+};
 
 /**
  * Target-size products first (tier 0); where a branch has none, the same kind
@@ -96,7 +145,7 @@ function buildRequirements(
     const override = overrides.get(item.id);
     const variant = override ? effectiveVariant({ ...item, variant: override }) : effectiveVariant(item);
     const quantity = item.quantity && item.quantity > 0 ? item.quantity : 1;
-    const productOptions = options.get(item.classification?.matchedProductId ?? "") ?? [];
+    const productOptions = options.get(optionsKey(item)) ?? [];
     if (variant?.kind === "sku" && variant.itemKey) {
       requirements.push({
         itemId: item.id,
@@ -105,15 +154,20 @@ function buildRequirements(
         estimated: false,
         keys: keysFor([variant.itemKey, ...equivalentKeys(variant.itemKey, productOptions)], productOptions),
         chosenKey: variant.itemKey,
+        chosenName: variant.name,
       });
       continue;
     }
-    const typical = productOptions.filter((o) => o.isTypical);
-    if (typical.length === 0) {
+    const allTypical = productOptions.filter((o) => o.isTypical);
+    if (allTypical.length === 0) {
       unpriceable.push({ itemId: item.id, rawText: item.rawText });
       continue;
     }
-    const weighted = typical.every((o) => o.isWeighted);
+    const weighted = allTypical.every(soldByWeight);
+    // Sold both ways (parsley as a bunch or by weight, feta packed or at the
+    // counter): a per-kg price isn't comparable with a pack's, and counted as
+    // one unit it adds ~100₪ to the basket. Compare packs only.
+    const typical = weighted ? allTypical : allTypical.filter((o) => !soldByWeight(o));
     requirements.push({
       itemId: item.id,
       rawText: item.rawText,
@@ -150,7 +204,7 @@ export async function quoteBasket(
     distanceKm: distanceKm(input.location, b),
   }));
   const productIds = [...new Set(items.map((i) => i.classification?.matchedProductId).filter((id): id is string => !!id))];
-  const options = await priceRepository.findSkuOptions(productIds);
+  const options = await withLineOptions(items, await priceRepository.findSkuOptions(productIds));
   const { requirements, unpriceable } = buildRequirements(items, options, input.overrides);
 
   const rows = await priceRepository.findCheapestPrices(
@@ -172,6 +226,12 @@ export async function quoteBasket(
 
   const { quotes, unavailableEverywhere } = computeBasketQuotes({ requirements, branches, prices, limit: input.limit });
   const chosenKeyByItem = new Map(requirements.map((r) => [r.itemId, r.chosenKey]));
+  // An item the shopper refined reads as their pick, not as the generic line they typed.
+  const chosenNameByItem = new Map(requirements.map((r) => [r.itemId, r.chosenName]));
+  const withName = <T extends { itemId: string; rawText: string }>(item: T) => ({
+    ...item,
+    name: chosenNameByItem.get(item.itemId) ?? item.rawText,
+  });
   const city = cityName(input.cityCode);
   return {
     city: { code: input.cityCode, name: city },
@@ -192,7 +252,7 @@ export async function quoteBasket(
       fullBasketAgorot: q.fullBasketAgorot,
       // Lines priced per unit from another pack size are estimates too.
       estimated: q.estimated || q.lines.some((l) => l.scaled),
-      missingItems: q.missingItems,
+      missingItems: q.missingItems.map(withName),
       lines: q.lines.map((line) => {
         const chosenKey = chosenKeyByItem.get(line.itemId);
         // Priced with an equivalent of the shopper's pick (another chain's barcode).
@@ -200,6 +260,6 @@ export async function quoteBasket(
       }),
     })),
     // Not counted against any branch: no linked products, or no branch in the city sells them.
-    unpricedItems: [...unpriceable, ...unavailableEverywhere],
+    unpricedItems: [...unpriceable, ...unavailableEverywhere].map(withName),
   };
 }

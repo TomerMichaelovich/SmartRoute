@@ -6,7 +6,6 @@ import type { ShoppingList } from "@smartroute/core/domain/entities/shopping-lis
 import type { ShoppingTrip } from "@smartroute/core/domain/entities/shopping-trip";
 import {
   householdRepository,
-  productRepository,
   routeRepository,
   shoppingListRepository,
   shoppingTripRepository,
@@ -16,6 +15,7 @@ import {
 import { isWhatsAppActive } from "@/src/infrastructure/whatsapp/client";
 import { getCurrentUser } from "@/src/presentation/auth/dal";
 import { notifyListChanged } from "@/src/presentation/lib/list-push";
+import { productsFor } from "@/src/presentation/lib/products-for";
 import { recordListTrip } from "@/src/presentation/lib/record-trip";
 
 const itemIdsSchema = {
@@ -82,7 +82,7 @@ export async function POST(request: Request) {
 
   const [store, products] = await Promise.all([
     storeRepository.findById(route.storeId),
-    productRepository.findAllActive(),
+    productsFor({ items: list.items }),
   ]);
   const productNameById = new Map(products.map((p) => [p.id, p.canonicalName]));
 

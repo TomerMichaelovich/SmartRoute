@@ -76,7 +76,7 @@ export async function PATCH(
       newLines.map((line) => line.rawText),
       access.user?.id,
     );
-    newItems = classified.map((item, i) => ({ ...item, quantity: newLines[i].quantity }));
+    newItems = classified.map((item, i) => ({ ...item, quantity: newLines[i].quantity ?? item.quantity }));
   }
 
   const items = [...existingItems, ...newItems];

@@ -27,4 +27,14 @@ export interface Product {
    * Before a branch is picked, only generic products are offered.
    */
   chainId?: string | null;
+  /**
+   * Set on products imported from a price file: the barcode (retail_items.item_key)
+   * the product stands for - one product per barcode, whichever chain sells it
+   * (chainId is set only on a chain's own label). Unset = made by hand.
+   */
+  sourceItemKey?: string | null;
+  /** Where an imported product stands - a ShelfGroup id (see value-objects/shelf-group). */
+  shelfGroup?: string | null;
+  /** An admin edited this imported product; re-imports keep its name, aliases and group. */
+  manuallyEdited?: boolean;
 }

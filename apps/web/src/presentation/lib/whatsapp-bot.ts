@@ -21,7 +21,6 @@ import type { ProductCategory } from "@smartroute/core/domain/entities/product";
 import type { ShoppingList, ShoppingListItem } from "@smartroute/core/domain/entities/shopping-list";
 import type { User } from "@smartroute/core/domain/entities/user";
 import {
-  productRepository,
   shoppingListRepository,
   userRepository,
   whatsappRepository,
@@ -35,6 +34,7 @@ import { sendButtons, sendCtaUrl, sendText } from "@/src/infrastructure/whatsapp
 import { resolveListAccessForUser } from "@/src/presentation/auth/list-access";
 import { classifyLines } from "./create-list";
 import { notifyItemsAdded, notifyListChanged, notifyShoppingDone } from "./list-push";
+import { productsFor } from "./products-for";
 import { recordListTrip } from "./record-trip";
 
 /**
@@ -255,7 +255,7 @@ async function askMissing(phone: string, list: ShoppingList): Promise<void> {
     return;
   }
   await whatsappRepository.setPendingState(phone, { kind: "awaiting_missing" });
-  const categoryOf = await loadCategoryOf();
+  const categoryOf = await loadCategoryOf(list.items);
   await sendText(
     phone,
     [
@@ -269,7 +269,7 @@ async function askMissing(phone: string, list: ShoppingList): Promise<void> {
 
 /** The answer to "which items were missing?" - numbers from the list above, or names. */
 async function answerMissing(phone: string, user: User, list: ShoppingList, text: string): Promise<void> {
-  const numbered = numberedOpenItems(list.items, await loadCategoryOf());
+  const numbered = numberedOpenItems(list.items, await loadCategoryOf(list.items));
   const targets = text
     .split(/[\n\r,;،]+/)
     // "2 5" - several numbers separated only by spaces
@@ -335,7 +335,7 @@ async function removeItems(
   itemId?: string,
 ): Promise<void> {
   // "מחק 3" counts in the same department order "רשימה" shows.
-  const numbered = numberedOpenItems(list.items, await loadCategoryOf());
+  const numbered = numberedOpenItems(list.items, await loadCategoryOf(list.items));
   const toRemove = new Map<string, ShoppingListItem>();
   const notFound: string[] = [];
   let ambiguous: { target: string; items: ShoppingListItem[] } | null = null;
@@ -522,7 +522,7 @@ async function sendList(phone: string, list: ShoppingList): Promise<void> {
     const users = await Promise.all(adderIds.map((id) => userRepository.findById(id)));
     for (const user of users) if (user) names[user.id] = user.displayName;
   }
-  const categoryOf = await loadCategoryOf();
+  const categoryOf = await loadCategoryOf(list.items);
   await sendCtaUrl(
     phone,
     formatListMessage(listName(list), list.items, names, categoryOf),
@@ -532,8 +532,11 @@ async function sendList(phone: string, list: ShoppingList): Promise<void> {
 }
 
 /** Each item's supermarket department, from the product it was matched to - for grouping the list. */
-async function loadCategoryOf(): Promise<(item: ShoppingListItem) => ProductCategory | undefined> {
-  const products = await productRepository.findAllActive();
+async function loadCategoryOf(
+  items: ShoppingListItem[],
+): Promise<(item: ShoppingListItem) => ProductCategory | undefined> {
+  // Only the products these items point to - not the thousands imported from price files.
+  const products = await productsFor({ items });
   const categoryById = new Map(products.map((p) => [p.id, p.category]));
   return (item) => {
     const productId = item.classification?.matchedProductId;

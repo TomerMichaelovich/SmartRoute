@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Product } from "@smartroute/core/domain/entities/product";
 import { db } from "../../db/client";
 import { products } from "../../db/schema";
@@ -16,6 +16,33 @@ function toDomain(row: typeof products.$inferSelect): Product {
 export class PgProductRepository implements IProductRepository {
   async findAllActive(): Promise<Product[]> {
     const rows = await db.select().from(products).where(eq(products.isActive, true));
+    return rows.map(toDomain);
+  }
+
+  async findCatalog(): Promise<Product[]> {
+    const rows = await db.select().from(products).where(and(eq(products.isActive, true), isNull(products.sourceItemKey)));
+    return rows.map(toDomain);
+  }
+
+  async findForStore(storeId: string): Promise<Product[]> {
+    const rows = await db
+      .select()
+      .from(products)
+      .where(
+        and(
+          eq(products.isActive, true),
+          or(
+            isNull(products.sourceItemKey),
+            sql`EXISTS (SELECT 1 FROM product_listings l WHERE l.store_id = ${storeId} AND l.product_id = ${products.id})`,
+          ),
+        ),
+      );
+    return rows.map(toDomain);
+  }
+
+  async findByIds(ids: string[]): Promise<Product[]> {
+    if (ids.length === 0) return [];
+    const rows = await db.select().from(products).where(and(eq(products.isActive, true), inArray(products.id, ids)));
     return rows.map(toDomain);
   }
 
