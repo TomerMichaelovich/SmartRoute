@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { SHELF_GROUPS } from "@smartroute/core/domain/value-objects/shelf-group";
+import { RetailImage } from "./RetailImage";
 
 export interface NodeShelfGroup {
   groupId: string;
@@ -119,7 +120,7 @@ export function ShelfGroupPanel(props: ShelfGroupPanelProps) {
 
 function GroupRow({ group, ...props }: ShelfGroupPanelProps & { group: NodeShelfGroup }) {
   const { storeId, nodeId } = props;
-  const [items, setItems] = useState<Array<{ id: string; canonicalName: string; aliases: string[] }> | null>(null);
+  const [items, setItems] = useState<Array<{ id: string; canonicalName: string; aliases: string[]; sourceItemKey: string | null }> | null>(null);
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [moveTo, setMoveTo] = useState("");
@@ -201,6 +202,7 @@ function GroupRow({ group, ...props }: ShelfGroupPanelProps & { group: NodeShelf
                           setSelected(next);
                         }}
                       />
+                      <RetailImage itemKey={item.sourceItemKey} className="h-10 w-10" />
                       <span className="flex flex-col">
                         {item.canonicalName}
                         {/* What a shopper's list matches this item by - a wrong one shows here. */}

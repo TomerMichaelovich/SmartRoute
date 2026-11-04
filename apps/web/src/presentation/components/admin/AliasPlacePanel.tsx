@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { RetailImage } from "./RetailImage";
 
 const SEARCH_DELAY_MS = 250;
 
@@ -8,6 +9,7 @@ interface AliasProduct {
   id: string;
   canonicalName: string;
   aliases: string[];
+  sourceItemKey: string | null;
   nodeId: string | null;
 }
 
@@ -127,7 +129,8 @@ export function AliasPlacePanel({ storeId, nodeId, departmentNodes, placeAliasOn
           <ul className="flex max-h-64 flex-col overflow-y-auto">
             {products.map((p) => (
               <li key={p.id} className="flex items-start justify-between gap-2 py-1 text-sm">
-                <span className="flex flex-col">
+                <RetailImage itemKey={p.sourceItemKey} className="h-10 w-10" />
+                <span className="flex flex-1 flex-col">
                   {p.canonicalName}
                   <span className="text-xs text-neutral-500">{p.aliases.join(" · ")}</span>
                 </span>

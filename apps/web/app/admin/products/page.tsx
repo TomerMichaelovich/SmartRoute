@@ -6,6 +6,7 @@ import { catalogAdminRepository, storeRepository } from "@/src/infrastructure/co
 import { createProduct, updateProduct } from "@/src/presentation/actions/admin-product-actions";
 import { PRODUCT_CATEGORY_LABELS } from "@/src/presentation/product-category-labels";
 import { requireAdminPage } from "@/src/presentation/auth/admin";
+import { RetailImage } from "@/src/presentation/components/admin/RetailImage";
 import { ShelfGroupSelect } from "@/src/presentation/components/admin/ShelfGroupSelect";
 
 const CATEGORIES: ProductCategory[] = [
@@ -231,7 +232,7 @@ export default async function AdminProductsPage({
                     className="h-8 w-8 shrink-0 rounded-lg border border-neutral-200 object-cover"
                   />
                 ) : (
-                  <span className="h-8 w-8 shrink-0 rounded-lg border border-dashed border-neutral-200" />
+                  <RetailImage itemKey={product.sourceItemKey} />
                 )}
                 <span className="flex flex-col">
                   {product.canonicalName}

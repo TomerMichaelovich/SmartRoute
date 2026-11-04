@@ -94,7 +94,7 @@ export class PgCatalogAdminRepository implements ICatalogAdminRepository {
       `WITH carried AS (${CARRIED_BY_STORE} AND (p.normalized_aliases ?| $2::text[] OR EXISTS (
          SELECT 1 FROM jsonb_array_elements_text(p.aliases) AS a(alias)
          WHERE regexp_replace(a.alias, ${WITHOUT_GERESH}) = ANY($2::text[]))))
-       SELECT DISTINCT ON (pr.id) pr.id, pr.canonical_name, pr.aliases, l.node_id
+       SELECT DISTINCT ON (pr.id) pr.id, pr.canonical_name, pr.aliases, pr.source_item_key, l.node_id
        FROM carried c JOIN products pr ON pr.id = c.id
        LEFT JOIN product_listings l ON l.store_id = $1 AND l.product_id = pr.id
        ORDER BY pr.id`,
@@ -105,6 +105,7 @@ export class PgCatalogAdminRepository implements ICatalogAdminRepository {
         id: String(r.id),
         canonicalName: String(r.canonical_name),
         aliases: (r.aliases as string[] | null) ?? [],
+        sourceItemKey: (r.source_item_key as string | null) ?? null,
         nodeId: (r.node_id as string | null) ?? null,
       }))
       .sort((a, b) => a.canonicalName.localeCompare(b.canonicalName, "he"));
@@ -129,7 +130,7 @@ export class PgCatalogAdminRepository implements ICatalogAdminRepository {
 
   async groupProductsAtNode(storeId: string, nodeId: string, groupId: string) {
     const rows = (await rawSql.query(
-      `SELECT p.id, p.canonical_name, p.aliases FROM product_listings l JOIN products p ON p.id = l.product_id
+      `SELECT p.id, p.canonical_name, p.aliases, p.source_item_key FROM product_listings l JOIN products p ON p.id = l.product_id
        WHERE l.store_id = $1 AND l.node_id = $2 AND p.shelf_group = $3
        ORDER BY p.canonical_name`,
       [storeId, nodeId, groupId],
@@ -138,6 +139,7 @@ export class PgCatalogAdminRepository implements ICatalogAdminRepository {
       id: String(r.id),
       canonicalName: String(r.canonical_name),
       aliases: (r.aliases as string[] | null) ?? [],
+      sourceItemKey: (r.source_item_key as string | null) ?? null,
     }));
   }
 

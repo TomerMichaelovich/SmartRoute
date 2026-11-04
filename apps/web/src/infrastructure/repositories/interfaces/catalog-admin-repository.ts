@@ -30,6 +30,8 @@ export interface AliasProduct {
   id: string;
   canonicalName: string;
   aliases: string[];
+  /** The barcode it was imported for. */
+  sourceItemKey: string | null;
   /** Where it's placed in the store; null when it isn't yet. */
   nodeId: string | null;
 }
@@ -72,7 +74,7 @@ export interface ICatalogAdminRepository {
     storeId: string,
     nodeId: string,
     groupId: string,
-  ): Promise<Array<{ id: string; canonicalName: string; aliases: string[] }>>;
+  ): Promise<Array<{ id: string; canonicalName: string; aliases: string[]; sourceItemKey: string | null }>>;
   /** Hand-made (not imported) products placed in the store - few enough to load whole. */
   listedHandMadeProducts(storeId: string): Promise<Product[]>;
   /** Active products matching the text that aren't placed in the store yet, best candidates first. */
