@@ -7,7 +7,7 @@ import {
   findOpenItemByName,
   matchItemsToRemove,
 } from "@smartroute/core/application/shopping-list/match-items";
-import { typoSuggestions } from "@smartroute/core/application/shopping-list/typo-suggestions";
+import { suggestionLabel, typoSuggestions } from "@smartroute/core/application/shopping-list/typo-suggestions";
 import { groupByCategory } from "@smartroute/core/application/shopping-list/group-by-category";
 import type { Product, ProductCategory } from "@smartroute/core/domain/entities/product";
 import {
@@ -340,8 +340,14 @@ describe("typos and the same product written differently", () => {
   const catalog = [product("milk", "חלב"), product("challah", "חלה"), product("bamba", "במבה")];
 
   it("suggests the closest products for an unrecognized line", () => {
-    expect(typoSuggestions("חלג", catalog).map((p) => p.id)).toEqual(expect.arrayContaining(["milk"]));
+    expect(typoSuggestions("חלג", catalog).map((s) => s.product.id)).toEqual(expect.arrayContaining(["milk"]));
     expect(typoSuggestions("חלג", catalog).length).toBeLessThanOrEqual(2);
+  });
+
+  it("offers the plain name, not the full catalog name", () => {
+    const fullMilk = { ...product("milk3", "חלב 3% תנובה 1 ליטר"), normalizedAliases: ["חלב 3% תנובה 1 ליטר"] };
+    expect(suggestionLabel("חלג", fullMilk)).toBe("חלב");
+    expect(suggestionLabel("במבע", { ...product("b", "חטיף במבה אסם"), aliases: ["במבה"] })).toBe("במבה");
   });
 
   it("suggests nothing when no product is close", () => {

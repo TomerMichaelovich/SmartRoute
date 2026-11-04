@@ -17,7 +17,7 @@ import {
   matchItemsToRemove,
   openItems,
 } from "@smartroute/core/application/shopping-list/match-items";
-import { typoSuggestions } from "@smartroute/core/application/shopping-list/typo-suggestions";
+import { suggestionLabel, typoSuggestions } from "@smartroute/core/application/shopping-list/typo-suggestions";
 import { isRecognized } from "@smartroute/core/domain/entities/classification-result";
 import type { ProductCategory } from "@smartroute/core/domain/entities/product";
 import type { ShoppingList, ShoppingListItem } from "@smartroute/core/domain/entities/shopping-list";
@@ -644,7 +644,7 @@ async function suggestFixes(phone: string, items: ShoppingListItem[]): Promise<v
     if (suggestions.length === 0) continue;
     // The ids carry the answer itself (item + product), so no state is kept.
     await sendButtons(phone, `לא זיהיתי *"${item.rawText}"*. התכוונת ל...?`, [
-      ...suggestions.map((p) => ({ id: `${FIX_BUTTON_PREFIX}${item.id}:${p.id}`, title: p.canonicalName })),
+      ...suggestions.map((s) => ({ id: `${FIX_BUTTON_PREFIX}${item.id}:${s.product.id}`, title: s.label })),
       { id: `${FIX_BUTTON_PREFIX}${item.id}:${KEEP_AS_TYPED}`, title: `השאר "${item.rawText}"` },
     ]);
   }
@@ -668,8 +668,16 @@ async function applyFix(phone: string, user: User, list: ShoppingList, buttonId:
     return;
   }
 
-  // Read as if they'd typed the product's name - same classification as any line.
-  const [fixed] = await classifyLines(list.storeId, [product.canonicalName], user.id);
+  // The plain name the button showed ("חלב", not "חלב 3% תנובה 1 ליטר"), read like any
+  // typed line; if that alone isn't recognized, it still points at the product picked.
+  const label = suggestionLabel(item.rawText, product);
+  const [classified] = await classifyLines(list.storeId, [label], user.id);
+  const fixed: ShoppingListItem = isRecognized(classified.classification)
+    ? classified
+    : {
+        ...classified,
+        classification: { rawText: label, matchedProductId: product.id, confidence: 1, source: "dictionary" },
+      };
   const others = list.items.filter((i) => i.id !== item.id);
   const existing = findOpenDuplicate(others, fixed.rawText, fixed.classification);
   if (existing) {
