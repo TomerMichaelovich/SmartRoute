@@ -321,7 +321,7 @@ function Chat({
         )}
         {entries.map((entry) =>
           entry.from === "user" ? (
-            <div key={entry.key} className="max-w-[80%] self-start whitespace-pre-wrap rounded-lg bg-[#d9fdd3] px-3 py-2 text-sm">
+            <div key={entry.key} className="max-w-[80%] shrink-0 self-start whitespace-pre-wrap rounded-lg bg-[#d9fdd3] px-3 py-2 text-sm">
               {entry.text}
             </div>
           ) : (
@@ -371,7 +371,7 @@ function BotMessage({
   const buttons = interactive?.type === "button" ? (interactive.action?.buttons ?? []) : [];
 
   return (
-    <div className="max-w-[80%] self-end overflow-hidden rounded-lg bg-white text-sm shadow-sm">
+    <div className="max-w-[80%] shrink-0 self-end overflow-hidden rounded-lg bg-white text-sm shadow-sm">
       <div className="px-3 py-2">{formatWhatsApp(body)}</div>
       {cta?.url && (
         <a

@@ -26,10 +26,39 @@ const MAX_QUANTITY = 99;
 // A leading number followed by one of these is a size ("2 ק"ג עגבניות"), not a count.
 const UNIT_WORDS = /^(ק"ג|קג|קילו|ק״ג|גרם|גר'|גר|ג'|ליטר|ל'|מ"ל|מ״ל|מל|יח'|יחידות|kg|g|l|ml)(\s|$)/i;
 
-/** Splits on new lines, commas and semicolons; strips list bullets; pulls out a count. */
+// Counts written as words: "שתי קולה", "שלושה לחמים".
+const NUMBER_WORDS: Record<string, number> = {
+  אחד: 1, אחת: 1,
+  שניים: 2, שתיים: 2, שני: 2, שתי: 2,
+  שלוש: 3, שלושה: 3, שלושת: 3,
+  ארבע: 4, ארבעה: 4, ארבעת: 4,
+  חמש: 5, חמישה: 5, חמשת: 5,
+  שש: 6, שישה: 6, ששת: 6,
+  שבע: 7, שבעה: 7, שבעת: 7,
+  שמונה: 8, שמונת: 8,
+  תשע: 9, תשעה: 9, תשעת: 9,
+  עשר: 10, עשרה: 10, עשרת: 10,
+};
+// Longest first, so "שלושה" isn't read as "שלוש" + "ה".
+const NUMBER_WORD = Object.keys(NUMBER_WORDS)
+  .sort((a, b) => b.length - a.length)
+  .join("|");
+const COUNT = `(?:\\d{1,2}|${NUMBER_WORD})`;
+
+// "8 לחם ושתי קולה" / "חלב ו-2 לחם": a "ו" right before a count starts a new item.
+// Only before a count - "וופל" or "ורדים" must stay whole.
+const AND_BEFORE_COUNT = new RegExp(`\\s+ו[-־]?(?=${COUNT}(?:\\s|$))`);
+const LEADING_WORD_COUNT = new RegExp(`^(${NUMBER_WORD})\\s+(.+)$`);
+const TRAILING_WORD_COUNT = new RegExp(`^(.+?)\\s+(${NUMBER_WORD})$`);
+
+/**
+ * Splits on new lines, commas, semicolons and "ו" before a count; strips list
+ * bullets; pulls out a count (digits or a Hebrew number word).
+ */
 export function parseItemsMessage(text: string): ParsedLine[] {
   const lines: ParsedLine[] = [];
-  for (const piece of text.split(PIECE_SEPARATORS)) {
+  const pieces = text.split(PIECE_SEPARATORS).flatMap((piece) => piece.split(AND_BEFORE_COUNT));
+  for (const piece of pieces) {
     const line = parseLine(piece);
     if (line) lines.push(line);
     if (lines.length >= MAX_LINES) break;
@@ -49,9 +78,19 @@ function parseLine(piece: string): ParsedLine | null {
 
   // "2 לחם", "x2 לחם", "2x לחם"
   const leading = text.match(/^(?:[x×*]\s*)?(\d{1,2})\s*(?:[x×*])?\s+(.+)$/i);
+  const leadingWord = text.match(LEADING_WORD_COUNT);
+  const trailingWord = text.match(TRAILING_WORD_COUNT);
   if (leading && !UNIT_WORDS.test(leading[2])) {
     quantity = Number(leading[1]);
     text = leading[2];
+  } else if (leadingWord && !UNIT_WORDS.test(leadingWord[2])) {
+    // "שתי קולה"
+    quantity = NUMBER_WORDS[leadingWord[1]];
+    text = leadingWord[2];
+  } else if (trailingWord) {
+    // "קולה שתיים"
+    quantity = NUMBER_WORDS[trailingWord[2]];
+    text = trailingWord[1];
   } else {
     // "לחם x2", "לחם 2", "לחם ×2"
     const trailing = text.match(/^(.+?)\s*(?:[x×*]\s*(\d{1,2})|\s(\d{1,2}))$/i);

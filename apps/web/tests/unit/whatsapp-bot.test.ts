@@ -33,6 +33,27 @@ describe("parseItemsMessage", () => {
     ]);
   });
 
+  it("splits on 'ו' before a count, and reads counts written as words", () => {
+    expect(parseItemsMessage("8 לחם ושתי קולה")).toEqual([
+      { rawText: "לחם", quantity: 8 },
+      { rawText: "קולה", quantity: 2 },
+    ]);
+    expect(parseItemsMessage("חלב ו-3 יוגורט, שלושה לחמים, קולה שתיים")).toEqual([
+      { rawText: "חלב" },
+      { rawText: "יוגורט", quantity: 3 },
+      { rawText: "לחמים", quantity: 3 },
+      { rawText: "קולה", quantity: 2 },
+    ]);
+  });
+
+  it("doesn't split words that just start with ו", () => {
+    expect(parseItemsMessage("וופל ורדים, חלב וביצים")).toEqual([
+      { rawText: "וופל ורדים" },
+      { rawText: "חלב וביצים" },
+    ]);
+    expect(parseItemsMessage('שני ק"ג עגבניות')).toEqual([{ rawText: 'שני ק"ג עגבניות' }]);
+  });
+
   it("keeps sizes and percentages as part of the item", () => {
     expect(parseItemsMessage('2 ק"ג עגבניות, חלב 3%, קולה 1.5, 1.5 ליטר מים')).toEqual([
       { rawText: '2 ק"ג עגבניות' },
