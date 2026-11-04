@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "crypto";
+import { isSimulatedPhone, isSimulatorEnabled, recordSimulatedMessage } from "./simulator";
 
 /**
  * Minimal WhatsApp Cloud API (Meta) client. The bot only ever *replies*
@@ -16,6 +17,11 @@ export function isWhatsAppConfigured(): boolean {
   );
 }
 
+/** The bot can talk to someone: really (Meta configured), or via the local dev simulator. */
+export function isWhatsAppActive(): boolean {
+  return isWhatsAppConfigured() || isSimulatorEnabled();
+}
+
 /** Checks Meta's X-Hub-Signature-256 header ("sha256=<hex HMAC of the raw body>"). */
 export function verifySignature(rawBody: string, header: string | null, appSecret: string): boolean {
   if (!header?.startsWith("sha256=")) return false;
@@ -25,6 +31,10 @@ export function verifySignature(rawBody: string, header: string | null, appSecre
 }
 
 async function send(payload: Record<string, unknown>): Promise<void> {
+  if (typeof payload.to === "string" && isSimulatedPhone(payload.to)) {
+    recordSimulatedMessage(payload.to, payload);
+    return;
+  }
   const res = await fetch(
     `https://graph.facebook.com/${GRAPH_VERSION}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
     {

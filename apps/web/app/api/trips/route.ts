@@ -14,7 +14,7 @@ import {
   storeRepository,
   whatsappRepository,
 } from "@/src/infrastructure/container";
-import { isWhatsAppConfigured } from "@/src/infrastructure/whatsapp/client";
+import { isWhatsAppActive } from "@/src/infrastructure/whatsapp/client";
 import { getCurrentUser } from "@/src/presentation/auth/dal";
 import { notifyListChanged } from "@/src/presentation/lib/list-push";
 
@@ -115,7 +115,7 @@ export async function POST(request: Request) {
  * WhatsApp; never fails the trip.
  */
 async function rememberTripForWhatsApp(list: ShoppingList, collectedItemIds: string[]): Promise<void> {
-  if (!isWhatsAppConfigured()) return;
+  if (!isWhatsAppActive()) return;
   try {
     if ((await whatsappRepository.findLinksByList(list.id)).length === 0) return;
     const collected = new Set(collectedItemIds);

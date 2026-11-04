@@ -7,7 +7,7 @@ import {
   pushTokenRepository,
   whatsappRepository,
 } from "@/src/infrastructure/container";
-import { isWhatsAppConfigured, sendText } from "@/src/infrastructure/whatsapp/client";
+import { isWhatsAppActive, sendText } from "@/src/infrastructure/whatsapp/client";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 /** Expo accepts at most 100 messages per request. */
@@ -84,7 +84,7 @@ export function notifyItemsAdded(
         priority: "high",
       }));
 
-      if (isWhatsAppConfigured()) {
+      if (isWhatsAppActive()) {
         const recipientSet = new Set(recipients);
         const links = await whatsappRepository.findLinksByList(list.id);
         const now = Date.now();
