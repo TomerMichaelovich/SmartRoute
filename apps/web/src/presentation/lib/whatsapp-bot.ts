@@ -13,10 +13,12 @@ import {
   parseItemsMessage,
 } from "@smartroute/core/application/shopping-list/parse-items-message";
 import {
-  findOpenItemByName,
+  findOpenDuplicate,
   matchItemsToRemove,
   openItems,
 } from "@smartroute/core/application/shopping-list/match-items";
+import { typoSuggestions } from "@smartroute/core/application/shopping-list/typo-suggestions";
+import { isRecognized } from "@smartroute/core/domain/entities/classification-result";
 import type { ProductCategory } from "@smartroute/core/domain/entities/product";
 import type { ShoppingList, ShoppingListItem } from "@smartroute/core/domain/entities/shopping-list";
 import type { User } from "@smartroute/core/domain/entities/user";
@@ -148,6 +150,12 @@ export async function handleIncomingMessage(message: IncomingWhatsAppMessage): P
       await sendCtaUrl(phone, "כבר התחלנו רשימה חדשה ✓", SHOP_BUTTON, listUrl(list));
       return;
     }
+  }
+
+  // "התכוונת ל...?" answered with a tap.
+  if (message.buttonId?.startsWith(FIX_BUTTON_PREFIX)) {
+    await applyFix(phone, user, list, message.buttonId);
+    return;
   }
 
   // "קנייה הושלמה": the question, its three answers, and "which items were missing?".
@@ -449,7 +457,8 @@ async function handleFinishedTrip(
   }
 
   // Not answered yet: remember any items sent meanwhile, and (re-)ask.
-  const sentItems = command === null ? text : null;
+  // A tapped button's title isn't an item someone sent.
+  const sentItems = command === null && !buttonId ? text : null;
   const pendingText = [reset.pendingText, sentItems].filter(Boolean).join("\n") || null;
   await whatsappRepository.markListResetAsked(list.id, pendingText);
   const lines = [
@@ -533,8 +542,9 @@ async function loadCategoryOf(
   const products = await productsFor({ items });
   const categoryById = new Map(products.map((p) => [p.id, p.category]));
   return (item) => {
-    const productId = item.classification?.matchedProductId;
-    return productId ? categoryById.get(productId) : undefined;
+    const c = item.classification;
+    // A line read as an alias of imported products carries its department itself.
+    return (c?.matchedProductId ? categoryById.get(c.matchedProductId) : undefined) ?? c?.category;
   };
 }
 
@@ -547,35 +557,51 @@ ${HELP_TEXT}`);
     return;
   }
 
+  // Classified first, so "already on the list" also catches the same product written
+  // differently ("חלב 3%" when "חלב" is there).
+  const classified = await classifyLines(
+    list.storeId,
+    lines.map((line) => line.rawText),
+    user.id,
+  );
+
   // Already on the list (and not bought yet)? Ask before touching those; add the rest now.
   const duplicates: PendingDuplicate[] = [];
-  const fresh = lines.filter((line) => {
-    const existing = findOpenItemByName(list.items, line.rawText);
-    if (!existing) return true;
-    duplicates.push({ itemId: existing.id, rawText: existing.rawText, addQuantity: line.quantity ?? 1 });
-    return false;
+  const items: ShoppingListItem[] = [];
+  lines.forEach((line, i) => {
+    const existing = findOpenDuplicate(list.items, line.rawText, classified[i].classification);
+    if (existing) {
+      duplicates.push({ itemId: existing.id, rawText: existing.rawText, addQuantity: line.quantity ?? 1 });
+    } else {
+      items.push({ ...classified[i], quantity: line.quantity });
+    }
   });
 
   let updated: ShoppingList = list;
-  if (fresh.length > 0) {
-    const classified = await classifyLines(
-      list.storeId,
-      fresh.map((line) => line.rawText),
-      user.id,
-    );
-    const items = classified.map((item, i) => ({ ...item, quantity: fresh[i].quantity }));
+  if (items.length > 0) {
     await shoppingListRepository.appendItems(list.id, items);
     await whatsappRepository.setLastAdded(phone, items.map((item) => item.id));
     notifyListChanged(list, user.id);
-    notifyItemsAdded(list, user, fresh.map((line) => line.rawText));
+    notifyItemsAdded(list, user, items.map((item) => item.rawText));
     updated = (await shoppingListRepository.findById(list.id)) ?? list;
 
+    // A typo the classifier fixed by itself ("במבע") says what it was read as, so a
+    // wrong guess is easy to spot (and "בטל").
+    const products = await productsFor({ items });
+    const nameById = new Map(products.map((p) => [p.id, p.canonicalName]));
+    const label = (item: ShoppingListItem) => {
+      const name = item.quantity ? `${item.rawText} ×${item.quantity}` : item.rawText;
+      const c = item.classification;
+      const readAs = c?.source === "fuzzy" ? (c.matchedProductId ? nameById.get(c.matchedProductId) : c.matchedAlias) : null;
+      return readAs && readAs !== item.rawText ? `${name} (זוהה כ*${readAs}*)` : name;
+    };
+
     const openCount = openItems(updated.items).length;
-    const added = summarizeItems(fresh.map((l) => (l.quantity ? `${l.rawText} ×${l.quantity}` : l.rawText)), 6);
+    const added = summarizeItems(items.map(label), 6);
     await sendCtaUrl(
       phone,
       [
-        `✅ נוסף${fresh.length > 1 ? "ו" : ""} לרשימה: ${added}`,
+        `✅ נוסף${items.length > 1 ? "ו" : ""} לרשימה: ${added}`,
         `סה"כ ${openCount} מוצרים פתוחים ברשימה.`,
         "להצגת הרשימה עד כה כתבו *רשימה*",
         "_טעית? כתבו *בטל* · כל הפקודות: *עזרה*_",
@@ -600,6 +626,80 @@ ${HELP_TEXT}`);
       { id: DUP_NO, title: "לא" },
     ]);
   }
+
+  // Not recognized at all ("חלג"): it's on the list as typed; offer the closest products.
+  await suggestFixes(phone, items);
+}
+
+const FIX_BUTTON_PREFIX = "fix:";
+const KEEP_AS_TYPED = "keep";
+
+/** "לא זיהיתי 'חלג'. התכוונת ל...?" - one question per unrecognized item that has close matches. */
+async function suggestFixes(phone: string, items: ShoppingListItem[]): Promise<void> {
+  const unrecognized = items.filter((item) => !isRecognized(item.classification));
+  if (unrecognized.length === 0) return;
+  const catalog = await productsFor({});
+  for (const item of unrecognized.slice(0, 3)) {
+    const suggestions = typoSuggestions(item.rawText, catalog);
+    if (suggestions.length === 0) continue;
+    // The ids carry the answer itself (item + product), so no state is kept.
+    await sendButtons(phone, `לא זיהיתי *"${item.rawText}"*. התכוונת ל...?`, [
+      ...suggestions.map((p) => ({ id: `${FIX_BUTTON_PREFIX}${item.id}:${p.id}`, title: p.canonicalName })),
+      { id: `${FIX_BUTTON_PREFIX}${item.id}:${KEEP_AS_TYPED}`, title: `השאר "${item.rawText}"` },
+    ]);
+  }
+}
+
+/** A tapped "התכוונת ל...?" answer: renames the item to the product picked (or leaves it). */
+async function applyFix(phone: string, user: User, list: ShoppingList, buttonId: string): Promise<void> {
+  const [itemId, productId] = buttonId.slice(FIX_BUTTON_PREFIX.length).split(":");
+  const item = list.items.find((i) => i.id === itemId);
+  if (!item) {
+    await sendText(phone, "המוצר כבר לא ברשימה.");
+    return;
+  }
+  if (productId === KEEP_AS_TYPED) {
+    await sendText(phone, `בסדר, *${item.rawText}* נשאר כמו שכתבת.`);
+    return;
+  }
+  const [product] = await productsFor({}).then((all) => all.filter((p) => p.id === productId));
+  if (!product) {
+    await sendText(phone, "לא מצאתי את המוצר הזה בקטלוג. אפשר למחוק ולכתוב שוב.");
+    return;
+  }
+
+  // Read as if they'd typed the product's name - same classification as any line.
+  const [fixed] = await classifyLines(list.storeId, [product.canonicalName], user.id);
+  const others = list.items.filter((i) => i.id !== item.id);
+  const existing = findOpenDuplicate(others, fixed.rawText, fixed.classification);
+  if (existing) {
+    // Turned out to be something already on the list: drop the typo and ask about the quantity.
+    await shoppingListRepository.removeItem(list.id, item.id);
+    notifyListChanged(list, user.id);
+    await whatsappRepository.setPendingDuplicates(phone, [
+      { itemId: existing.id, rawText: existing.rawText, addQuantity: item.quantity ?? 1 },
+    ]);
+    await sendButtons(
+      phone,
+      `המוצר *${existing.rawText}* (כבר יש ${existing.quantity ?? 1}) כבר קיים ברשימה. האם תרצה להוסיף לכמות?`,
+      [
+        { id: DUP_YES, title: "כן, להוסיף" },
+        { id: DUP_NO, title: "לא" },
+      ],
+    );
+    return;
+  }
+
+  const fresh = (await shoppingListRepository.findById(list.id)) ?? list;
+  await shoppingListRepository.updateItems(
+    list.id,
+    fresh.items.map((i) =>
+      i.id === item.id ? { ...i, rawText: fixed.rawText, classification: fixed.classification } : i,
+    ),
+    new Date().toISOString(),
+  );
+  notifyListChanged(list, user.id);
+  await sendText(phone, `✅ תוקן: *${item.rawText}* ← *${fixed.rawText}*`);
 }
 
 /** "כן": adds to the existing items' quantities and says the new totals; "לא": nothing changes. */

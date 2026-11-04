@@ -1,3 +1,4 @@
+import type { ClassificationResult } from "../../domain/entities/classification-result";
 import type { ShoppingListItem } from "../../domain/entities/shopping-list";
 
 export type RemoveMatch =
@@ -56,4 +57,27 @@ export function findOpenItemByName(items: ShoppingListItem[], name: string): Sho
   const wanted = normalize(name);
   if (!wanted) return null;
   return openItems(items).find((item) => normalize(item.rawText) === wanted) ?? null;
+}
+
+/** Two lines name the same thing: the same catalog product, or the same imported-products alias. */
+export function sameProduct(a: ClassificationResult | undefined, b: ClassificationResult | undefined): boolean {
+  if (a?.matchedProductId && b?.matchedProductId) return a.matchedProductId === b.matchedProductId;
+  if (a?.matchedAlias && b?.matchedAlias) return a.matchedAlias === b.matchedAlias;
+  return false;
+}
+
+/**
+ * An open item a newly sent line repeats: the same name, or recognized as the same
+ * product ("חלב" and "חלב 3%" both read as milk) - "already on the list".
+ */
+export function findOpenDuplicate(
+  items: ShoppingListItem[],
+  rawText: string,
+  classification?: ClassificationResult,
+): ShoppingListItem | null {
+  return (
+    findOpenItemByName(items, rawText) ??
+    openItems(items).find((item) => sameProduct(item.classification, classification)) ??
+    null
+  );
 }

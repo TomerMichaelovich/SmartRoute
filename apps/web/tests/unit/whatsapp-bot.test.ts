@@ -2,9 +2,14 @@ import { createHmac } from "crypto";
 import { describe, expect, it } from "vitest";
 import { listAfterTrip, tripLeftovers } from "@smartroute/core/application/shopping-list/after-trip";
 import { finishShopping } from "@smartroute/core/application/shopping-list/finish-shopping";
-import { findOpenItemByName, matchItemsToRemove } from "@smartroute/core/application/shopping-list/match-items";
+import {
+  findOpenDuplicate,
+  findOpenItemByName,
+  matchItemsToRemove,
+} from "@smartroute/core/application/shopping-list/match-items";
+import { typoSuggestions } from "@smartroute/core/application/shopping-list/typo-suggestions";
 import { groupByCategory } from "@smartroute/core/application/shopping-list/group-by-category";
-import type { ProductCategory } from "@smartroute/core/domain/entities/product";
+import type { Product, ProductCategory } from "@smartroute/core/domain/entities/product";
 import {
   formatListMessage,
   numberedOpenItems,
@@ -319,5 +324,38 @@ describe("finishing shopping from WhatsApp", () => {
     expect(parseCommand("סיימתי")).toEqual({ type: "done" });
     expect(parseCommand("קנייה הושלמה")).toEqual({ type: "done" });
     expect(parseCommand("חלב סיימתי")).toBeNull();
+  });
+});
+
+describe("typos and the same product written differently", () => {
+  const product = (id: string, name: string): Product => ({
+    id,
+    canonicalName: name,
+    aliases: [],
+    normalizedAliases: [name],
+    category: "dairy",
+    department: "",
+    isActive: true,
+  });
+  const catalog = [product("milk", "חלב"), product("challah", "חלה"), product("bamba", "במבה")];
+
+  it("suggests the closest products for an unrecognized line", () => {
+    expect(typoSuggestions("חלג", catalog).map((p) => p.id)).toEqual(expect.arrayContaining(["milk"]));
+    expect(typoSuggestions("חלג", catalog).length).toBeLessThanOrEqual(2);
+  });
+
+  it("suggests nothing when no product is close", () => {
+    expect(typoSuggestions("מברשת שיניים", catalog)).toEqual([]);
+  });
+
+  it("treats a line read as the same product as a duplicate", () => {
+    const items: ShoppingListItem[] = [
+      { id: "a", rawText: "חלב", classification: { rawText: "חלב", matchedProductId: "milk", confidence: 1, source: "dictionary" } },
+    ];
+    const milk3 = { rawText: "חלב 3%", matchedProductId: "milk", confidence: 0.9, source: "fuzzy" as const };
+    expect(findOpenDuplicate(items, "חלב 3%", milk3)?.id).toBe("a");
+    const bread = { rawText: "לחם", matchedProductId: "bread", confidence: 1, source: "dictionary" as const };
+    expect(findOpenDuplicate(items, "לחם", bread)).toBeNull();
+    expect(findOpenDuplicate(items, "משהו", undefined)).toBeNull();
   });
 });
