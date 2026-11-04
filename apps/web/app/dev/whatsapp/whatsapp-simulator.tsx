@@ -240,7 +240,10 @@ function Chat({
 }) {
   const [draft, setDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
-  useEffect(() => bottomRef.current?.scrollIntoView({ block: "end" }), [entries.length]);
+  useEffect(() => {
+    // Block body: newer browsers return a Promise from scrollIntoView, which an effect must not return.
+    void bottomRef.current?.scrollIntoView({ block: "end" });
+  }, [entries.length]);
 
   return (
     <section className="flex h-[600px] flex-col overflow-hidden rounded-xl shadow-sm">
