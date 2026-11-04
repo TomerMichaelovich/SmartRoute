@@ -254,7 +254,10 @@ async function handleFinishedTrip(
 ): Promise<boolean> {
   const leftovers = tripLeftovers(list.items, reset);
   if (leftovers.length === 0) {
-    await startNextRound(list.id, user.id, false);
+    // Everything was bought: start fresh, show the rules again, then handle the message.
+    if (await startNextRound(list.id, user.id, false)) {
+      await sendText(phone, `🎉 הקנייה האחרונה הסתיימה, ומתחילים רשימה חדשה.\n\n${HELP_TEXT}`);
+    }
     return false;
   }
 
@@ -268,12 +271,12 @@ async function handleFinishedTrip(
       answer === "yes"
         ? `✅ צירפתי לרשימה החדשה ${leftovers.length} מוצרים שלא נקנו: ${summarizeItems(leftovers.map((i) => i.rawText))}`
         : "✨ מתחילים רשימה חדשה ונקייה.";
+    // A new list starts with the rules, like the first time.
     if (reset.pendingText) {
-      await sendText(phone, confirmation);
+      await sendText(phone, `${confirmation}\n\n${HELP_TEXT}`);
       await addItems(phone, user, fresh, reset.pendingText);
     } else {
-      await sendCtaUrl(phone, `${confirmation}
-שלחו לי מוצרים כדי להוסיף.`, SHOP_BUTTON, listUrl(fresh));
+      await sendCtaUrl(phone, `${confirmation}\n\n${HELP_TEXT}`, SHOP_BUTTON, listUrl(fresh));
     }
     return true;
   }
@@ -378,7 +381,7 @@ async function addItems(phone: string, user: User, list: ShoppingList, text: str
   const added = summarizeItems(lines.map((l) => (l.quantity ? `${l.rawText} ×${l.quantity}` : l.rawText)), 6);
   await sendCtaUrl(
     phone,
-    `✅ נוסף${lines.length > 1 ? "ו" : ""} לרשימה: ${added}\nסה"כ ${openCount} מוצרים פתוחים ברשימה.\n_טעית? כתבו *בטל*_`,
+    `✅ נוסף${lines.length > 1 ? "ו" : ""} לרשימה: ${added}\nסה"כ ${openCount} מוצרים פתוחים ברשימה.\n_טעית? כתבו *בטל* · כל הפקודות: *עזרה*_`,
     SHOP_BUTTON,
     listUrl(updated ?? list),
   );
