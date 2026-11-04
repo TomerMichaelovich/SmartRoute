@@ -163,6 +163,15 @@ export class PgCatalogAdminRepository implements ICatalogAdminRepository {
     }));
   }
 
+  async aliasProductIdsAtNode(storeId: string, nodeId: string, alias: string): Promise<string[]> {
+    const rows = (await rawSql.query(
+      `SELECT l.product_id FROM product_listings l JOIN products p ON p.id = l.product_id
+       WHERE l.store_id = $1 AND l.node_id = $2 AND p.aliases ? $3`,
+      [storeId, nodeId, alias],
+    )) as Record<string, unknown>[];
+    return rows.map((r) => String(r.product_id));
+  }
+
   async groupProductsAtNode(storeId: string, nodeId: string, groupId: string) {
     const rows = (await rawSql.query(
       `SELECT p.id, p.canonical_name, p.aliases, p.source_item_key FROM product_listings l JOIN products p ON p.id = l.product_id

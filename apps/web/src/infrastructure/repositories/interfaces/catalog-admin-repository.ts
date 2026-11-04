@@ -75,6 +75,8 @@ export interface ICatalogAdminRepository {
   aliasPlacements(storeId: string, aliases: string[]): Promise<Array<{ alias: string; nodeId: string; count: number }>>;
   /** Aliases whose placed products stand at more than one node of the store, with how many at each. */
   splitAliases(storeId: string): Promise<Array<{ alias: string; nodes: Array<{ nodeId: string; count: number }> }>>;
+  /** The products placed at the node that answer to this alias (as written). */
+  aliasProductIdsAtNode(storeId: string, nodeId: string, alias: string): Promise<string[]>;
   /** The group's products placed at this node, with the aliases shoppers find them by. */
   groupProductsAtNode(
     storeId: string,

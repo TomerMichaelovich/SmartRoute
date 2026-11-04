@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import type { MapEdge } from "@smartroute/core/domain/entities/map-edge";
 import type { MapNode, MapNodeType } from "@smartroute/core/domain/entities/map-node";
 import type { Product } from "@smartroute/core/domain/entities/product";
@@ -48,6 +48,7 @@ interface StoreLayoutEditorProps {
   ) => Promise<{ placed: number; moved: number }>;
   removeShelfGroupFromNode: (storeId: string, nodeId: string, groupId: string) => Promise<void>;
   moveProductsToNode: (storeId: string, productIds: string[], nodeId: string) => Promise<void>;
+  moveAliasToNode: (storeId: string, alias: string, fromNodeId: string, toNodeId: string) => Promise<number>;
   removeProductsFromNode: (storeId: string, nodeId: string, productIds: string[]) => Promise<void>;
   markProductsNotSold: (storeId: string, productIds: string[]) => Promise<void>;
   setProductsShelfGroup: (productIds: string[], groupId: string) => Promise<void>;
@@ -203,6 +204,7 @@ export function StoreLayoutEditor({
   placeAliasOnNode,
   removeShelfGroupFromNode,
   moveProductsToNode,
+  moveAliasToNode,
   removeProductsFromNode,
   markProductsNotSold,
   setProductsShelfGroup,
@@ -212,6 +214,9 @@ export function StoreLayoutEditor({
   saveWalkableMap,
 }: StoreLayoutEditorProps) {
   const [walkableMode, setWalkableMode] = useState(false);
+  // The split alias being moved to another node, while its move runs.
+  const [movingAlias, setMovingAlias] = useState<string | null>(null);
+  const [, startMoveTransition] = useTransition();
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const dragStartRef = useRef<{ nodeId: string; clientX: number; clientY: number; moved: boolean } | null>(
@@ -511,15 +516,30 @@ export function StoreLayoutEditor({
     .map((n) => ({ id: n.id, label: n.label }))
     .sort((a, b) => a.label.localeCompare(b.label, "he"));
   // The aliases standing here that also stand elsewhere, and where else.
-  const splitAliasesHere = new Map<string, string>();
-  if (showsProductPanel) {
-    for (const split of splitAliases) {
-      if (!split.nodes.some((n) => n.nodeId === singleSelectedNode!.id)) continue;
-      const elsewhere = split.nodes
-        .filter((n) => n.nodeId !== singleSelectedNode!.id)
-        .map((n) => `${nodeById.get(n.nodeId)?.label.replace(/\s*\n\s*/g, " ") ?? "נקודה אחרת"} (${n.count})`);
-      splitAliasesHere.set(split.alias, elsewhere.join(" · "));
-    }
+  const splitHere = showsProductPanel
+    ? splitAliases.flatMap((split) => {
+        const here = split.nodes.find((n) => n.nodeId === singleSelectedNode!.id);
+        if (!here) return [];
+        const elsewhere = split.nodes
+          .filter((n) => n.nodeId !== singleSelectedNode!.id)
+          .map((n) => ({
+            ...n,
+            label: nodeById.get(n.nodeId)?.label.replace(/\s*\n\s*/g, " ") ?? "נקודה אחרת",
+          }));
+        return [{ alias: split.alias, count: here.count, elsewhere }];
+      })
+    : [];
+  const splitAliasesHere = new Map(
+    splitHere.map((s) => [s.alias, s.elsewhere.map((n) => `${n.label} (${n.count})`).join(" · ")]),
+  );
+
+  function moveSplitAlias(alias: string, toNodeId: string) {
+    const fromNodeId = singleSelectedNode!.id;
+    setMovingAlias(alias);
+    startMoveTransition(async () => {
+      await moveAliasToNode(storeId, alias, fromNodeId, toNodeId);
+      setMovingAlias(null);
+    });
   }
 
   return (
@@ -876,13 +896,30 @@ export function StoreLayoutEditor({
                 <span className="text-xs text-neutral-400">{NODE_TYPE_LABELS[singleSelectedNode.type]}</span>
               </form>
 
-              {splitAliasesHere.size > 0 && (
+              {splitHere.length > 0 && (
                 <div className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
-                  <p className="font-semibold">⚠ כינויים בנקודה זו שממוקמים גם בנקודות אחרות ({splitAliasesHere.size})</p>
-                  <ul className="mt-1 flex max-h-40 flex-col gap-0.5 overflow-y-auto">
-                    {[...splitAliasesHere].map(([alias, elsewhere]) => (
-                      <li key={alias}>
-                        <strong>{alias}</strong> - גם ב: {elsewhere}
+                  <p className="font-semibold">⚠ כינויים בנקודה זו שממוקמים גם בנקודות אחרות ({splitHere.length})</p>
+                  <ul className="mt-1 flex max-h-60 flex-col divide-y divide-amber-200 overflow-y-auto">
+                    {splitHere.map((split) => (
+                      <li key={split.alias} className="flex flex-col gap-1 py-1.5">
+                        <span>
+                          <strong>{split.alias}</strong> ({split.count} כאן) - גם ב:{" "}
+                          {split.elsewhere.map((n) => `${n.label} (${n.count})`).join(" · ")}
+                        </span>
+                        <span className="flex flex-wrap gap-1.5">
+                          {split.elsewhere.map((n) => (
+                            <button
+                              key={n.nodeId}
+                              type="button"
+                              disabled={movingAlias !== null}
+                              onClick={() => moveSplitAlias(split.alias, n.nodeId)}
+                              title={`להעביר את ${split.count} הפריטים עם הכינוי "${split.alias}" מכאן ל${n.label}`}
+                              className="rounded-md border border-amber-500 bg-white px-2 py-0.5 font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-40"
+                            >
+                              {movingAlias === split.alias ? "מעביר..." : `העבר ${split.count} ל${n.label} ←`}
+                            </button>
+                          ))}
+                        </span>
                       </li>
                     ))}
                   </ul>

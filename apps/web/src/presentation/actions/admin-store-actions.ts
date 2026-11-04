@@ -310,6 +310,21 @@ export async function moveProductsToNode(storeId: string, productIds: string[], 
   revalidatePath(`/admin/stores/${storeId}`);
 }
 
+/** Moves the products at one node answering to an alias to another node - mending an alias split between two. */
+export async function moveAliasToNode(
+  storeId: string,
+  alias: string,
+  fromNodeId: string,
+  toNodeId: string,
+): Promise<number> {
+  await requireAdmin({ mapStore: storeId });
+  await assertNodeInStore(storeId, toNodeId);
+  const productIds = await catalogAdminRepository.aliasProductIdsAtNode(storeId, fromNodeId, alias);
+  if (productIds.length > 0) await productListingRepository.moveToNode(storeId, productIds, toNodeId);
+  revalidatePath(`/admin/stores/${storeId}`);
+  return productIds.length;
+}
+
 export async function removeProductsFromNode(storeId: string, nodeId: string, productIds: string[]): Promise<void> {
   await requireAdmin({ mapStore: storeId });
   await productListingRepository.deleteAtNode(storeId, nodeId, productIds);
