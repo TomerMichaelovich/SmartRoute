@@ -2,8 +2,11 @@ import { createHmac } from "crypto";
 import { describe, expect, it } from "vitest";
 import { listAfterTrip, tripLeftovers } from "@smartroute/core/application/shopping-list/after-trip";
 import { findOpenItemByName, matchItemsToRemove } from "@smartroute/core/application/shopping-list/match-items";
+import { groupByCategory } from "@smartroute/core/application/shopping-list/group-by-category";
+import type { ProductCategory } from "@smartroute/core/domain/entities/product";
 import {
   formatListMessage,
+  numberedOpenItems,
   summarizeItems,
 } from "@smartroute/core/application/shopping-list/format-list-message";
 import {
@@ -227,5 +230,59 @@ describe("items already on the list", () => {
   it("reads the add-to-quantity answers", () => {
     expect(parseCarryAnswer("כן, להוסיף")).toBe("yes");
     expect(parseCarryAnswer("לא")).toBe("no");
+  });
+});
+
+describe("list by department", () => {
+  const category: Record<string, ProductCategory> = {
+    milk: "dairy",
+    cucumber: "produce",
+    tomato: "produce",
+    cheese: "dairy",
+    cottage: "dairy",
+  };
+  const items: ShoppingListItem[] = [
+    { id: "milk", rawText: "חלב" },
+    { id: "cucumber", rawText: "מלפפון" },
+    { id: "tomato", rawText: "עגבנייה" },
+    { id: "cheese", rawText: "גבינה" },
+    { id: "mystery", rawText: "משהו" },
+    { id: "cottage", rawText: "קוטג'" },
+  ];
+  const categoryOf = (item: ShoppingListItem) => category[item.id];
+
+  it("groups items by department, in supermarket order", () => {
+    expect(
+      groupByCategory(items, categoryOf).map((s) => [s.category, s.items.map((i) => i.rawText)]),
+    ).toEqual([
+      ["produce", ["מלפפון", "עגבנייה"]],
+      ["dairy", ["חלב", "גבינה", "קוטג'"]],
+      ["other", ["משהו"]],
+    ]);
+  });
+
+  it("shows department headings, numbered straight through", () => {
+    expect(formatListMessage("הבית", items, {}, categoryOf)).toBe(
+      [
+        "*הבית* (6 פתוחים)",
+        "",
+        "🥦 *ירקות ופירות*",
+        "1. מלפפון",
+        "2. עגבנייה",
+        "",
+        "🥛 *מוצרי חלב*",
+        "3. חלב",
+        "4. גבינה",
+        "5. קוטג'",
+        "",
+        "🛒 *אחר*",
+        "6. משהו",
+      ].join("\n"),
+    );
+  });
+
+  it("'מחק 3' uses that same numbering", () => {
+    const numbered = numberedOpenItems(items, categoryOf);
+    expect(matchItemsToRemove(items, "3", numbered)).toEqual({ kind: "found", items: [items[0]] });
   });
 });

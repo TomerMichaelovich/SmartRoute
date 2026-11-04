@@ -1,6 +1,10 @@
 import "server-only";
 import { listAfterTrip, tripLeftovers } from "@smartroute/core/application/shopping-list/after-trip";
-import { formatListMessage, summarizeItems } from "@smartroute/core/application/shopping-list/format-list-message";
+import {
+  formatListMessage,
+  numberedOpenItems,
+  summarizeItems,
+} from "@smartroute/core/application/shopping-list/format-list-message";
 import {
   type BotCommand,
   parseCarryAnswer,
@@ -12,9 +16,11 @@ import {
   matchItemsToRemove,
   openItems,
 } from "@smartroute/core/application/shopping-list/match-items";
+import type { ProductCategory } from "@smartroute/core/domain/entities/product";
 import type { ShoppingList, ShoppingListItem } from "@smartroute/core/domain/entities/shopping-list";
 import type { User } from "@smartroute/core/domain/entities/user";
 import {
+  productRepository,
   shoppingListRepository,
   userRepository,
   whatsappRepository,
@@ -190,6 +196,8 @@ async function removeItems(
   targets: string[],
   itemId?: string,
 ): Promise<void> {
+  // "מחק 3" counts in the same department order "רשימה" shows.
+  const numbered = numberedOpenItems(list.items, await loadCategoryOf());
   const toRemove = new Map<string, ShoppingListItem>();
   const notFound: string[] = [];
   let ambiguous: { target: string; items: ShoppingListItem[] } | null = null;
@@ -200,7 +208,7 @@ async function removeItems(
     else notFound.push("המוצר שבחרת");
   }
   for (const target of targets) {
-    const match = matchItemsToRemove(list.items, target);
+    const match = matchItemsToRemove(list.items, target, numbered);
     if (match.kind === "found") for (const item of match.items) toRemove.set(item.id, item);
     else if (match.kind === "ambiguous") ambiguous ??= { target, items: match.items };
     else notFound.push(target);
@@ -226,7 +234,6 @@ async function removeItems(
       return;
     }
     // More than WhatsApp's 3 buttons: point at the numbered list instead.
-    const numbered = openItems(list.items);
     for (const item of ambiguous.items) {
       const n = numbered.indexOf(item) + 1;
       if (n > 0) lines.push(`${n}. ${item.rawText}`);
@@ -377,7 +384,23 @@ async function sendList(phone: string, list: ShoppingList): Promise<void> {
     const users = await Promise.all(adderIds.map((id) => userRepository.findById(id)));
     for (const user of users) if (user) names[user.id] = user.displayName;
   }
-  await sendCtaUrl(phone, formatListMessage(listName(list), list.items, names), SHOP_BUTTON, listUrl(list));
+  const categoryOf = await loadCategoryOf();
+  await sendCtaUrl(
+    phone,
+    formatListMessage(listName(list), list.items, names, categoryOf),
+    SHOP_BUTTON,
+    listUrl(list),
+  );
+}
+
+/** Each item's supermarket department, from the product it was matched to - for grouping the list. */
+async function loadCategoryOf(): Promise<(item: ShoppingListItem) => ProductCategory | undefined> {
+  const products = await productRepository.findAllActive();
+  const categoryById = new Map(products.map((p) => [p.id, p.category]));
+  return (item) => {
+    const productId = item.classification?.matchedProductId;
+    return productId ? categoryById.get(productId) : undefined;
+  };
 }
 
 async function addItems(phone: string, user: User, list: ShoppingList, text: string): Promise<void> {

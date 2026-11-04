@@ -25,10 +25,15 @@ export function openItems(items: ShoppingListItem[]): ShoppingListItem[] {
  * bot's numbered list; text matches the name exactly (every copy), else by
  * part of the name - more than one partial match means "which one?".
  */
-export function matchItemsToRemove(items: ShoppingListItem[], target: string): RemoveMatch {
+export function matchItemsToRemove(
+  items: ShoppingListItem[],
+  target: string,
+  /** The open items in the order the bot numbered them (default: list order). */
+  numbered: ShoppingListItem[] = openItems(items),
+): RemoveMatch {
   const trimmed = target.trim();
   if (/^\d{1,3}$/.test(trimmed)) {
-    const item = openItems(items)[Number(trimmed) - 1];
+    const item = numbered[Number(trimmed) - 1];
     return item ? { kind: "found", items: [item] } : { kind: "none" };
   }
 
