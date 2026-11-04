@@ -89,7 +89,9 @@ export default async function AdminStoreDetailPage({
       return group ? [{ ...g, name: group.name, department: group.department }] : [];
     })
     .sort((a, b) => a.department.localeCompare(b.department, "he") || a.name.localeCompare(b.name, "he"));
-  const unplacedGroups = shelfGroups.filter((g) => g.unplaced > 0);
+  const carriedGroups = shelfGroups.filter((g) => g.carried > 0);
+  const unplacedGroups = carriedGroups.filter((g) => g.unplaced > 0);
+  const completeGroups = carriedGroups.filter((g) => g.unplaced === 0);
   const placedGroupRows = shelfGroups.flatMap((g) => g.nodes.map((n) => ({ group: g, ...n })));
   const storeInventory = listings
     .map((listing) => ({ listing, product: productById.get(listing.productId) }))
@@ -243,28 +245,77 @@ export default async function AdminStoreDetailPage({
 
       {hasPriceBranch && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-base font-semibold text-neutral-900">
-            קבוצות מדף שלא שויכו ({unplacedGroups.length} מתוך {shelfGroups.filter((g) => g.carried > 0).length})
-          </h2>
-          {unplacedGroups.length === 0 ? (
-            <p className="text-sm text-neutral-500">כל הפריטים מקובץ המחירים של הסניף שויכו לנקודות.</p>
-          ) : (
-            <>
-              <p className="text-xs text-neutral-500">
-                פריטים מקובץ המחירים של הסניף שעוד לא נמצאים באף נקודה. בחרו נקודת מחלקה במפה ושייכו אליה קבוצה.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {unplacedGroups.map((g) => (
-                  <span
-                    key={g.groupId}
-                    className="rounded-full border border-neutral-200 bg-white px-3 py-1 text-sm text-neutral-700"
-                  >
-                    {g.name} <span className="text-neutral-400">{g.unplaced}/{g.carried}</span>
-                  </span>
-                ))}
-              </div>
-            </>
-          )}
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-base font-semibold text-neutral-900">
+              שיוך קבוצות מדף ({completeGroups.length} מתוך {carriedGroups.length} שויכו במלואן)
+            </h2>
+            <div className="flex gap-3 text-xs">
+              <span className="flex items-center gap-1.5 text-red-700">
+                <span className="size-2.5 rounded-full bg-red-500" />
+                ממתינות לשיוך ({unplacedGroups.length})
+              </span>
+              <span className="flex items-center gap-1.5 text-green-700">
+                <span className="size-2.5 rounded-full bg-green-500" />
+                שויכו במלואן ({completeGroups.length})
+              </span>
+            </div>
+          </div>
+          <p className="text-xs text-neutral-500">
+            {unplacedGroups.length === 0
+              ? "כל הפריטים מקובץ המחירים של הסניף שויכו לנקודות."
+              : "פריטים מקובץ המחירים של הסניף שעוד לא נמצאים באף נקודה. בחרו נקודת מחלקה במפה ושייכו אליה קבוצה."}
+          </p>
+          <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white">
+            <table className="w-full text-sm">
+              <thead className="bg-neutral-50 text-neutral-500">
+                <tr>
+                  <th className="p-2 text-start">קבוצת מדף</th>
+                  <th className="p-2 text-start">מחלקה</th>
+                  <th className="w-48 p-2 text-start">שויכו</th>
+                  <th className="p-2 text-start">נקודות</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...unplacedGroups, ...completeGroups].map((g) => {
+                  const complete = g.unplaced === 0;
+                  const placed = g.carried - g.unplaced;
+                  return (
+                    <tr
+                      key={g.groupId}
+                      className={`border-t border-neutral-100 ${complete ? "bg-green-50/60" : "bg-red-50/60"}`}
+                    >
+                      <td
+                        className={`border-s-4 p-2 font-medium ${complete ? "border-green-500 text-green-800" : "border-red-500 text-red-800"}`}
+                      >
+                        {g.name}
+                      </td>
+                      <td className="p-2 text-neutral-600">{g.department}</td>
+                      <td className="p-2">
+                        <div className="flex items-center gap-2">
+                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-200">
+                            <div
+                              className={`h-full rounded-full ${complete ? "bg-green-500" : "bg-red-500"}`}
+                              style={{ width: `${(placed / g.carried) * 100}%` }}
+                            />
+                          </div>
+                          <span className="shrink-0 text-xs tabular-nums text-neutral-600">
+                            {placed}/{g.carried}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="p-2 text-xs text-neutral-600">
+                        {g.nodes.length === 0
+                          ? "—"
+                          : g.nodes
+                              .map((n) => nodeLabelById.get(n.nodeId)?.replace(/\s*\n\s*/g, " ") ?? "מחלקה שנמחקה")
+                              .join(" · ")}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
 
