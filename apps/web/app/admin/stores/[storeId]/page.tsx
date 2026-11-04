@@ -59,7 +59,7 @@ export default async function AdminStoreDetailPage({
 
   // Imported products (whole price files) are too many to send with the page: the editor
   // gets the hand-made ones, a per-shelf-group summary, and searches on demand.
-  const [nodes, edges, products, allListings, storeGroups, hasPriceBranch, excludedProducts, walkableMask, priceBranches, allStores] = await Promise.all([
+  const [nodes, edges, products, allListings, storeGroups, hasPriceBranch, excludedProducts, walkableMask, priceBranches, allStores, splitAliases] = await Promise.all([
     nodeRepository.findByStore(storeId),
     edgeRepository.findByStore(storeId),
     catalogAdminRepository.listedHandMadeProducts(storeId),
@@ -70,6 +70,7 @@ export default async function AdminStoreDetailPage({
     walkableMapRepository.findMask(storeId),
     manages ? priceRepository.findLinkableBranches() : [],
     manages ? storeRepository.findAll() : [],
+    catalogAdminRepository.splitAliases(storeId),
   ]);
   const priceCityNames = new Map<number, string>();
   for (const b of priceBranches) {
@@ -153,6 +154,7 @@ export default async function AdminStoreDetailPage({
         products={products}
         listings={listings}
         shelfGroups={shelfGroups}
+        splitAliases={splitAliases}
         hasPriceBranch={hasPriceBranch}
         canEditProducts={hasSection(principal, "products")}
         createNode={boundCreateNode}
@@ -313,6 +315,48 @@ export default async function AdminStoreDetailPage({
                     </tr>
                   );
                 })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {splitAliases.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-base font-semibold text-neutral-900">
+            כינויים שממוקמים בכמה נקודות ({splitAliases.length})
+          </h2>
+          <p className="text-xs text-neutral-500">
+            מוצרים עם אותו כינוי שעומדים ביותר מנקודה אחת. לפעמים זה נכון (אותו סוג מוצר בשני מדפים), אבל לרוב זו
+            טעות שיוך. בחרו את הנקודה במפה, פתחו את קבוצת המדף והעבירו את הפריטים המסומנים ב-📍.
+          </p>
+          <div className="overflow-x-auto rounded-xl border border-amber-200 bg-white">
+            <table className="w-full text-sm">
+              <thead className="bg-amber-50 text-amber-900">
+                <tr>
+                  <th className="p-2 text-start">כינוי</th>
+                  <th className="p-2 text-start">נקודות (מספר פריטים)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {splitAliases.map((split) => (
+                  <tr key={split.alias} className="border-t border-neutral-100">
+                    <td className="border-s-4 border-amber-400 p-2 font-medium text-amber-900">{split.alias}</td>
+                    <td className="p-2">
+                      <div className="flex flex-wrap gap-1.5">
+                        {split.nodes.map((n) => (
+                          <span
+                            key={n.nodeId}
+                            className="rounded-full border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-xs text-neutral-700"
+                          >
+                            {nodeLabelById.get(n.nodeId)?.replace(/\s*\n\s*/g, " ") ?? "מחלקה שנמחקה"}{" "}
+                            <span className="text-neutral-400">({n.count})</span>
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

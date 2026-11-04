@@ -25,6 +25,8 @@ interface ShelfGroupPanelProps {
   /** The store's department nodes, for moving products elsewhere. */
   departmentNodes: Array<{ id: string; label: string }>;
   groupsHere: NodeShelfGroup[];
+  /** Aliases standing here that also stand at other nodes, with where else. */
+  splitAliases: Map<string, string>;
   groupOptions: ShelfGroupOption[];
   hasPriceBranch: boolean;
   /** May change products' shelf group (the "products" admin section). */
@@ -205,9 +207,29 @@ function GroupRow({ group, ...props }: ShelfGroupPanelProps & { group: NodeShelf
                       <RetailImage itemKey={item.sourceItemKey} className="h-10 w-10" />
                       <span className="flex flex-col">
                         {item.canonicalName}
-                        {/* What a shopper's list matches this item by - a wrong one shows here. */}
+                        {/* What a shopper's list matches this item by - a wrong one shows here,
+                            one also placed at another node in color. */}
                         <span className="text-xs text-neutral-500">
-                          {item.aliases.length > 0 ? item.aliases.join(" · ") : "אין כינויים"}
+                          {item.aliases.length > 0
+                            ? item.aliases.map((alias, i) => {
+                                const elsewhere = props.splitAliases.get(alias);
+                                return (
+                                  <span key={alias}>
+                                    {i > 0 && " · "}
+                                    {elsewhere ? (
+                                      <span
+                                        className="rounded bg-amber-100 px-1 font-medium text-amber-800"
+                                        title={`גם ב: ${elsewhere}`}
+                                      >
+                                        📍 {alias}
+                                      </span>
+                                    ) : (
+                                      alias
+                                    )}
+                                  </span>
+                                );
+                              })
+                            : "אין כינויים"}
                         </span>
                       </span>
                     </label>

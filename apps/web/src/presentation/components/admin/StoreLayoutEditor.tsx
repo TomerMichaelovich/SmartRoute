@@ -27,6 +27,8 @@ interface StoreLayoutEditorProps {
   listings: ProductListing[];
   /** The store's shelf groups: what's left to place, and where each group stands. */
   shelfGroups: Array<ShelfGroupOption & { nodes: Array<{ nodeId: string; count: number }> }>;
+  /** Aliases whose products stand at more than one node - usually one kind of product split by mistake. */
+  splitAliases: Array<{ alias: string; nodes: Array<{ nodeId: string; count: number }> }>;
   hasPriceBranch: boolean;
   canEditProducts: boolean;
   createNode: (formData: FormData) => Promise<void>;
@@ -186,6 +188,7 @@ export function StoreLayoutEditor({
   products,
   listings,
   shelfGroups,
+  splitAliases,
   hasPriceBranch,
   canEditProducts,
   createNode,
@@ -507,6 +510,17 @@ export function StoreLayoutEditor({
     .filter((n) => n.type === "department")
     .map((n) => ({ id: n.id, label: n.label }))
     .sort((a, b) => a.label.localeCompare(b.label, "he"));
+  // The aliases standing here that also stand elsewhere, and where else.
+  const splitAliasesHere = new Map<string, string>();
+  if (showsProductPanel) {
+    for (const split of splitAliases) {
+      if (!split.nodes.some((n) => n.nodeId === singleSelectedNode!.id)) continue;
+      const elsewhere = split.nodes
+        .filter((n) => n.nodeId !== singleSelectedNode!.id)
+        .map((n) => `${nodeById.get(n.nodeId)?.label.replace(/\s*\n\s*/g, " ") ?? "נקודה אחרת"} (${n.count})`);
+      splitAliasesHere.set(split.alias, elsewhere.join(" · "));
+    }
+  }
 
   return (
     <section className="flex flex-col gap-3">
@@ -862,6 +876,19 @@ export function StoreLayoutEditor({
                 <span className="text-xs text-neutral-400">{NODE_TYPE_LABELS[singleSelectedNode.type]}</span>
               </form>
 
+              {splitAliasesHere.size > 0 && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+                  <p className="font-semibold">⚠ כינויים בנקודה זו שממוקמים גם בנקודות אחרות ({splitAliasesHere.size})</p>
+                  <ul className="mt-1 flex max-h-40 flex-col gap-0.5 overflow-y-auto">
+                    {[...splitAliasesHere].map(([alias, elsewhere]) => (
+                      <li key={alias}>
+                        <strong>{alias}</strong> - גם ב: {elsewhere}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               <div className="flex flex-col gap-1">
                 <h3 className="text-sm font-semibold text-neutral-700">
                   מוצרים בנקודה זו ({productsAtNode.length})
@@ -902,6 +929,7 @@ export function StoreLayoutEditor({
                 nodeId={singleSelectedNode.id}
                 departmentNodes={departmentNodes}
                 groupsHere={groupsAtNode}
+                splitAliases={splitAliasesHere}
                 groupOptions={shelfGroups.filter((g) => g.unplaced > 0)}
                 hasPriceBranch={hasPriceBranch}
                 canEditProducts={canEditProducts}

@@ -141,6 +141,28 @@ export class PgCatalogAdminRepository implements ICatalogAdminRepository {
     return rows.map((r) => ({ alias: String(r.alias), nodeId: String(r.node_id), count: Number(r.n) }));
   }
 
+  async splitAliases(storeId: string) {
+    const rows = (await rawSql.query(
+      `WITH placed AS (
+         SELECT a.alias, l.node_id, count(DISTINCT l.product_id)::int AS n
+         FROM product_listings l JOIN products p ON p.id = l.product_id
+         CROSS JOIN LATERAL jsonb_array_elements_text(p.aliases) AS a(alias)
+         WHERE l.store_id = $1
+         GROUP BY a.alias, l.node_id)
+       SELECT alias, json_agg(json_build_object('nodeId', node_id, 'count', n) ORDER BY n DESC) AS nodes
+       FROM placed GROUP BY alias HAVING count(*) > 1
+       ORDER BY alias`,
+      [storeId],
+    )) as Record<string, unknown>[];
+    return rows.map((r) => ({
+      alias: String(r.alias),
+      nodes: (r.nodes as Array<{ nodeId: string; count: number }>).map((n) => ({
+        nodeId: String(n.nodeId),
+        count: Number(n.count),
+      })),
+    }));
+  }
+
   async groupProductsAtNode(storeId: string, nodeId: string, groupId: string) {
     const rows = (await rawSql.query(
       `SELECT p.id, p.canonical_name, p.aliases, p.source_item_key FROM product_listings l JOIN products p ON p.id = l.product_id
