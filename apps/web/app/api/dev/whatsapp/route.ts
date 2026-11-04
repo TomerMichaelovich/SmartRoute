@@ -41,6 +41,7 @@ const bodySchema = z.discriminatedUnion("action", [
     buttonId: z.string().nullable().optional(),
   }),
   z.object({ action: z.literal("list"), shareCode }),
+  z.object({ action: z.literal("myLists"), email: z.string().min(3) }),
   z.object({ action: z.literal("link"), from: phone, shareCode, userId: z.string().min(1) }),
   z.object({ action: z.literal("check"), shareCode, itemId: z.string(), checked: z.boolean() }),
   z.object({ action: z.literal("finishTrip"), shareCode }),
@@ -67,6 +68,26 @@ export async function POST(request: Request) {
         const list = await findList(body.shareCode);
         if (!list) return NextResponse.json({ error: "הרשימה לא נמצאה" }, { status: 404 });
         return NextResponse.json({ list, participants: await participants(list) });
+      }
+
+      case "myLists": {
+        // The lists on this user's home screen in the app (their own + shared with them).
+        const user = await userRepository.findByEmail(body.email.trim().toLowerCase());
+        if (!user) return NextResponse.json({ error: "לא נמצא משתמש עם המייל הזה" }, { status: 404 });
+        const [own, shared] = await Promise.all([
+          shoppingListRepository.findAllActiveByOwner(user.id),
+          shoppingListRepository.findSharedWithUser(user.id),
+        ]);
+        const seen = new Set<string>();
+        const lists = [...own, ...shared]
+          .filter((l) => l.shareCode && !l.deletedAt && !seen.has(l.id) && seen.add(l.id))
+          .map((l) => ({
+            shareCode: l.shareCode,
+            name: l.name ?? "רשימת קניות",
+            itemCount: l.items.length,
+            shared: Boolean(l.householdId),
+          }));
+        return NextResponse.json({ lists });
       }
 
       case "link": {

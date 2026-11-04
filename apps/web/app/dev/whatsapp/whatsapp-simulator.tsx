@@ -16,6 +16,13 @@ const PHONES: Phone[] = [
   { number: "999000000002", label: "טלפון 2" },
 ];
 
+interface MyList {
+  shareCode: string;
+  name: string;
+  itemCount: number;
+  shared: boolean;
+}
+
 interface Participant {
   userId: string;
   displayName: string;
@@ -70,7 +77,8 @@ function formatLine(line: string): ReactNode[] {
 }
 
 export function WhatsAppSimulator() {
-  const [shareCode, setShareCode] = useState("");
+  const [email, setEmail] = useState("");
+  const [myLists, setMyLists] = useState<MyList[] | null>(null);
   const [list, setList] = useState<ShoppingList | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [owners, setOwners] = useState<Record<string, string>>({});
@@ -90,6 +98,17 @@ export function WhatsAppSimulator() {
       setError(e instanceof Error ? e.message : String(e));
     }
   }, []);
+
+  async function findMyLists() {
+    try {
+      const data = await post({ action: "myLists", email });
+      setMyLists(data.lists as MyList[]);
+      setError(null);
+    } catch (e) {
+      setMyLists(null);
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   const poll = useCallback(async () => {
     const res = await fetch(`${API}?since=${seqRef.current}`).catch(() => null);
@@ -140,24 +159,28 @@ export function WhatsAppSimulator() {
       {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{error}</div>}
 
       <section className="flex flex-col gap-3 rounded-xl bg-white p-4 shadow-sm">
+        <p className="text-sm text-neutral-600">
+          בוואטסאפ האמיתי כל אחד מתחבר פעם אחת מהאפליקציה. כאן בוחרים לאיזו רשימה לחבר את הטלפונים המדומים:
+        </p>
         <form
           className="flex flex-wrap items-end gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            void loadList(shareCode);
+            void findMyLists();
           }}
         >
           <label className="flex flex-col gap-1 text-sm">
-            קוד הרשימה (מופיע בקישור השיתוף באפליקציה)
+            המייל שלך באפליקציה
             <input
-              value={shareCode}
-              onChange={(e) => setShareCode(e.target.value.toUpperCase())}
-              className="w-48 rounded-lg border border-neutral-300 px-3 py-2 font-mono"
-              placeholder="ABC123"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-64 rounded-lg border border-neutral-300 px-3 py-2"
+              placeholder="name@gmail.com"
               dir="ltr"
+              type="email"
             />
           </label>
-          <button className="rounded-lg bg-neutral-900 px-4 py-2 text-sm text-white">טען רשימה</button>
+          <button className="rounded-lg bg-neutral-900 px-4 py-2 text-sm text-white">הצג את הרשימות שלי</button>
           <button
             type="button"
             className="rounded-lg border border-neutral-300 px-4 py-2 text-sm"
@@ -166,6 +189,25 @@ export function WhatsAppSimulator() {
             נקה שיחות
           </button>
         </form>
+
+        {myLists && (
+          <div className="flex flex-wrap gap-2">
+            {myLists.length === 0 && (
+              <p className="text-sm text-neutral-500">אין לך רשימות פעילות. צור רשימה באפליקציה ונסה שוב.</p>
+            )}
+            {myLists.map((l) => (
+              <button
+                key={l.shareCode}
+                onClick={() => void loadList(l.shareCode)}
+                className={`rounded-lg border px-3 py-2 text-sm ${
+                  list?.shareCode === l.shareCode ? "border-emerald-600 bg-emerald-50" : "border-neutral-300"
+                }`}
+              >
+                {l.name} · {l.itemCount} מוצרים{l.shared ? " · משותפת" : ""}
+              </button>
+            ))}
+          </div>
+        )}
 
         {list && (
           <div className="flex flex-wrap gap-4">
@@ -255,7 +297,7 @@ function Chat({
       </div>
       <div className="flex flex-1 flex-col gap-2 overflow-y-auto bg-[#efe7dd] p-3">
         {entries.length === 0 && (
-          <p className="m-auto text-center text-sm text-neutral-500">טענו רשימה, בחרו מי מחזיק את הטלפון ולחצו &quot;חבר לרשימה&quot;</p>
+          <p className="m-auto text-center text-sm text-neutral-500">בחרו רשימה, בחרו מי מחזיק את הטלפון ולחצו &quot;חבר לרשימה&quot;</p>
         )}
         {entries.map((entry) =>
           entry.from === "user" ? (
@@ -348,7 +390,7 @@ function ListPanel({
   if (!list) {
     return (
       <aside className="rounded-xl bg-white p-4 text-sm text-neutral-500 shadow-sm">
-        הרשימה תופיע כאן אחרי שתטענו אותה.
+        הרשימה תופיע כאן אחרי שתבחרו אותה.
       </aside>
     );
   }
