@@ -515,17 +515,11 @@ async function loadLinkedContext(link: WhatsAppLink): Promise<{ user: User; list
 }
 
 async function sendList(phone: string, list: ShoppingList): Promise<void> {
-  const adderIds = [...new Set(list.items.map((item) => item.addedByUserId).filter((id): id is string => !!id))];
-  const names: Record<string, string> = {};
-  // Only worth naming people on a shared list.
-  if (list.householdId && adderIds.length > 1) {
-    const users = await Promise.all(adderIds.map((id) => userRepository.findById(id)));
-    for (const user of users) if (user) names[user.id] = user.displayName;
-  }
   const categoryOf = await loadCategoryOf(list.items);
   await sendCtaUrl(
     phone,
-    formatListMessage(listName(list), list.items, names, categoryOf),
+    // No "who added it" - just the items.
+    formatListMessage(listName(list), list.items, {}, categoryOf),
     SHOP_BUTTON,
     listUrl(list),
   );
