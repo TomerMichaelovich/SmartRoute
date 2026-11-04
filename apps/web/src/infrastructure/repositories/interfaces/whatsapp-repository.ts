@@ -5,7 +5,11 @@ export interface WhatsAppLink {
   lastInboundAt: string;
   lastAddedItemIds: string[];
   pendingDuplicates: PendingDuplicate[];
+  pendingState: PendingState | null;
 }
+
+/** A question the bot asked and is waiting on - the next message is read as its answer. */
+export type PendingState = { kind: "awaiting_missing" };
 
 /** An item someone sent that's already on the list; the bot asked whether to add to its quantity. */
 export interface PendingDuplicate {
@@ -38,6 +42,7 @@ export interface IWhatsAppRepository {
   touchInbound(phone: string): Promise<void>;
   setLastAdded(phone: string, itemIds: string[]): Promise<void>;
   setPendingDuplicates(phone: string, duplicates: PendingDuplicate[]): Promise<void>;
+  setPendingState(phone: string, state: PendingState | null): Promise<void>;
   /** True the first time a message id is seen, false for a redelivery. */
   markMessageProcessed(messageId: string): Promise<boolean>;
 

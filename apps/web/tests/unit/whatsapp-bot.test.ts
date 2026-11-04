@@ -1,6 +1,7 @@
 import { createHmac } from "crypto";
 import { describe, expect, it } from "vitest";
 import { listAfterTrip, tripLeftovers } from "@smartroute/core/application/shopping-list/after-trip";
+import { finishShopping } from "@smartroute/core/application/shopping-list/finish-shopping";
 import { findOpenItemByName, matchItemsToRemove } from "@smartroute/core/application/shopping-list/match-items";
 import { groupByCategory } from "@smartroute/core/application/shopping-list/group-by-category";
 import type { ProductCategory } from "@smartroute/core/domain/entities/product";
@@ -284,5 +285,39 @@ describe("list by department", () => {
   it("'מחק 3' uses that same numbering", () => {
     const numbered = numberedOpenItems(items, categoryOf);
     expect(matchItemsToRemove(items, "3", numbered)).toEqual({ kind: "found", items: [items[0]] });
+  });
+});
+
+describe("finishing shopping from WhatsApp", () => {
+  const items: ShoppingListItem[] = [
+    { id: "milk", rawText: "חלב" },
+    { id: "bread", rawText: "לחם", checked: true, checkedByName: "עמית" },
+    { id: "cheese", rawText: "גבינה", notFound: true },
+  ];
+
+  it("everything bought: the list is reset", () => {
+    expect(finishShopping(items, [])).toEqual({
+      remaining: [],
+      collectedIds: ["milk", "bread", "cheese"],
+      notFoundIds: [],
+    });
+  });
+
+  it("missing items stay, unticked; the rest count as bought", () => {
+    expect(finishShopping(items, ["cheese"])).toEqual({
+      remaining: [{ id: "cheese", rawText: "גבינה" }],
+      collectedIds: ["milk", "bread"],
+      notFoundIds: ["cheese"],
+    });
+  });
+
+  it("an item already ticked as bought can't be missing", () => {
+    expect(finishShopping(items, ["bread"]).remaining).toEqual([]);
+  });
+
+  it("recognizes 'done' only as the whole message", () => {
+    expect(parseCommand("סיימתי")).toEqual({ type: "done" });
+    expect(parseCommand("קנייה הושלמה")).toEqual({ type: "done" });
+    expect(parseCommand("חלב סיימתי")).toBeNull();
   });
 });

@@ -1,5 +1,6 @@
 import "server-only";
 import { listAfterTrip, tripLeftovers } from "@smartroute/core/application/shopping-list/after-trip";
+import { finishShopping } from "@smartroute/core/application/shopping-list/finish-shopping";
 import {
   formatListMessage,
   numberedOpenItems,
@@ -33,7 +34,8 @@ import type {
 import { sendButtons, sendCtaUrl, sendText } from "@/src/infrastructure/whatsapp/client";
 import { resolveListAccessForUser } from "@/src/presentation/auth/list-access";
 import { classifyLines } from "./create-list";
-import { notifyItemsAdded, notifyListChanged } from "./list-push";
+import { notifyItemsAdded, notifyListChanged, notifyShoppingDone } from "./list-push";
+import { recordListTrip } from "./record-trip";
 
 /**
  * The WhatsApp bot: people "throw" items at it during the week and they land in
@@ -57,6 +59,10 @@ const CARRY_YES = "carry_yes";
 const CARRY_NO = "carry_no";
 const DUP_YES = "dup_yes";
 const DUP_NO = "dup_no";
+const SHOP_DONE = "shop_done";
+const DONE_ALL = "done_all";
+const DONE_MISSING = "done_missing";
+const DONE_KEEP = "done_keep";
 
 const SHOP_BUTTON = "צא לקניות 🛒";
 
@@ -82,6 +88,7 @@ const HELP_TEXT = [
   "• *מחק גזר* - הסרת מוצר (או *מחק 3* לפי המספר ברשימה)",
   "• *בטל* - ביטול ההוספה האחרונה שלך",
   "• *צא לקניות* - פתיחת הרשימה באפליקציה",
+  "• *סיימתי* - סיום קנייה ואיפוס הרשימה",
   "• *נתק* - ניתוק הוואטסאפ מהרשימה",
 ].join("\n");
 
@@ -143,6 +150,41 @@ export async function handleIncomingMessage(message: IncomingWhatsAppMessage): P
     }
   }
 
+  // "קנייה הושלמה": the question, its three answers, and "which items were missing?".
+  switch (message.buttonId) {
+    case SHOP_DONE:
+      await askShoppingDone(phone, list);
+      return;
+    case DONE_ALL:
+      await whatsappRepository.setPendingState(phone, null);
+      await completeShopping(phone, user, list.id, []);
+      return;
+    case DONE_MISSING:
+      await askMissing(phone, list);
+      return;
+    case DONE_KEEP:
+      await whatsappRepository.setPendingState(phone, null);
+      await sendCtaUrl(phone, "בסדר, הרשימה נשארת כמו שהיא.", SHOP_BUTTON, listUrl(list));
+      return;
+  }
+  if (link.pendingState?.kind === "awaiting_missing") {
+    await whatsappRepository.setPendingState(phone, null);
+    if (!command) {
+      await answerMissing(phone, user, list, text);
+      return;
+    }
+    // "בטל" here just leaves the question - it mustn't also undo the last added items.
+    if (command.type === "undo") {
+      await sendCtaUrl(phone, "בסדר, לא סיימנו את הקנייה. הרשימה נשארת כמו שהיא.", SHOP_BUTTON, listUrl(list));
+      return;
+    }
+    // Any other command leaves the question (nothing changes) and runs as usual.
+  }
+  if (command?.type === "done") {
+    await askShoppingDone(phone, list);
+    return;
+  }
+
   // "כבר קיים ברשימה - להוסיף לכמות?" is waiting for an answer.
   if (link.pendingDuplicates.length > 0) {
     const answer =
@@ -164,9 +206,11 @@ export async function handleIncomingMessage(message: IncomingWhatsAppMessage): P
       return;
     case "list":
       await sendList(phone, list);
+      await offerShoppingDone(phone, list);
       return;
     case "shop":
       await sendCtaUrl(phone, `הרשימה "${listName(list)}" מחכה לך באפליקציה. קניות נעימות!`, SHOP_BUTTON, listUrl(list));
+      await offerShoppingDone(phone, list);
       return;
     case "unlink":
       await whatsappRepository.deleteLink(phone);
@@ -181,6 +225,100 @@ export async function handleIncomingMessage(message: IncomingWhatsAppMessage): P
   }
 
   await addItems(phone, user, list, text);
+}
+
+/**
+ * A link button ("צא לקניות") can't share a message with reply buttons, so
+ * "קנייה הושלמה" follows as its own short message - only when shopping is near
+ * (after "רשימה" / "צא לקניות"), not after every added item.
+ */
+async function offerShoppingDone(phone: string, list: ShoppingList): Promise<void> {
+  if (openItems(list.items).length === 0) return;
+  await sendButtons(phone, "כשתסיימו לקנות:", [{ id: SHOP_DONE, title: "קנייה הושלמה ✅" }]);
+}
+
+async function askShoppingDone(phone: string, list: ShoppingList): Promise<void> {
+  if (list.items.length === 0) {
+    await sendText(phone, "הרשימה כבר ריקה - אין קנייה לסיים. שלחו לי מוצרים לרשימה הבאה 🛒");
+    return;
+  }
+  await sendButtons(phone, "האם סיימת את הקניות?", [
+    { id: DONE_ALL, title: "כן – אפס רשימה" },
+    { id: DONE_MISSING, title: "כן, אבל חסרים מוצרים" },
+    { id: DONE_KEEP, title: "לא – השאר רשימה" },
+  ]);
+}
+
+async function askMissing(phone: string, list: ShoppingList): Promise<void> {
+  if (openItems(list.items).length === 0) {
+    await sendText(phone, "כל המוצרים ברשימה כבר סומנו כנקנו. אם הכל נאסף, לחצו *כן – אפס רשימה*.");
+    return;
+  }
+  await whatsappRepository.setPendingState(phone, { kind: "awaiting_missing" });
+  const categoryOf = await loadCategoryOf();
+  await sendText(
+    phone,
+    [
+      formatListMessage(listName(list), list.items, {}, categoryOf),
+      "",
+      "אילו מוצרים חסרו? כתבו מספרים או שמות, למשל: *2, 5* או *חלב, גבינה*",
+      "_הם יישארו ברשימה לפעם הבאה, וכל השאר יימחק._",
+    ].join("\n"),
+  );
+}
+
+/** The answer to "which items were missing?" - numbers from the list above, or names. */
+async function answerMissing(phone: string, user: User, list: ShoppingList, text: string): Promise<void> {
+  const numbered = numberedOpenItems(list.items, await loadCategoryOf());
+  const targets = text
+    .split(/[\n\r,;،]+/)
+    // "2 5" - several numbers separated only by spaces
+    .flatMap((t) => (/^\s*\d+(\s+\d+)+\s*$/.test(t) ? t.trim().split(/\s+/) : [t.trim()]))
+    .filter(Boolean);
+
+  const missing = new Set<string>();
+  const unclear: string[] = [];
+  for (const target of targets) {
+    const match = matchItemsToRemove(list.items, target, numbered);
+    if (match.kind === "found") for (const item of match.items) missing.add(item.id);
+    else unclear.push(target);
+  }
+
+  if (missing.size === 0 || unclear.length > 0) {
+    // Nothing is deleted until every missing item is clear.
+    await whatsappRepository.setPendingState(phone, { kind: "awaiting_missing" });
+    const what = unclear.length > 0 ? `לא מצאתי: ${unclear.join(", ")}.` : "לא זיהיתי מוצרים.";
+    await sendText(phone, `${what} כתבו שוב את המספרים מהרשימה (למשל *2, 5*), או *בטל* כדי לצאת.`);
+    return;
+  }
+  await completeShopping(phone, user, list.id, [...missing]);
+}
+
+/**
+ * Closes the trip: saves it to the history, keeps only the missing items on the
+ * list (none = the list is reset), and tells the other participants.
+ */
+async function completeShopping(phone: string, user: User, listId: string, missingIds: string[]): Promise<void> {
+  const list = await shoppingListRepository.findById(listId);
+  if (!list || list.items.length === 0) {
+    await sendText(phone, "הרשימה כבר ריקה - אין קנייה לסיים.");
+    return;
+  }
+
+  const { remaining, collectedIds, notFoundIds } = finishShopping(list.items, missingIds);
+  await recordListTrip(list, user.id, collectedIds, notFoundIds);
+  await shoppingListRepository.updateItems(list.id, remaining, new Date().toISOString());
+  // Finished here, so a trip the app recorded earlier no longer needs its "new list?" question.
+  await whatsappRepository.deleteListReset(list.id);
+  await whatsappRepository.setLastAdded(phone, []);
+  notifyListChanged(list, user.id);
+  notifyShoppingDone(list, user, remaining.length);
+
+  const reply =
+    remaining.length === 0
+      ? "✅ הקנייה נשמרה והרשימה התאפסה.\nשלחו לי מוצרים לרשימה הבאה 🛒"
+      : `✅ הקנייה נשמרה.\nנשארו ברשימה לפעם הבאה: ${summarizeItems(remaining.map((i) => i.rawText), 6)}`;
+  await sendCtaUrl(phone, reply, SHOP_BUTTON, listUrl(list));
 }
 
 const REMOVE_BUTTON_PREFIX = "rm:";

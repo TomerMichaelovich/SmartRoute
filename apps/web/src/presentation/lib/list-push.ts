@@ -52,34 +52,70 @@ export function notifyListChanged(list: ShoppingList, actorUserId: string | unde
 const WHATSAPP_FREE_WINDOW_MS = 23.5 * 60 * 60 * 1000;
 
 /**
- * Tells a shared list's other participants that items were added ("עמית: גזר, חלב"):
- * a visible push to their phones, and a WhatsApp message to anyone linked to this
- * list on WhatsApp who wrote to the bot in the last 24h (free then - otherwise it'd
- * be a paid business-initiated message, so they're skipped). Runs after the response.
+ * Tells a shared list's other participants that items were added ("עמית: גזר, חלב").
+ * Runs after the response; see notifyOthers for how.
  */
 export function notifyItemsAdded(
   list: ShoppingList,
   actor: { id: string; displayName: string } | null,
   itemNames: string[],
 ): void {
-  if (!list.householdId || !list.shareCode || itemNames.length === 0) return;
-  const householdId = list.householdId;
-  const shareCode = list.shareCode;
+  if (itemNames.length === 0) return;
   const listName = list.name ?? "רשימת הקניות";
   const summary = summarizeItems(itemNames);
   const who = actor?.displayName?.trim();
   const body = who ? `${who}: ${summary}` : summary;
+  notifyOthers(list, actor?.id, {
+    type: "items-added",
+    title: `נוסף לרשימה "${listName}"`,
+    body,
+    whatsapp: `➕ נוסף לרשימה "${listName}"
+${body}`,
+  });
+}
+
+/** Tells the other participants that someone finished shopping ("עמית סיים את הקניות ✅"). */
+export function notifyShoppingDone(
+  list: ShoppingList,
+  actor: { id: string; displayName: string },
+  remainingCount: number,
+): void {
+  const listName = list.name ?? "רשימת הקניות";
+  const who = actor.displayName.trim() || "מישהו";
+  const left = remainingCount > 0 ? ` (נשארו ${remainingCount} מוצרים ברשימה)` : "";
+  notifyOthers(list, actor.id, {
+    type: "shopping-done",
+    title: `"${listName}"`,
+    body: `${who} סיים/ה את הקניות ✅${left}`,
+    whatsapp: `🛒 ${who} סיים/ה את הקניות ברשימה "${listName}" ✅${left}`,
+  });
+}
+
+/**
+ * A visible push to a shared list's other participants, plus a WhatsApp message to
+ * anyone linked to this list on WhatsApp who wrote to the bot in the last 24h (free
+ * then - otherwise it'd be a paid business-initiated message, so they're skipped).
+ * Runs after the response and never fails the request.
+ */
+function notifyOthers(
+  list: ShoppingList,
+  actorUserId: string | undefined,
+  message: { type: string; title: string; body: string; whatsapp: string },
+): void {
+  if (!list.householdId || !list.shareCode) return;
+  const householdId = list.householdId;
+  const shareCode = list.shareCode;
 
   after(async () => {
     try {
-      const recipients = await otherParticipants(list, householdId, actor?.id);
+      const recipients = await otherParticipants(list, householdId, actorUserId);
       if (recipients.length === 0) return;
 
       const tokens = await pushTokenRepository.findTokensForUsers(recipients);
       await sendPushes(tokens, () => ({
-        title: `נוסף לרשימה "${listName}"`,
-        body,
-        data: { type: "items-added", shareCode },
+        title: message.title,
+        body: message.body,
+        data: { type: message.type, shareCode },
         sound: "default",
         priority: "high",
       }));
@@ -91,13 +127,13 @@ export function notifyItemsAdded(
         for (const link of links) {
           if (!recipientSet.has(link.userId)) continue;
           if (now - new Date(link.lastInboundAt).getTime() > WHATSAPP_FREE_WINDOW_MS) continue;
-          await sendText(link.phone, `➕ נוסף לרשימה "${listName}"\n${body}`).catch((error) =>
+          await sendText(link.phone, message.whatsapp).catch((error) =>
             console.error("[list-push] WhatsApp notify failed", error),
           );
         }
       }
     } catch (error) {
-      console.error("[list-push] failed to notify about added items", error);
+      console.error("[list-push] failed to notify list participants", message.type, error);
     }
   });
 }

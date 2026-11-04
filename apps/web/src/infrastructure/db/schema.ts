@@ -15,7 +15,7 @@ import type { ClassificationResult } from "@smartroute/core/domain/entities/clas
 import type { RouteStop } from "@smartroute/core/domain/entities/route";
 import type { ShoppingListItem } from "@smartroute/core/domain/entities/shopping-list";
 import type { ShoppingTripItem } from "@smartroute/core/domain/entities/shopping-trip";
-import type { PendingDuplicate } from "../repositories/interfaces/whatsapp-repository";
+import type { PendingDuplicate, PendingState } from "../repositories/interfaces/whatsapp-repository";
 
 export const users = pgTable(
   "users",
@@ -176,6 +176,8 @@ export const whatsappLinks = pgTable(
     lastAddedItemIds: jsonb("last_added_item_ids").$type<string[]>().notNull().default([]),
     // Items already on the list the bot asked about ("להוסיף לכמות?"), until answered.
     pendingDuplicates: jsonb("pending_duplicates").$type<PendingDuplicate[]>().notNull().default([]),
+    // A question the bot is waiting on (e.g. "which items were missing?"); null = none.
+    pendingState: jsonb("pending_state").$type<PendingState>(),
   },
   (table) => [
     uniqueIndex("whatsapp_links_phone_idx").on(table.phone),

@@ -15,7 +15,8 @@ export type BotCommand =
   | { type: "help" }
   | { type: "unlink" }
   | { type: "remove"; targets: string[] }
-  | { type: "undo" };
+  | { type: "undo" }
+  | { type: "done" };
 
 /** New lines, commas and semicolons (incl. the Arabic comma) separate items. */
 const PIECE_SEPARATORS = /[\n\r,;،]+/;
@@ -112,6 +113,7 @@ const COMMANDS: Array<[RegExp, BotCommand["type"]]> = [
   [/^(עזרה|help|תפריט|היי|הי|שלום|hi|hello|start)$/i, "help"],
   [/^(נתק|התנתק|התנתקי|ניתוק|stop|unlink)$/i, "unlink"],
   [/^(בטל|ביטול|תבטל|אופס|undo)$/i, "undo"],
+  [/^(סיימתי|סיימנו|סיימתי קניות|סיימתי לקנות|קנייה הושלמה|קניה הושלמה|גמרתי|done)$/i, "done"],
 ];
 
 const REMOVE_COMMAND =

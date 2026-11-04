@@ -13,9 +13,10 @@ import { updateMyListWidget } from "@/widgets/refresh-my-list-widget";
  * widget - within seconds, even with the app closed, instead of Android's
  * ~30-minute widget refresh. Those are never shown to the user.
  *
- * The server also sends a *visible* "items-added" push ("עמית: גזר, חלב") when
- * someone else adds to a shared list - from the app or the WhatsApp bot - so
- * the notification permission is requested once signed in. Android only.
+ * The server also sends *visible* pushes - "items-added" ("עמית: גזר, חלב") and
+ * "shopping-done" ("עמית סיים/ה את הקניות") - when someone else adds to or
+ * finishes shopping a shared list, from the app or the WhatsApp bot, so the
+ * notification permission is requested once signed in. Android only.
  */
 const LIST_PUSH_TASK = "navio-list-changed-push";
 
@@ -38,6 +39,9 @@ function parsePayload(data: Record<string, unknown>): ListChangedPayload {
   return data as ListChangedPayload;
 }
 
+/** Pushes meant to be seen (the rest are silent widget refreshes). */
+const VISIBLE_TYPES = new Set(["items-added", "shopping-done"]);
+
 function notificationType(notification: Notifications.Notification): string | undefined {
   const data = notification.request.content.data as ListChangedPayload | undefined;
   return data?.type;
@@ -47,17 +51,17 @@ function notificationType(notification: Notifications.Notification): string | un
 export function registerListPushTask(): void {
   if (Platform.OS !== "android") return;
 
-  // Show "items-added" even while the app is open; nothing else is meant to be seen.
+  // Show visible pushes (items added, shopping done) even while the app is open.
   Notifications.setNotificationHandler({
     handleNotification: async (notification) => {
-      const show = notificationType(notification) === "items-added";
+      const show = VISIBLE_TYPES.has(notificationType(notification) ?? "");
       return { shouldShowBanner: show, shouldShowList: show, shouldPlaySound: show, shouldSetBadge: false };
     },
   });
-  // Tapping "items-added" opens that list.
+  // Tapping one opens that list.
   Notifications.addNotificationResponseReceivedListener((response) => {
     const data = response.notification.request.content.data as ListChangedPayload | undefined;
-    if (data?.type === "items-added" && data.shareCode) {
+    if (data?.type && VISIBLE_TYPES.has(data.type) && data.shareCode) {
       void Linking.openURL(`smartroute://my-list/${data.shareCode}`);
     }
   });

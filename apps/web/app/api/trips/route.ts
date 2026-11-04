@@ -4,7 +4,6 @@ import { buildTripItems } from "@smartroute/core/application/shopping-list/build
 import { normalizeShareCode } from "@smartroute/core/application/shopping-list/generate-share-code";
 import type { ShoppingList } from "@smartroute/core/domain/entities/shopping-list";
 import type { ShoppingTrip } from "@smartroute/core/domain/entities/shopping-trip";
-import { he } from "@smartroute/core/i18n/he";
 import {
   householdRepository,
   productRepository,
@@ -17,6 +16,7 @@ import {
 import { isWhatsAppActive } from "@/src/infrastructure/whatsapp/client";
 import { getCurrentUser } from "@/src/presentation/auth/dal";
 import { notifyListChanged } from "@/src/presentation/lib/list-push";
+import { recordListTrip } from "@/src/presentation/lib/record-trip";
 
 const itemIdsSchema = {
   collectedItemIds: z.array(z.string()).default([]),
@@ -157,24 +157,7 @@ async function recordListModeTrip(listCode: string, collectedItemIds: string[], 
   }
 
   await rememberTripForWhatsApp(list, collectedItemIds);
-  const products = await productRepository.findAllActive();
-  const productNameById = new Map(products.map((p) => [p.id, p.canonicalName]));
-  const now = new Date().toISOString();
-  const trip: ShoppingTrip = {
-    id: crypto.randomUUID(),
-    userId: user.id,
-    householdId: list.householdId,
-    storeId: list.storeId,
-    storeName: he.history.listModeTrip,
-    routeId: null,
-    shoppingListId: list.id,
-    startedAt: now,
-    completedAt: now,
-    items: buildTripItems(list.items, productNameById, new Set(collectedItemIds), new Set(notFoundItemIds)),
-    createdAt: now,
-  };
-
-  await shoppingTripRepository.create(trip);
+  const trip = await recordListTrip(list, user.id, collectedItemIds, notFoundItemIds);
   return NextResponse.json({ id: trip.id }, { status: 201 });
 }
 
