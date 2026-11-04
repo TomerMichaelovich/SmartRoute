@@ -4,9 +4,12 @@ import { normalizeShareCode } from "@smartroute/core/application/shopping-list/g
 import {
   householdRepository,
   shoppingListRepository,
+  storeRepository,
   userRepository,
   whatsappRepository,
 } from "@/src/infrastructure/container";
+import { createShoppingList } from "@/src/presentation/lib/create-list";
+import { ensureSharingGroup } from "@/src/presentation/lib/list-sharing";
 import {
   SIMULATED_PHONE_PREFIX,
   clearSimulatedMessages,
@@ -42,6 +45,7 @@ const bodySchema = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("list"), shareCode }),
   z.object({ action: z.literal("myLists"), email: z.string().min(3) }),
+  z.object({ action: z.literal("createTestList") }),
   z.object({ action: z.literal("link"), from: phone, shareCode, userId: z.string().min(1) }),
   z.object({ action: z.literal("check"), shareCode, itemId: z.string(), checked: z.boolean() }),
   z.object({ action: z.literal("finishTrip"), shareCode }),
@@ -90,6 +94,9 @@ export async function POST(request: Request) {
         return NextResponse.json({ lists });
       }
 
+      case "createTestList":
+        return NextResponse.json(await createTestList());
+
       case "link": {
         const list = await findList(body.shareCode);
         if (!list) return NextResponse.json({ error: "הרשימה לא נמצאה" }, { status: 404 });
@@ -127,6 +134,44 @@ export async function POST(request: Request) {
     console.error("[whatsapp-simulator]", error);
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
+}
+
+const TEST_USERS = [
+  { email: "whatsapp-test-1@navio.local", displayName: "אני (ניסיון)" },
+  { email: "whatsapp-test-2@navio.local", displayName: "בן/בת זוג (ניסיון)" },
+];
+const TEST_LIST_NAME = "רשימת ניסיון - וואטסאפ";
+
+/**
+ * Two test accounts sharing one list, so the bot can be tried with no app account
+ * in this database. Reuses them on later clicks instead of piling up copies.
+ */
+async function createTestList() {
+  const [me, partner] = await Promise.all(
+    TEST_USERS.map(
+      async (u) =>
+        (await userRepository.findByEmail(u.email)) ??
+        userRepository.create({ id: crypto.randomUUID(), email: u.email, displayName: u.displayName }),
+    ),
+  );
+
+  const existing = (await shoppingListRepository.findAllActiveByOwner(me.id)).find(
+    (l) => l.name === TEST_LIST_NAME && !l.deletedAt,
+  );
+  let list = existing ?? null;
+  if (!list) {
+    const [store] = await storeRepository.findAll();
+    if (!store) throw new Error("אין חנויות במסד הנתונים - צריך לפחות חנות אחת כדי ליצור רשימה");
+    list = await createShoppingList({ storeId: store.id, rawItems: [], ownerUserId: me.id, name: TEST_LIST_NAME });
+  }
+
+  const householdId = await ensureSharingGroup(list, me);
+  if (!(await householdRepository.getMembership(householdId, partner.id))) {
+    await householdRepository.addPendingMember(householdId, partner.id);
+  }
+  await householdRepository.approveMember(householdId, partner.id);
+
+  return { shareCode: list.shareCode, email: me.email };
 }
 
 /** Runs the bot synchronously (the real webhook does it in after()) so errors show up here. */

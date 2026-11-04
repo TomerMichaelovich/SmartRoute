@@ -99,9 +99,21 @@ export function WhatsAppSimulator() {
     }
   }, []);
 
-  async function findMyLists() {
+  // Two test accounts sharing a list - for trying the bot without an app account in this database.
+  async function createTestList() {
     try {
-      const data = await post({ action: "myLists", email });
+      const data = await post({ action: "createTestList" });
+      setEmail(data.email as string);
+      await findMyLists(data.email as string);
+      await loadList(data.shareCode as string);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function findMyLists(forEmail = email) {
+    try {
+      const data = await post({ action: "myLists", email: forEmail });
       setMyLists(data.lists as MyList[]);
       setError(null);
     } catch (e) {
@@ -181,6 +193,14 @@ export function WhatsAppSimulator() {
             />
           </label>
           <button className="rounded-lg bg-neutral-900 px-4 py-2 text-sm text-white">הצג את הרשימות שלי</button>
+          <span className="pb-2 text-sm text-neutral-500">או</span>
+          <button
+            type="button"
+            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white"
+            onClick={() => void createTestList()}
+          >
+            צור רשימת ניסיון
+          </button>
           <button
             type="button"
             className="rounded-lg border border-neutral-300 px-4 py-2 text-sm"
