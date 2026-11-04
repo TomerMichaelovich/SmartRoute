@@ -141,10 +141,10 @@ export function parseCommand(text: string): BotCommand | null {
   return null;
 }
 
-/** "כן" / "לא" to the bot's "carry over the leftovers?" question; null for anything else. */
+/** "כן" / "לא" to the bot's yes/no questions (carry over leftovers, add to quantity); null for anything else. */
 export function parseCarryAnswer(text: string): "yes" | "no" | null {
   const clean = text.trim().replace(/[!.\s]+$/, "");
-  if (/^(כן|כן,? לצרף|לצרף|בטח|יאללה|אוקי|yes|y|ok)$/i.test(clean)) return "yes";
+  if (/^(כן|כן,? לצרף|לצרף|כן,? להוסיף|להוסיף|בטח|יאללה|אוקי|yes|y|ok)$/i.test(clean)) return "yes";
   if (/^(לא|לא,? רשימה חדשה|רשימה חדשה|לא צריך|no|n)$/i.test(clean)) return "no";
   return null;
 }

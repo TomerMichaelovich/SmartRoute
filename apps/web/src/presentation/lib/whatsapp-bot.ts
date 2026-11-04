@@ -7,7 +7,11 @@ import {
   parseCommand,
   parseItemsMessage,
 } from "@smartroute/core/application/shopping-list/parse-items-message";
-import { matchItemsToRemove, openItems } from "@smartroute/core/application/shopping-list/match-items";
+import {
+  findOpenItemByName,
+  matchItemsToRemove,
+  openItems,
+} from "@smartroute/core/application/shopping-list/match-items";
 import type { ShoppingList, ShoppingListItem } from "@smartroute/core/domain/entities/shopping-list";
 import type { User } from "@smartroute/core/domain/entities/user";
 import {
@@ -16,6 +20,7 @@ import {
   whatsappRepository,
 } from "@/src/infrastructure/container";
 import type {
+  PendingDuplicate,
   WhatsAppLink,
   WhatsAppListReset,
 } from "@/src/infrastructure/repositories/interfaces/whatsapp-repository";
@@ -44,6 +49,8 @@ export interface IncomingWhatsAppMessage {
 export const BOT_NAME = "רשימת קניות - NAVIO";
 const CARRY_YES = "carry_yes";
 const CARRY_NO = "carry_no";
+const DUP_YES = "dup_yes";
+const DUP_NO = "dup_no";
 
 const SHOP_BUTTON = "צא לקניות 🛒";
 
@@ -128,6 +135,21 @@ export async function handleIncomingMessage(message: IncomingWhatsAppMessage): P
       await sendCtaUrl(phone, "כבר התחלנו רשימה חדשה ✓", SHOP_BUTTON, listUrl(list));
       return;
     }
+  }
+
+  // "כבר קיים ברשימה - להוסיף לכמות?" is waiting for an answer.
+  if (link.pendingDuplicates.length > 0) {
+    const answer =
+      message.buttonId === DUP_YES ? "yes" : message.buttonId === DUP_NO ? "no" : command ? null : parseCarryAnswer(text);
+    await whatsappRepository.setPendingDuplicates(phone, []);
+    if (answer) {
+      await answerDuplicates(phone, user, list, link.pendingDuplicates, answer === "yes");
+      return;
+    }
+    // Anything else drops the question (nothing added) and is handled as usual.
+  } else if (message.buttonId === DUP_YES || message.buttonId === DUP_NO) {
+    await sendText(phone, "כבר טיפלתי בזה ✓");
+    return;
   }
 
   switch (command?.type) {
@@ -361,28 +383,99 @@ async function sendList(phone: string, list: ShoppingList): Promise<void> {
 async function addItems(phone: string, user: User, list: ShoppingList, text: string): Promise<void> {
   const lines = parseItemsMessage(text);
   if (lines.length === 0) {
-    await sendText(phone, `לא זיהיתי מוצרים בהודעה.\n\n${HELP_TEXT}`);
+    await sendText(phone, `לא זיהיתי מוצרים בהודעה.
+
+${HELP_TEXT}`);
     return;
   }
 
-  const classified = await classifyLines(
-    list.storeId,
-    lines.map((line) => line.rawText),
-    user.id,
-  );
-  const items = classified.map((item, i) => ({ ...item, quantity: lines[i].quantity }));
-  await shoppingListRepository.appendItems(list.id, items);
-  await whatsappRepository.setLastAdded(phone, items.map((item) => item.id));
-  notifyListChanged(list, user.id);
-  notifyItemsAdded(list, user, lines.map((line) => line.rawText));
+  // Already on the list (and not bought yet)? Ask before touching those; add the rest now.
+  const duplicates: PendingDuplicate[] = [];
+  const fresh = lines.filter((line) => {
+    const existing = findOpenItemByName(list.items, line.rawText);
+    if (!existing) return true;
+    duplicates.push({ itemId: existing.id, rawText: existing.rawText, addQuantity: line.quantity ?? 1 });
+    return false;
+  });
 
-  const updated = await shoppingListRepository.findById(list.id);
-  const openCount = (updated ?? list).items.filter((item) => !item.checked).length;
-  const added = summarizeItems(lines.map((l) => (l.quantity ? `${l.rawText} ×${l.quantity}` : l.rawText)), 6);
+  let updated: ShoppingList = list;
+  if (fresh.length > 0) {
+    const classified = await classifyLines(
+      list.storeId,
+      fresh.map((line) => line.rawText),
+      user.id,
+    );
+    const items = classified.map((item, i) => ({ ...item, quantity: fresh[i].quantity }));
+    await shoppingListRepository.appendItems(list.id, items);
+    await whatsappRepository.setLastAdded(phone, items.map((item) => item.id));
+    notifyListChanged(list, user.id);
+    notifyItemsAdded(list, user, fresh.map((line) => line.rawText));
+    updated = (await shoppingListRepository.findById(list.id)) ?? list;
+
+    const openCount = openItems(updated.items).length;
+    const added = summarizeItems(fresh.map((l) => (l.quantity ? `${l.rawText} ×${l.quantity}` : l.rawText)), 6);
+    await sendCtaUrl(
+      phone,
+      [
+        `✅ נוסף${fresh.length > 1 ? "ו" : ""} לרשימה: ${added}`,
+        `סה"כ ${openCount} מוצרים פתוחים ברשימה.`,
+        "להצגת הרשימה עד כה כתבו *רשימה*",
+        "_טעית? כתבו *בטל* · כל הפקודות: *עזרה*_",
+      ].join("\n"),
+      SHOP_BUTTON,
+      listUrl(updated),
+    );
+  }
+
+  if (duplicates.length > 0) {
+    await whatsappRepository.setPendingDuplicates(phone, duplicates);
+    const described = duplicates.map((d) => {
+      const item = updated.items.find((i) => i.id === d.itemId);
+      return `*${d.rawText}* (כבר יש ${item?.quantity ?? 1})`;
+    });
+    const question =
+      duplicates.length === 1
+        ? `המוצר ${described[0]} כבר קיים ברשימה. האם תרצה להוסיף לכמות?`
+        : `המוצרים האלה כבר קיימים ברשימה:\n${described.map((d) => `• ${d}`).join("\n")}\n\nהאם תרצה להוסיף לכמות שלהם?`;
+    await sendButtons(phone, question, [
+      { id: DUP_YES, title: "כן, להוסיף" },
+      { id: DUP_NO, title: "לא" },
+    ]);
+  }
+}
+
+/** "כן": adds to the existing items' quantities and says the new totals; "לא": nothing changes. */
+async function answerDuplicates(
+  phone: string,
+  user: User,
+  list: ShoppingList,
+  duplicates: PendingDuplicate[],
+  addToQuantity: boolean,
+): Promise<void> {
+  if (!addToQuantity) {
+    await sendText(phone, "בסדר, לא הוספתי. להצגת הרשימה עד כה כתבו *רשימה*");
+    return;
+  }
+
+  const totals: string[] = [];
+  for (const dup of duplicates) {
+    // The item may have been bought or removed since the question - then there's nothing to add to.
+    const item = list.items.find((i) => i.id === dup.itemId && !i.checked);
+    if (!item) continue;
+    const total = (item.quantity ?? 1) + dup.addQuantity;
+    await shoppingListRepository.setItemQuantity(list.id, item.id, total);
+    totals.push(`${item.rawText} – סה"כ ${total}`);
+  }
+  if (totals.length === 0) {
+    await sendText(phone, "המוצרים כבר לא ברשימה (אולי נקנו או נמחקו). אפשר לשלוח אותם שוב.");
+    return;
+  }
+
+  notifyListChanged(list, user.id);
   await sendCtaUrl(
     phone,
-    `✅ נוסף${lines.length > 1 ? "ו" : ""} לרשימה: ${added}\nסה"כ ${openCount} מוצרים פתוחים ברשימה.\n_טעית? כתבו *בטל* · כל הפקודות: *עזרה*_`,
+    `✅ עודכנה הכמות:\n${totals.map((t) => `• ${t}`).join("\n")}\n\nלהצגת הרשימה עד כה כתבו *רשימה*`,
     SHOP_BUTTON,
-    listUrl(updated ?? list),
+    listUrl(list),
   );
 }

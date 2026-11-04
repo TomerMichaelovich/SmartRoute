@@ -1,7 +1,7 @@
 import { createHmac } from "crypto";
 import { describe, expect, it } from "vitest";
 import { listAfterTrip, tripLeftovers } from "@smartroute/core/application/shopping-list/after-trip";
-import { matchItemsToRemove } from "@smartroute/core/application/shopping-list/match-items";
+import { findOpenItemByName, matchItemsToRemove } from "@smartroute/core/application/shopping-list/match-items";
 import {
   formatListMessage,
   summarizeItems,
@@ -206,5 +206,26 @@ describe("removing items", () => {
     expect(matchItemsToRemove(items, "4")).toEqual({ kind: "found", items: [items[4]] });
     expect(matchItemsToRemove(items, "9")).toEqual({ kind: "none" });
     expect(matchItemsToRemove(items, "במבה")).toEqual({ kind: "none" });
+  });
+});
+
+describe("items already on the list", () => {
+  const items: ShoppingListItem[] = [
+    { id: "a", rawText: "חלב", quantity: 2 },
+    { id: "b", rawText: "לחם", checked: true },
+  ];
+
+  it("finds an open item with the same name", () => {
+    expect(findOpenItemByName(items, " חלב ")?.id).toBe("a");
+    expect(findOpenItemByName(items, "חלב 3%")).toBeNull();
+  });
+
+  it("ignores items already bought - those are added again", () => {
+    expect(findOpenItemByName(items, "לחם")).toBeNull();
+  });
+
+  it("reads the add-to-quantity answers", () => {
+    expect(parseCarryAnswer("כן, להוסיף")).toBe("yes");
+    expect(parseCarryAnswer("לא")).toBe("no");
   });
 });

@@ -45,3 +45,10 @@ export function matchItemsToRemove(items: ShoppingListItem[], target: string): R
   if (partial.length > 1) return { kind: "ambiguous", items: partial };
   return { kind: "none" };
 }
+
+/** An open item with exactly this name (ignoring niqqud, quotes, spacing, case) - "already on the list". */
+export function findOpenItemByName(items: ShoppingListItem[], name: string): ShoppingListItem | null {
+  const wanted = normalize(name);
+  if (!wanted) return null;
+  return openItems(items).find((item) => normalize(item.rawText) === wanted) ?? null;
+}

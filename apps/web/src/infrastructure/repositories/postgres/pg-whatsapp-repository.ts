@@ -7,7 +7,12 @@ import {
   whatsappListResets,
   whatsappProcessedMessages,
 } from "../../db/schema";
-import type { IWhatsAppRepository, WhatsAppLink, WhatsAppListReset } from "../interfaces/whatsapp-repository";
+import type {
+  IWhatsAppRepository,
+  PendingDuplicate,
+  WhatsAppLink,
+  WhatsAppListReset,
+} from "../interfaces/whatsapp-repository";
 
 function toLink(row: typeof whatsappLinks.$inferSelect): WhatsAppLink {
   return {
@@ -16,6 +21,7 @@ function toLink(row: typeof whatsappLinks.$inferSelect): WhatsAppLink {
     listId: row.listId,
     lastInboundAt: row.lastInboundAt,
     lastAddedItemIds: row.lastAddedItemIds,
+    pendingDuplicates: row.pendingDuplicates,
   };
 }
 
@@ -92,6 +98,10 @@ export class PgWhatsAppRepository implements IWhatsAppRepository {
 
   async setLastAdded(phone: string, itemIds: string[]): Promise<void> {
     await db.update(whatsappLinks).set({ lastAddedItemIds: itemIds }).where(eq(whatsappLinks.phone, phone));
+  }
+
+  async setPendingDuplicates(phone: string, duplicates: PendingDuplicate[]): Promise<void> {
+    await db.update(whatsappLinks).set({ pendingDuplicates: duplicates }).where(eq(whatsappLinks.phone, phone));
   }
 
   async markMessageProcessed(messageId: string): Promise<boolean> {

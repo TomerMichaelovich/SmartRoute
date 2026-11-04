@@ -4,6 +4,15 @@ export interface WhatsAppLink {
   listId: string;
   lastInboundAt: string;
   lastAddedItemIds: string[];
+  pendingDuplicates: PendingDuplicate[];
+}
+
+/** An item someone sent that's already on the list; the bot asked whether to add to its quantity. */
+export interface PendingDuplicate {
+  itemId: string;
+  rawText: string;
+  /** How many to add on "כן" (the count in their message, else 1). */
+  addQuantity: number;
 }
 
 export interface WhatsAppListReset {
@@ -28,6 +37,7 @@ export interface IWhatsAppRepository {
   deleteLink(phone: string): Promise<void>;
   touchInbound(phone: string): Promise<void>;
   setLastAdded(phone: string, itemIds: string[]): Promise<void>;
+  setPendingDuplicates(phone: string, duplicates: PendingDuplicate[]): Promise<void>;
   /** True the first time a message id is seen, false for a redelivery. */
   markMessageProcessed(messageId: string): Promise<boolean>;
 
