@@ -1082,6 +1082,7 @@ export function StoreLayoutEditor({
                 hasPriceBranch={hasPriceBranch}
                 canEditProducts={canEditProducts}
                 placeShelfGroupOnNode={placeShelfGroupOnNode}
+                addProductToNode={addProductToNode}
                 removeShelfGroupFromNode={removeShelfGroupFromNode}
                 moveProductsToNode={moveProductsToNode}
                 removeProductsFromNode={removeProductsFromNode}

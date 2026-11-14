@@ -33,6 +33,7 @@ interface ShelfGroupPanelProps {
   /** May change products' shelf group (the "products" admin section). */
   canEditProducts: boolean;
   placeShelfGroupOnNode: (storeId: string, nodeId: string, groupId: string) => Promise<number>;
+  addProductToNode: (storeId: string, nodeId: string, formData: FormData) => Promise<void>;
   removeShelfGroupFromNode: (storeId: string, nodeId: string, groupId: string) => Promise<void>;
   moveProductsToNode: (storeId: string, productIds: string[], nodeId: string) => Promise<void>;
   removeProductsFromNode: (storeId: string, nodeId: string, productIds: string[]) => Promise<void>;
@@ -76,6 +77,13 @@ export function ShelfGroupPanel(props: ShelfGroupPanelProps) {
     });
   }
 
+  async function placeOne(item: GroupItem) {
+    const formData = new FormData();
+    formData.set("productId", item.id);
+    await props.addProductToNode(storeId, nodeId, formData);
+    setMessage(`שויך: ${item.canonicalName}`);
+  }
+
   return (
     <div className="flex flex-col gap-2 border-t border-neutral-100 pt-3">
       <h3 className="text-sm font-semibold text-neutral-700">קבוצות מדף בנקודה זו ({groupsHere.length})</h3>
@@ -114,7 +122,7 @@ export function ShelfGroupPanel(props: ShelfGroupPanelProps) {
               disabled={!groupToPlace || isPending}
               className="rounded-lg bg-cyan-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
             >
-              {isPending ? "משייך..." : "שייך"}
+              {isPending ? "משייך..." : "שייך הכל"}
             </button>
           </div>
           {groupToPlace && (
@@ -123,6 +131,8 @@ export function ShelfGroupPanel(props: ShelfGroupPanelProps) {
               storeId={storeId}
               groupId={groupToPlace}
               canEditProducts={props.canEditProducts}
+              placeOne={placeOne}
+              onAllPlaced={() => setGroupToPlace("")}
             />
           )}
           {message && <p className="text-xs text-emerald-700">{message}</p>}
@@ -137,9 +147,34 @@ export function ShelfGroupPanel(props: ShelfGroupPanelProps) {
   );
 }
 
-/** The group's products not placed in the store yet - what "שייך" would place here. */
-function GroupPreview({ storeId, groupId, canEditProducts }: { storeId: string; groupId: string; canEditProducts: boolean }) {
+/**
+ * The group's products not placed in the store yet - what "שייך הכל" would place here -
+ * each of which can also be placed on its own, when only some of the group stand here.
+ */
+function GroupPreview({
+  storeId,
+  groupId,
+  canEditProducts,
+  placeOne,
+  onAllPlaced,
+}: {
+  storeId: string;
+  groupId: string;
+  canEditProducts: boolean;
+  placeOne: (item: GroupItem) => Promise<void>;
+  onAllPlaced: () => void;
+}) {
   const [items, setItems] = useState<GroupItem[] | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  function place(item: GroupItem) {
+    startTransition(async () => {
+      await placeOne(item);
+      const rest = (items ?? []).filter((i) => i.id !== item.id);
+      setItems(rest);
+      if (rest.length === 0) onAllPlaced();
+    });
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -156,12 +191,22 @@ function GroupPreview({ storeId, groupId, canEditProducts }: { storeId: string; 
   if (items.length === 0) return <p className="text-xs text-neutral-400">אין בקבוצה פריטים שלא שויכו</p>;
   return (
     <div className="flex flex-col gap-1 rounded-lg bg-neutral-50 p-2">
-      <p className="text-xs text-neutral-600">ישויכו לכאן {items.length} פריטים:</p>
+      <p className="text-xs text-neutral-600">
+        {items.length} פריטים לא משויכים בקבוצה - &quot;שייך הכל&quot; משייך את כולם, או שייכו פריט בודד:
+      </p>
       <ul className="flex max-h-64 flex-col overflow-y-auto">
         {items.map((item) => (
           <li key={item.id} className="flex items-start gap-2 py-1 text-sm">
             <RetailImage itemKey={item.sourceItemKey} className="h-10 w-10" />
             <ProductLabel product={item} editable={canEditProducts} />
+            <button
+              type="button"
+              onClick={() => place(item)}
+              disabled={isPending}
+              className="shrink-0 rounded border border-cyan-600 px-1.5 py-0.5 text-xs text-cyan-700 hover:bg-cyan-50 disabled:opacity-40"
+            >
+              שייך לכאן
+            </button>
           </li>
         ))}
       </ul>
