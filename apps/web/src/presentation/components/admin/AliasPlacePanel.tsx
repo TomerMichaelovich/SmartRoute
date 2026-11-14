@@ -195,23 +195,23 @@ export function AliasPlacePanel({
               <li key={p.id} className="flex items-start justify-between gap-2 py-1 text-sm">
                 <RetailImage itemKey={p.sourceItemKey} className="h-10 w-10" />
                 <span className="flex flex-1 flex-col">
-                  <a
-                    href={productEditHref(p)}
-                    target="_blank"
-                    rel="noreferrer"
-                    title="עריכת המוצר (בלשונית חדשה)"
-                    className="hover:text-cyan-700 hover:underline"
-                  >
-                    {p.canonicalName}
-                  </a>
-                  <span className="text-xs text-neutral-500">
-                    {p.aliases.join(" · ")}
+                  <span className="flex flex-wrap items-baseline gap-x-2">
+                    <a
+                      href={productEditHref(p)}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="עריכת המוצר (בלשונית חדשה)"
+                      className="hover:text-cyan-700 hover:underline"
+                    >
+                      {p.canonicalName}
+                    </a>
                     {p.sourceItemKey && (
-                      <span className="ms-1.5 text-neutral-400" dir="ltr">
+                      <span className="text-xs text-neutral-400" dir="ltr">
                         {codeOf(p.sourceItemKey)}
                       </span>
                     )}
                   </span>
+                  <span className="text-xs text-neutral-500">{p.aliases.join(" · ")}</span>
                 </span>
                 <span className="flex shrink-0 flex-col items-end gap-1">
                   <span
