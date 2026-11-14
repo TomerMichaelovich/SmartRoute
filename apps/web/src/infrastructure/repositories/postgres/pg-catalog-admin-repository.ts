@@ -94,7 +94,7 @@ export class PgCatalogAdminRepository implements ICatalogAdminRepository {
       `WITH carried AS (${CARRIED_BY_STORE} AND (p.normalized_aliases ?| $2::text[] OR EXISTS (
          SELECT 1 FROM jsonb_array_elements_text(p.aliases) AS a(alias)
          WHERE regexp_replace(a.alias, ${WITHOUT_GERESH}) = ANY($2::text[]))))
-       SELECT DISTINCT ON (pr.id) pr.id, pr.canonical_name, pr.aliases, pr.source_item_key, l.node_id
+       SELECT DISTINCT ON (pr.id) pr.id, pr.canonical_name, pr.aliases, pr.source_item_key, pr.shelf_group, l.node_id
        FROM carried c JOIN products pr ON pr.id = c.id
        LEFT JOIN product_listings l ON l.store_id = $1 AND l.product_id = pr.id
        ORDER BY pr.id`,
@@ -106,6 +106,7 @@ export class PgCatalogAdminRepository implements ICatalogAdminRepository {
         canonicalName: String(r.canonical_name),
         aliases: (r.aliases as string[] | null) ?? [],
         sourceItemKey: (r.source_item_key as string | null) ?? null,
+        shelfGroup: (r.shelf_group as string | null) ?? null,
         nodeId: (r.node_id as string | null) ?? null,
       }))
       .sort((a, b) => a.canonicalName.localeCompare(b.canonicalName, "he"));

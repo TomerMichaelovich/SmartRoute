@@ -34,6 +34,7 @@ export interface AliasProduct {
   aliases: string[];
   /** The barcode it was imported for. */
   sourceItemKey: string | null;
+  shelfGroup: string | null;
   /** Where it's placed in the store; null when it isn't yet. */
   nodeId: string | null;
 }

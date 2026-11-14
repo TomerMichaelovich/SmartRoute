@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { findShelfGroup } from "@smartroute/core/domain/value-objects/shelf-group";
 import { RetailImage } from "./RetailImage";
 
 const SEARCH_DELAY_MS = 250;
@@ -10,6 +11,7 @@ interface AliasProduct {
   canonicalName: string;
   aliases: string[];
   sourceItemKey: string | null;
+  shelfGroup: string | null;
   nodeId: string | null;
 }
 
@@ -210,6 +212,9 @@ export function AliasPlacePanel({
                         {codeOf(p.sourceItemKey)}
                       </span>
                     )}
+                    <span className="rounded-full bg-neutral-200 px-1.5 text-xs text-neutral-600">
+                      {(p.shelfGroup && findShelfGroup(p.shelfGroup)?.name) ?? "ללא קבוצת מדף"}
+                    </span>
                   </span>
                   <span className="text-xs text-neutral-500">{p.aliases.join(" · ")}</span>
                 </span>
