@@ -28,6 +28,14 @@ export interface ProductSearchHit {
 }
 
 /** An imported product the store's branch carries, found by one of its aliases. */
+/** A shelf group's product, with the aliases shoppers find it by. */
+export interface GroupProduct {
+  id: string;
+  canonicalName: string;
+  aliases: string[];
+  sourceItemKey: string | null;
+}
+
 export interface AliasProduct {
   id: string;
   canonicalName: string;
@@ -64,7 +72,7 @@ export interface ICatalogAdminRepository {
   hasPriceBranch(storeId: string): Promise<boolean>;
   shelfGroupsForStore(storeId: string): Promise<StoreShelfGroup[]>;
   /** The group's active products in the store's branch file that aren't placed in the store yet. */
-  unplacedGroupProductIds(storeId: string, groupId: string): Promise<string[]>;
+  unplacedGroupProducts(storeId: string, groupId: string): Promise<GroupProduct[]>;
   /**
    * The products of the store's branch file answering exactly to one of these normalized
    * texts (an alias or the name) - less those marked as not sold here - and where each is placed.
@@ -79,11 +87,7 @@ export interface ICatalogAdminRepository {
   /** The products placed at the node that answer to this alias (as written). */
   aliasProductIdsAtNode(storeId: string, nodeId: string, alias: string): Promise<string[]>;
   /** The group's products placed at this node, with the aliases shoppers find them by. */
-  groupProductsAtNode(
-    storeId: string,
-    nodeId: string,
-    groupId: string,
-  ): Promise<Array<{ id: string; canonicalName: string; aliases: string[]; sourceItemKey: string | null }>>;
+  groupProductsAtNode(storeId: string, nodeId: string, groupId: string): Promise<GroupProduct[]>;
   /** Hand-made (not imported) products placed in the store - few enough to load whole. */
   listedHandMadeProducts(storeId: string): Promise<Product[]>;
   /** Active products matching the text that aren't placed in the store yet, best candidates first. */

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { SHELF_GROUPS } from "@smartroute/core/domain/value-objects/shelf-group";
+import { ProductLabel } from "./ProductLabel";
 import { RetailImage } from "./RetailImage";
 
 export interface NodeShelfGroup {
@@ -39,11 +40,19 @@ interface ShelfGroupPanelProps {
   setProductsShelfGroup: (productIds: string[], groupId: string) => Promise<void>;
 }
 
+interface GroupItem {
+  id: string;
+  canonicalName: string;
+  aliases: string[];
+  sourceItemKey: string | null;
+}
+
 const singleLine = (label: string) => label.replace(/\s*\n\s*/g, " ");
 
 /**
  * The shelf-group half of a department node's panel: place a whole group of imported
- * products here at once, see which groups stand here, and open a group to handle its
+ * products here at once (its products listed when picked, before placing), see which
+ * groups stand here, and open a group to handle its
  * exceptions item by item - move some to another node, take them off, mark them as not
  * sold at this store, or fix their group.
  */
@@ -108,6 +117,14 @@ export function ShelfGroupPanel(props: ShelfGroupPanelProps) {
               {isPending ? "משייך..." : "שייך"}
             </button>
           </div>
+          {groupToPlace && (
+            <GroupPreview
+              key={groupToPlace}
+              storeId={storeId}
+              groupId={groupToPlace}
+              canEditProducts={props.canEditProducts}
+            />
+          )}
           {message && <p className="text-xs text-emerald-700">{message}</p>}
           {groupOptions.length === 0 && <p className="text-xs text-neutral-400">כל קבוצות המדף של הסניף כבר שויכו</p>}
         </div>
@@ -120,9 +137,41 @@ export function ShelfGroupPanel(props: ShelfGroupPanelProps) {
   );
 }
 
+/** The group's products not placed in the store yet - what "שייך" would place here. */
+function GroupPreview({ storeId, groupId, canEditProducts }: { storeId: string; groupId: string; canEditProducts: boolean }) {
+  const [items, setItems] = useState<GroupItem[] | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/admin/stores/${storeId}/catalog?group=${encodeURIComponent(groupId)}`, { signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : []))
+      .then(setItems)
+      .catch(() => {
+        // Aborted by picking another group.
+      });
+    return () => controller.abort();
+  }, [storeId, groupId]);
+
+  if (items === null) return <p className="text-xs text-neutral-400">טוען...</p>;
+  if (items.length === 0) return <p className="text-xs text-neutral-400">אין בקבוצה פריטים שלא שויכו</p>;
+  return (
+    <div className="flex flex-col gap-1 rounded-lg bg-neutral-50 p-2">
+      <p className="text-xs text-neutral-600">ישויכו לכאן {items.length} פריטים:</p>
+      <ul className="flex max-h-64 flex-col overflow-y-auto">
+        {items.map((item) => (
+          <li key={item.id} className="flex items-start gap-2 py-1 text-sm">
+            <RetailImage itemKey={item.sourceItemKey} className="h-10 w-10" />
+            <ProductLabel product={item} editable={canEditProducts} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function GroupRow({ group, ...props }: ShelfGroupPanelProps & { group: NodeShelfGroup }) {
   const { storeId, nodeId } = props;
-  const [items, setItems] = useState<Array<{ id: string; canonicalName: string; aliases: string[]; sourceItemKey: string | null }> | null>(null);
+  const [items, setItems] = useState<GroupItem[] | null>(null);
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [moveTo, setMoveTo] = useState("");
@@ -205,12 +254,13 @@ function GroupRow({ group, ...props }: ShelfGroupPanelProps & { group: NodeShelf
                         }}
                       />
                       <RetailImage itemKey={item.sourceItemKey} className="h-10 w-10" />
-                      <span className="flex flex-col">
-                        {item.canonicalName}
-                        {/* What a shopper's list matches this item by - a wrong one shows here,
-                            one also placed at another node in color. */}
-                        <span className="text-xs text-neutral-500">
-                          {item.aliases.length > 0
+                      {/* The aliases are what a shopper's list matches this item by - a wrong
+                          one shows here, one also placed at another node in color. */}
+                      <ProductLabel
+                        product={item}
+                        editable={props.canEditProducts}
+                        aliases={
+                          item.aliases.length > 0
                             ? item.aliases.map((alias, i) => {
                                 const elsewhere = props.splitAliases.get(alias);
                                 return (
@@ -229,20 +279,10 @@ function GroupRow({ group, ...props }: ShelfGroupPanelProps & { group: NodeShelf
                                   </span>
                                 );
                               })
-                            : "אין כינויים"}
-                        </span>
-                      </span>
+                            : undefined
+                        }
+                      />
                     </label>
-                    {props.canEditProducts && (
-                      <a
-                        href={`/admin/products?kind=imported&q=${encodeURIComponent(item.canonicalName)}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="shrink-0 text-xs text-cyan-700 hover:underline"
-                      >
-                        ערוך
-                      </a>
-                    )}
                   </li>
                 ))}
               </ul>

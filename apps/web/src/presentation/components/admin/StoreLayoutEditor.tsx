@@ -1095,6 +1095,7 @@ export function StoreLayoutEditor({
                   storeId={storeId}
                   nodeId={singleSelectedNode.id}
                   departmentNodes={departmentNodes}
+                  canEditProducts={canEditProducts}
                   placeAliasOnNode={placeAliasOnNode}
                   addProductToNode={addProductToNode}
                   moveProductsToNode={moveProductsToNode}

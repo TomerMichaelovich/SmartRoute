@@ -5,6 +5,7 @@ import { products } from "../../db/schema";
 import type {
   AdminProductQuery,
   AliasProduct,
+  GroupProduct,
   ICatalogAdminRepository,
   ProductSearchHit,
   StoreShelfGroup,
@@ -31,6 +32,15 @@ const SEARCH_CANDIDATES = 300;
 
 function likePattern(text: string): string {
   return `%${text.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+}
+
+function toGroupProduct(r: Record<string, unknown>): GroupProduct {
+  return {
+    id: String(r.id),
+    canonicalName: String(r.canonical_name),
+    aliases: (r.aliases as string[] | null) ?? [],
+    sourceItemKey: (r.source_item_key as string | null) ?? null,
+  };
 }
 
 function toDomain(row: typeof products.$inferSelect): Product {
@@ -77,13 +87,16 @@ export class PgCatalogAdminRepository implements ICatalogAdminRepository {
     return [...groups.values()];
   }
 
-  async unplacedGroupProductIds(storeId: string, groupId: string): Promise<string[]> {
+  async unplacedGroupProducts(storeId: string, groupId: string): Promise<GroupProduct[]> {
     const rows = (await rawSql.query(
-      `${CARRIED_BY_STORE} AND p.shelf_group = $2
-       AND NOT EXISTS (SELECT 1 FROM product_listings l WHERE l.store_id = $1 AND l.product_id = p.id)`,
+      `WITH carried AS (${CARRIED_BY_STORE} AND p.shelf_group = $2
+         AND NOT EXISTS (SELECT 1 FROM product_listings l WHERE l.store_id = $1 AND l.product_id = p.id))
+       SELECT p.id, p.canonical_name, p.aliases, p.source_item_key FROM products p
+       WHERE p.id IN (SELECT id FROM carried)
+       ORDER BY p.canonical_name`,
       [storeId, groupId],
     )) as Record<string, unknown>[];
-    return rows.map((r) => String(r.id));
+    return rows.map(toGroupProduct);
   }
 
   async aliasProducts(storeId: string, normalizedAliases: string[]): Promise<AliasProduct[]> {
@@ -180,12 +193,7 @@ export class PgCatalogAdminRepository implements ICatalogAdminRepository {
        ORDER BY p.canonical_name`,
       [storeId, nodeId, groupId],
     )) as Record<string, unknown>[];
-    return rows.map((r) => ({
-      id: String(r.id),
-      canonicalName: String(r.canonical_name),
-      aliases: (r.aliases as string[] | null) ?? [],
-      sourceItemKey: (r.source_item_key as string | null) ?? null,
-    }));
+    return rows.map(toGroupProduct);
   }
 
   async listedHandMadeProducts(storeId: string): Promise<Product[]> {

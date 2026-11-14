@@ -13,6 +13,8 @@ const MAX_ALIAS_SUGGESTIONS = 8;
  *   ?q=<text>                    products to add, not yet placed in the store, with where
  *                                products sharing an alias with each already stand
  *   ?node=<id>&group=<groupId>   a shelf group's products placed at one node
+ *   ?group=<groupId>             a shelf group's products not placed in the store yet -
+ *                                what placing the group would place
  *   ?alias=<text>                the branch's products answering exactly to an alias (and
  *                                where each is placed), and aliases containing the text
  *                                (with where their products already stand)
@@ -30,6 +32,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ stor
   if (nodeId && groupId) {
     return Response.json(await catalogAdminRepository.groupProductsAtNode(storeId, nodeId, groupId));
   }
+  if (groupId) return Response.json(await catalogAdminRepository.unplacedGroupProducts(storeId, groupId));
   const alias = url.searchParams.get("alias")?.trim().slice(0, 100);
   if (alias !== undefined) {
     if (!alias) return Response.json({ products: [], suggestions: [] });

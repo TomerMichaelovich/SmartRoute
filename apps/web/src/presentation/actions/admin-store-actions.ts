@@ -318,7 +318,7 @@ export async function placeShelfGroupOnNode(storeId: string, nodeId: string, gro
   await requireAdmin({ mapStore: storeId });
   await assertNodeInStore(storeId, nodeId);
   if (!findShelfGroup(groupId)) throw new Error(`Unknown shelf group ${groupId}`);
-  const productIds = await catalogAdminRepository.unplacedGroupProductIds(storeId, groupId);
+  const productIds = (await catalogAdminRepository.unplacedGroupProducts(storeId, groupId)).map((p) => p.id);
   await productListingRepository.createMany(
     productIds.map((productId) => ({ id: crypto.randomUUID(), productId, storeId, nodeId })),
   );
