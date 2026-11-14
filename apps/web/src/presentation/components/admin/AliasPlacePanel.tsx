@@ -30,6 +30,8 @@ interface AliasPlacePanelProps {
     alias: string,
     moveOthers: boolean,
   ) => Promise<{ placed: number; moved: number }>;
+  addProductToNode: (storeId: string, nodeId: string, formData: FormData) => Promise<void>;
+  moveProductsToNode: (storeId: string, productIds: string[], nodeId: string) => Promise<void>;
 }
 
 const singleLine = (label: string) => label.replace(/\s*\n\s*/g, " ");
@@ -40,9 +42,17 @@ const singleLine = (label: string) => label.replace(/\s*\n\s*/g, " ");
  * nodes only when asked to move them too. Typing shows the products answering to exactly
  * that alias (with their aliases, to catch a wrong one) and other aliases containing it.
  * An alias already placed at another node is called out (and its chip colored), so one
- * kind of product doesn't end up split between two places by mistake.
+ * kind of product doesn't end up split between two places by mistake. Each product can
+ * also be placed (or moved here) on its own, when only some of the alias belong here.
  */
-export function AliasPlacePanel({ storeId, nodeId, departmentNodes, placeAliasOnNode }: AliasPlacePanelProps) {
+export function AliasPlacePanel({
+  storeId,
+  nodeId,
+  departmentNodes,
+  placeAliasOnNode,
+  addProductToNode,
+  moveProductsToNode,
+}: AliasPlacePanelProps) {
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<AliasResult | null>(null);
   const [refresh, setRefresh] = useState(0);
@@ -92,6 +102,21 @@ export function AliasPlacePanel({ storeId, nodeId, departmentNodes, placeAliasOn
       const { placed, moved } = await placeAliasOnNode(storeId, nodeId, alias, moveOthers);
       setMessage(moved > 0 ? `שויכו ${placed} פריטים, הועברו לכאן ${moved}` : `שויכו ${placed} פריטים`);
       setMoveOthers(false);
+      setRefresh((n) => n + 1);
+    });
+  }
+
+  function placeOne(product: AliasProduct) {
+    startTransition(async () => {
+      if (product.nodeId === null) {
+        const formData = new FormData();
+        formData.set("productId", product.id);
+        await addProductToNode(storeId, nodeId, formData);
+        setMessage(`שויך: ${product.canonicalName}`);
+      } else {
+        await moveProductsToNode(storeId, [product.id], nodeId);
+        setMessage(`הועבר לכאן: ${product.canonicalName}`);
+      }
       setRefresh((n) => n + 1);
     });
   }
@@ -161,12 +186,24 @@ export function AliasPlacePanel({ storeId, nodeId, departmentNodes, placeAliasOn
                   {p.canonicalName}
                   <span className="text-xs text-neutral-500">{p.aliases.join(" · ")}</span>
                 </span>
-                <span
-                  className={`shrink-0 text-xs ${
-                    p.nodeId === null ? "text-emerald-700" : p.nodeId === nodeId ? "text-neutral-400" : "text-amber-700"
-                  }`}
-                >
-                  {p.nodeId === null ? "לא משויך" : p.nodeId === nodeId ? "כבר כאן" : (labelOf.get(p.nodeId) ?? "נקודה אחרת")}
+                <span className="flex shrink-0 flex-col items-end gap-1">
+                  <span
+                    className={`text-xs ${
+                      p.nodeId === null ? "text-emerald-700" : p.nodeId === nodeId ? "text-neutral-400" : "text-amber-700"
+                    }`}
+                  >
+                    {p.nodeId === null ? "לא משויך" : p.nodeId === nodeId ? "כבר כאן" : (labelOf.get(p.nodeId) ?? "נקודה אחרת")}
+                  </span>
+                  {p.nodeId !== nodeId && (
+                    <button
+                      type="button"
+                      onClick={() => placeOne(p)}
+                      disabled={isPending}
+                      className="rounded border border-cyan-600 px-1.5 py-0.5 text-xs text-cyan-700 hover:bg-cyan-50 disabled:opacity-40"
+                    >
+                      {p.nodeId === null ? "שייך לכאן" : "העבר לכאן"}
+                    </button>
+                  )}
                 </span>
               </li>
             ))}
