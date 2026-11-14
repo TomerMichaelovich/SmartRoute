@@ -36,6 +36,17 @@ interface AliasPlacePanelProps {
 
 const singleLine = (label: string) => label.replace(/\s*\n\s*/g, " ");
 
+/** The barcode (or the chain's own code) without the "<chainId>:" of internal keys. */
+const codeOf = (itemKey: string | null) => itemKey?.replace(/^.*:/, "") ?? null;
+
+/** The product's edit form on the products page, found by its code and unfolded. */
+function productEditHref(product: AliasProduct): string {
+  const code = codeOf(product.sourceItemKey);
+  const params = new URLSearchParams({ q: code ?? product.canonicalName, open: product.id });
+  if (code) params.set("kind", "imported");
+  return `/admin/products?${params}`;
+}
+
 /**
  * Places at a department node every product of the branch file a shopper finds by one
  * alias ("ג'ין"), whatever shelf group each got - the products already placed at other
@@ -43,7 +54,8 @@ const singleLine = (label: string) => label.replace(/\s*\n\s*/g, " ");
  * that alias (with their aliases, to catch a wrong one) and other aliases containing it.
  * An alias already placed at another node is called out (and its chip colored), so one
  * kind of product doesn't end up split between two places by mistake. Each product can
- * also be placed (or moved here) on its own, when only some of the alias belong here.
+ * also be placed (or moved here) on its own, when only some of the alias belong here,
+ * and its name opens its edit form on the products page in a new tab, the editor kept.
  */
 export function AliasPlacePanel({
   storeId,
@@ -183,8 +195,23 @@ export function AliasPlacePanel({
               <li key={p.id} className="flex items-start justify-between gap-2 py-1 text-sm">
                 <RetailImage itemKey={p.sourceItemKey} className="h-10 w-10" />
                 <span className="flex flex-1 flex-col">
-                  {p.canonicalName}
-                  <span className="text-xs text-neutral-500">{p.aliases.join(" · ")}</span>
+                  <a
+                    href={productEditHref(p)}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="עריכת המוצר (בלשונית חדשה)"
+                    className="hover:text-cyan-700 hover:underline"
+                  >
+                    {p.canonicalName}
+                  </a>
+                  <span className="text-xs text-neutral-500">
+                    {p.aliases.join(" · ")}
+                    {p.sourceItemKey && (
+                      <span className="ms-1.5 text-neutral-400" dir="ltr">
+                        {codeOf(p.sourceItemKey)}
+                      </span>
+                    )}
+                  </span>
                 </span>
                 <span className="flex shrink-0 flex-col items-end gap-1">
                   <span

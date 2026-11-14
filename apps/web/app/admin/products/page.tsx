@@ -66,7 +66,8 @@ function ChainSelect({ chains, defaultValue }: { chains: string[]; defaultValue:
 export default async function AdminProductsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ department?: string; q?: string; kind?: string; group?: string; page?: string }>;
+  /** `open`: a product id whose edit form starts unfolded (a link from the map editor). */
+  searchParams: Promise<{ department?: string; q?: string; kind?: string; group?: string; page?: string; open?: string }>;
 }) {
   await requireAdminPage("products");
   const params = await searchParams;
@@ -221,7 +222,11 @@ export default async function AdminProductsPage({
 
       <div className="flex flex-col gap-2">
         {products.map((product) => (
-          <details key={product.id} className="rounded-xl border border-neutral-200 bg-white p-4">
+          <details
+            key={product.id}
+            open={product.id === params.open}
+            className="rounded-xl border border-neutral-200 bg-white p-4"
+          >
             <summary className="flex cursor-pointer items-center justify-between font-medium text-neutral-900">
               <span className="flex items-center gap-2">
                 {product.imageUrl ? (
