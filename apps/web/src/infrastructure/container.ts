@@ -27,6 +27,7 @@ import { PgShoppingTripRepository } from "./repositories/postgres/pg-shopping-tr
 import { PgStoreRepository } from "./repositories/postgres/pg-store-repository";
 import { PgUserAdminRepository } from "./repositories/postgres/pg-user-admin-repository";
 import { PgUserRepository } from "./repositories/postgres/pg-user-repository";
+import { PgMapVideoRepository } from "./repositories/postgres/pg-map-video-repository";
 import { PgWalkableMapRepository } from "./repositories/postgres/pg-walkable-map-repository";
 
 /**
@@ -54,6 +55,7 @@ export const householdRepository = new PgHouseholdRepository();
 export const userAdminRepository = new PgUserAdminRepository();
 export const pushTokenRepository = new PgPushTokenRepository();
 export const walkableMapRepository = new PgWalkableMapRepository();
+export const mapVideoRepository = new PgMapVideoRepository();
 export const ocrUsageRepository = new PgOcrUsageRepository();
 export const priceRepository = new PgPriceRepository();
 export const branchLocationRepository = new PgBranchLocationRepository();

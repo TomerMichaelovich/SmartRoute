@@ -9,9 +9,11 @@ import { distanceBetweenNodes } from "@smartroute/core/domain/value-objects/geo-
 import { NODE_TYPE_LABELS } from "@/src/presentation/node-type-labels";
 import type { StoredWalkableMask } from "@smartroute/core/map/walkable/mask";
 import type { WalkableMapSaveResult } from "@/src/presentation/actions/admin-store-actions";
+import type { StoreMapVideo } from "@/src/infrastructure/repositories/interfaces/map-video-repository";
 import { ProductAutocomplete } from "./ProductAutocomplete";
 import { AliasPlacePanel } from "./AliasPlacePanel";
 import { type ShelfGroupOption, ShelfGroupPanel } from "./ShelfGroupPanel";
+import { MapVideoPlayer, MapVideoUploadPopup } from "./MapVideoPanels";
 import { WalkableAreaEditor } from "./WalkableAreaEditor";
 
 interface StoreLayoutEditorProps {
@@ -57,6 +59,11 @@ interface StoreLayoutEditorProps {
   mapPixelSourceUrl: string;
   walkableMask: StoredWalkableMask | null;
   saveWalkableMap: (mask: StoredWalkableMask) => Promise<WalkableMapSaveResult>;
+  /** Videos of store areas pinned on the map - admin reference only, never part of the route graph. */
+  videos: StoreMapVideo[];
+  addMapVideo: (video: { videoUrl: string; title: string; x: number; y: number }) => Promise<void>;
+  updateMapVideoPosition: (videoId: string, x: number, y: number) => Promise<void>;
+  deleteMapVideo: (videoId: string) => Promise<void>;
 }
 
 const NODE_COLORS: Record<MapNodeType, string> = {
@@ -73,6 +80,7 @@ function nodeRadius(type: MapNodeType): number {
 }
 
 const LABEL_FONT_SIZE = 18;
+const VIDEO_PIN_RADIUS = 20;
 const DISCONNECTED_COLOR = "#dc2626";
 
 /**
@@ -212,6 +220,10 @@ export function StoreLayoutEditor({
   mapPixelSourceUrl,
   walkableMask,
   saveWalkableMap,
+  videos,
+  addMapVideo,
+  updateMapVideoPosition,
+  deleteMapVideo,
 }: StoreLayoutEditorProps) {
   const [walkableMode, setWalkableMode] = useState(false);
   // The split alias being moved to another node, while its move runs.
@@ -240,6 +252,12 @@ export function StoreLayoutEditor({
   const marqueeStartRef = useRef<{ clientX: number; clientY: number; active: boolean } | null>(null);
   const justMarqueedRef = useRef(false);
   const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  // "Add video" armed: the next click on the map opens the upload popup there (in either mode).
+  const [placingVideo, setPlacingVideo] = useState(false);
+  const [videoPopup, setVideoPopup] = useState<{ screenLeft: number; screenTop: number; normX: number; normY: number } | null>(null);
+  const [playingVideoId, setPlayingVideoId] = useState<string | null>(null);
+  const videoDragStartRef = useRef<{ videoId: string; clientX: number; clientY: number; moved: boolean } | null>(null);
+  const [videoDrag, setVideoDrag] = useState<{ videoId: string; x: number; y: number } | null>(null);
 
   // Clicking empty space now adds a waypoint instead of clearing the selection, so Escape is the
   // way to stop a corridor chain.
@@ -248,6 +266,8 @@ export function StoreLayoutEditor({
       if (e.key !== "Escape") return;
       setAddPopup(null);
       setPlacingNode(false);
+      setPlacingVideo(false);
+      setPlayingVideoId(null);
       setSelectedNodeIds(new Set());
       setSelectedEdgeIds(new Set());
     }
@@ -305,6 +325,12 @@ export function StoreLayoutEditor({
     }
     closePopups();
     const { x, y } = screenToNormalized(e.clientX, e.clientY);
+    if (placingVideo) {
+      const { left, top } = containerOffset(e.clientX, e.clientY);
+      setPlacingVideo(false);
+      setVideoPopup({ screenLeft: left, screenTop: top, normX: x, normY: y });
+      return;
+    }
     if (editMode === "move") {
       setSelectedNodeIds(new Set());
       setSelectedEdgeIds(new Set());
@@ -453,6 +479,36 @@ export function StoreLayoutEditor({
     }
   }
 
+  // A video pin drags like a node; a press without dragging plays the video.
+  function handleVideoPointerDown(e: React.PointerEvent<SVGGElement>, video: StoreMapVideo) {
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    videoDragStartRef.current = { videoId: video.id, clientX: e.clientX, clientY: e.clientY, moved: false };
+  }
+
+  function handleVideoPointerMove(e: React.PointerEvent<SVGGElement>, video: StoreMapVideo) {
+    const start = videoDragStartRef.current;
+    if (!start || start.videoId !== video.id) return;
+    if (!start.moved && Math.hypot(e.clientX - start.clientX, e.clientY - start.clientY) < DRAG_THRESHOLD_PX) return;
+    start.moved = true;
+    const { x, y } = screenToNormalized(e.clientX, e.clientY);
+    setVideoDrag({ videoId: video.id, x, y });
+  }
+
+  async function handleVideoPointerUp(e: React.PointerEvent<SVGGElement>, video: StoreMapVideo) {
+    const start = videoDragStartRef.current;
+    videoDragStartRef.current = null;
+    if (!start || start.videoId !== video.id) return;
+    if (!start.moved) {
+      closePopups();
+      setPlayingVideoId(video.id);
+      return;
+    }
+    const { x, y } = screenToNormalized(e.clientX, e.clientY);
+    await updateMapVideoPosition(video.id, x, y);
+    setVideoDrag(null);
+  }
+
   function handleEdgeClick(e: React.MouseEvent, edge: MapEdge) {
     closePopups();
 
@@ -480,6 +536,7 @@ export function StoreLayoutEditor({
   }
 
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
+  const playingVideo = videos.find((v) => v.id === playingVideoId) ?? null;
   const disconnectedNodeIds = findDisconnectedNodeIds(nodes, edges);
   const hasEntrance = nodes.some((n) => n.type === "entrance");
   const totalSelected = selectedNodeIds.size + selectedEdgeIds.size;
@@ -623,6 +680,7 @@ export function StoreLayoutEditor({
                 type="button"
                 onClick={() => {
                   closePopups();
+                  setPlacingVideo(false);
                   setPlacingNode((v) => !v);
                 }}
                 className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
@@ -633,6 +691,23 @@ export function StoreLayoutEditor({
               </button>
               )}
               {placingNode && <span className="text-sm text-cyan-700">לחצו על המפה במיקום המחלקה</span>}
+              {mapImageUrl && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    closePopups();
+                    setVideoPopup(null);
+                    setPlacingNode(false);
+                    setPlacingVideo((v) => !v);
+                  }}
+                  className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                    placingVideo ? "bg-cyan-600 text-white" : "border border-neutral-300 bg-white text-neutral-700"
+                  }`}
+                >
+                  {placingVideo ? "ביטול הוספת סרטון" : "▶ הוספת סרטון"}
+                </button>
+              )}
+              {placingVideo && <span className="text-sm text-cyan-700">לחצו על המפה במקום שצולם בסרטון</span>}
               <button
                 type="button"
                 onClick={() => {
@@ -786,6 +861,29 @@ export function StoreLayoutEditor({
                   );
                 })}
 
+                {videos.map((video) => {
+                  const isDragging = videoDrag?.videoId === video.id;
+                  const x = (isDragging ? videoDrag!.x : video.position.x) * mapWidth;
+                  const y = (isDragging ? videoDrag!.y : video.position.y) * mapHeight;
+                  const r = VIDEO_PIN_RADIUS;
+                  return (
+                    <g
+                      key={video.id}
+                      className="cursor-pointer"
+                      onPointerDown={(e) => handleVideoPointerDown(e, video)}
+                      onPointerMove={(e) => handleVideoPointerMove(e, video)}
+                      onPointerUp={(e) => void handleVideoPointerUp(e, video)}
+                    >
+                      <title>{video.title}</title>
+                      <circle cx={x} cy={y} r={r} fill="#dc2626" stroke="#ffffff" strokeWidth={3} />
+                      <path
+                        d={`M${x - r * 0.3} ${y - r * 0.42} L${x + r * 0.45} ${y} L${x - r * 0.3} ${y + r * 0.42} Z`}
+                        fill="#ffffff"
+                      />
+                    </g>
+                  );
+                })}
+
                 {marquee && (
                   <rect
                     x={Math.min(marquee.x1, marquee.x2) * mapWidth}
@@ -802,6 +900,15 @@ export function StoreLayoutEditor({
                   />
                 )}
               </svg>
+
+              {videoPopup && (
+                <MapVideoUploadPopup
+                  storeId={storeId}
+                  {...videoPopup}
+                  addMapVideo={addMapVideo}
+                  onClose={() => setVideoPopup(null)}
+                />
+              )}
 
               {addPopup && (
                 <div
@@ -859,6 +966,10 @@ export function StoreLayoutEditor({
               )}
             </div>
           </div>
+
+          {playingVideo && (
+            <MapVideoPlayer video={playingVideo} deleteMapVideo={deleteMapVideo} onClose={() => setPlayingVideoId(null)} />
+          )}
 
           {singleSelectedNode && !showsProductPanel && (
             <div className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white p-3">

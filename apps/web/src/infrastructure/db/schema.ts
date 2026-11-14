@@ -184,6 +184,23 @@ export const storeWalkableMasks = pgTable("store_walkable_masks", {
   updatedAt: timestamp("updated_at", { mode: "string" }).notNull(),
 });
 
+/**
+ * Videos the admin filmed in a store, pinned to a spot on its map. Admin-only reference
+ * material: kept apart from map_nodes so they never reach route building or the app.
+ */
+export const storeMapVideos = pgTable(
+  "store_map_videos",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    position: jsonb("position").notNull().$type<{ x: number; y: number }>(),
+    title: text("title").notNull(),
+    videoUrl: text("video_url").notNull(),
+    createdAt: timestamp("created_at", { mode: "string" }).notNull(),
+  },
+  (table) => [index("store_map_videos_store_id_idx").on(table.storeId)],
+);
+
 export const mapNodes = pgTable(
   "map_nodes",
   {

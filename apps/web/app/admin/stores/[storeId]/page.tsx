@@ -6,6 +6,7 @@ import { findShelfGroup } from "@smartroute/core/domain/value-objects/shelf-grou
 import {
   catalogAdminRepository,
   edgeRepository,
+  mapVideoRepository,
   nodeRepository,
   priceRepository,
   productListingRepository,
@@ -13,10 +14,12 @@ import {
   walkableMapRepository,
 } from "@/src/infrastructure/container";
 import {
+  addMapVideo,
   addProductToNode,
   createEdge,
   createNode,
   deleteEdge,
+  deleteMapVideo,
   deleteNode,
   deleteStore,
   markProductsNotSold,
@@ -29,6 +32,7 @@ import {
   removeShelfGroupFromNode,
   saveWalkableMap,
   setStorePriceBranch,
+  updateMapVideoPosition,
   updateNodeLabel,
   updateNodePosition,
   updateStore,
@@ -60,7 +64,7 @@ export default async function AdminStoreDetailPage({
 
   // Imported products (whole price files) are too many to send with the page: the editor
   // gets the hand-made ones, a per-shelf-group summary, and searches on demand.
-  const [nodes, edges, products, allListings, storeGroups, hasPriceBranch, excludedProducts, walkableMask, priceBranches, allStores, splitAliases] = await Promise.all([
+  const [nodes, edges, products, allListings, storeGroups, hasPriceBranch, excludedProducts, walkableMask, priceBranches, allStores, splitAliases, videos] = await Promise.all([
     nodeRepository.findByStore(storeId),
     edgeRepository.findByStore(storeId),
     catalogAdminRepository.listedHandMadeProducts(storeId),
@@ -72,6 +76,7 @@ export default async function AdminStoreDetailPage({
     manages ? priceRepository.findLinkableBranches() : [],
     manages ? storeRepository.findAll() : [],
     catalogAdminRepository.splitAliases(storeId),
+    mapVideoRepository.findByStore(storeId),
   ]);
   const priceCityNames = new Map<number, string>();
   for (const b of priceBranches) {
@@ -178,6 +183,10 @@ export default async function AdminStoreDetailPage({
         mapPixelSourceUrl={mapPixelSourceUrl}
         walkableMask={walkableMask}
         saveWalkableMap={saveWalkableMap.bind(null, storeId)}
+        videos={videos}
+        addMapVideo={addMapVideo.bind(null, storeId)}
+        updateMapVideoPosition={updateMapVideoPosition.bind(null, storeId)}
+        deleteMapVideo={deleteMapVideo.bind(null, storeId)}
       />
 
       <section className="flex flex-col gap-3">

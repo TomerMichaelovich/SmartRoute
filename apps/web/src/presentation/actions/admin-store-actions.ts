@@ -13,6 +13,7 @@ import {
   adminUserRepository,
   catalogAdminRepository,
   edgeRepository,
+  mapVideoRepository,
   nodeRepository,
   priceRepository,
   productListingRepository,
@@ -22,6 +23,7 @@ import {
 } from "@/src/infrastructure/container";
 import { readImageDimensions } from "@/src/infrastructure/image-dimensions";
 import { saveUploadedImage } from "@/src/infrastructure/image-upload";
+import { mapVideoPathPrefix } from "@/src/presentation/map-videos";
 import { NODE_TYPE_LABELS } from "@/src/presentation/node-type-labels";
 import { requireAdmin } from "@/src/presentation/auth/admin";
 
@@ -105,11 +107,12 @@ export async function deleteStore(storeId: string): Promise<void> {
   const store = await storeRepository.findById(storeId);
   if (!store) return;
 
-  const [nodes, edges, listings, promotions] = await Promise.all([
+  const [nodes, edges, listings, promotions, videos] = await Promise.all([
     nodeRepository.findByStore(storeId),
     edgeRepository.findByStore(storeId),
     productListingRepository.findByStore(storeId),
     promotionRepository.findAll(),
+    mapVideoRepository.findByStore(storeId),
   ]);
 
   const nodeIds = new Set(nodes.map((n) => n.id));
@@ -122,7 +125,11 @@ export async function deleteStore(storeId: string): Promise<void> {
     ...edges.map((e) => edgeRepository.delete(e.id)),
     ...nodes.map((n) => nodeRepository.delete(n.id)),
     ...orphanedPromotions.map((p) => promotionRepository.delete(p.id)),
+    ...videos.map((v) => mapVideoRepository.delete(v.id)),
   ]);
+  if (videos.length > 0) {
+    await del(videos.map((v) => v.videoUrl)).catch(() => {});
+  }
 
   if (store.mapImageUrl) {
     await del(store.mapImageUrl).catch(() => {});
@@ -210,6 +217,57 @@ export async function updateNodePosition(
   await assertNodeInStore(storeId, nodeId);
   const clamp = (n: number) => Math.max(0, Math.min(1, n));
   await nodeRepository.update(nodeId, { position: { x: clamp(x), y: clamp(y) } });
+  revalidatePath(`/admin/stores/${storeId}`);
+}
+
+/**
+ * Pins a video the editor just uploaded to Blob (via the video-upload route) on the store's map.
+ * The URL comes from the browser, so it must point into this store's video folder on our Blob store.
+ */
+export async function addMapVideo(
+  storeId: string,
+  video: { videoUrl: string; title: string; x: number; y: number },
+): Promise<void> {
+  await requireAdmin({ mapStore: storeId });
+  const url = new URL(video.videoUrl);
+  if (
+    url.protocol !== "https:" ||
+    !url.hostname.endsWith(".blob.vercel-storage.com") ||
+    !url.pathname.startsWith(`/${mapVideoPathPrefix(storeId)}`)
+  ) {
+    throw new Error("Invalid video URL");
+  }
+  const clamp = (n: number) => Math.max(0, Math.min(1, Number(n) || 0));
+  await mapVideoRepository.create({
+    id: crypto.randomUUID(),
+    storeId,
+    position: { x: clamp(video.x), y: clamp(video.y) },
+    title: video.title.trim() || "סרטון",
+    videoUrl: url.toString(),
+    createdAt: new Date().toISOString(),
+  });
+  revalidatePath(`/admin/stores/${storeId}`);
+}
+
+async function findMapVideoInStore(storeId: string, videoId: string) {
+  const video = await mapVideoRepository.findById(videoId);
+  if (video?.storeId !== storeId) throw new Error("Unauthorized");
+  return video;
+}
+
+export async function updateMapVideoPosition(storeId: string, videoId: string, x: number, y: number): Promise<void> {
+  await requireAdmin({ mapStore: storeId });
+  await findMapVideoInStore(storeId, videoId);
+  const clamp = (n: number) => Math.max(0, Math.min(1, n));
+  await mapVideoRepository.updatePosition(videoId, { x: clamp(x), y: clamp(y) });
+  revalidatePath(`/admin/stores/${storeId}`);
+}
+
+export async function deleteMapVideo(storeId: string, videoId: string): Promise<void> {
+  await requireAdmin({ mapStore: storeId });
+  const video = await findMapVideoInStore(storeId, videoId);
+  await mapVideoRepository.delete(videoId);
+  await del(video.videoUrl).catch(() => {});
   revalidatePath(`/admin/stores/${storeId}`);
 }
 
