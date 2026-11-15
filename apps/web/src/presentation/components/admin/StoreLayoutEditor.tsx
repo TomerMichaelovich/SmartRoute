@@ -616,7 +616,15 @@ export function StoreLayoutEditor({
   }
 
   /** The node under a click, if any, so a line end lands on it instead of beside it. */
-  function snapLineEnd(point: { x: number; y: number }): LineDraftEnd {
+  function snapLineEnd(point: { x: number; y: number }, clientX: number, clientY: number): LineDraftEnd {
+    // First, whatever node is drawn under the cursor - a department's whole label box counts,
+    // not just a small radius around its center. The line tool's overlay is on top, so look
+    // through every layer at that spot.
+    for (const element of document.elementsFromPoint(clientX, clientY)) {
+      const nodeId = element.closest("[data-node-id]")?.getAttribute("data-node-id");
+      const node = nodeId ? nodeById.get(nodeId) : undefined;
+      if (node) return { nodeId: node.id, ...node.position };
+    }
     let best: { node: MapNode; distance: number } | null = null;
     for (const node of nodes) {
       const distance = Math.hypot((node.position.x - point.x) * mapWidth, (node.position.y - point.y) * mapHeight);
@@ -641,7 +649,7 @@ export function StoreLayoutEditor({
     if (drawingEnd && e.shiftKey) point = constrainToAxis(lineDraft.start, point);
     // A straightened end still joins a node right where it lands (off the axis by at most the
     // node's small click radius) - connecting the corridor matters more than a perfect line.
-    const end = snapLineEnd(point);
+    const end = snapLineEnd(point, e.clientX, e.clientY);
     // No line yet, or one already complete: this click starts a new one.
     if (!lineDraft || lineDraft.end) {
       setLineDraft({ start: end, end: null });
@@ -1120,13 +1128,17 @@ export function StoreLayoutEditor({
                   const y = (isDragging ? dragState!.y : node.position.y) * mapHeight;
                   const isHiddenDepartment = hideDepartments && node.type === "department";
                   const radius = nodeRadius(isHiddenDepartment ? "waypoint" : node.type);
-                  const isSelected = selectedNodeIds.has(node.id);
+                  // A node a line being drawn starts or ends at shows as selected, so it's clear the line joins it.
+                  const isSelected =
+                    selectedNodeIds.has(node.id) ||
+                    (lineMode && (lineDraft?.start.nodeId === node.id || lineDraft?.end?.nodeId === node.id));
                   // A hidden department is drawn as a waypoint-sized dot, but stays draggable and connectable.
                   const isDot = node.type === "waypoint" || isHiddenDepartment;
 
                   return (
                     <g
                       key={node.id}
+                      data-node-id={node.id}
                       className="cursor-grab active:cursor-grabbing"
                       onPointerDown={(e) => handleNodePointerDown(e, node)}
                       onPointerMove={(e) => handleNodePointerMove(e, node)}
