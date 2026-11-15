@@ -1018,7 +1018,7 @@ export function StoreLayoutEditor({
                 )}
                 <span className="basis-full text-xs text-neutral-500">
                   לחיצה על צומת קיים (מחלקה, כניסה, נקודת ציון) מחברת את הקו אליו; לחיצה על שטח ריק יוצרת שם נקודה
-                  חדשה. כל הנקודות מחוברות זו לזו לאורך הקו. Esc מנקה את הקו, Esc נוסף יוצא מהמצב.
+                  חדשה. כל הנקודות מחוברות זו לזו לאורך הקו. קליק ימני או Esc מבטלים את הקו, Esc נוסף יוצא מהמצב.
                 </span>
               </div>
             )}
@@ -1305,6 +1305,11 @@ export function StoreLayoutEditor({
                       fill="transparent"
                       className="cursor-crosshair"
                       onClick={handleLineClick}
+                      // Right click drops the line being drawn (instead of the browser's menu).
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        if (!savingLine) setLineDraft(null);
+                      }}
                       onPointerDown={(e) => e.stopPropagation()}
                       onPointerMove={(e) => {
                         setLineCursor(screenToNormalized(e.clientX, e.clientY));
