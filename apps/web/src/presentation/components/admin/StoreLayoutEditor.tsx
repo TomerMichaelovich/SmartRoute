@@ -14,6 +14,7 @@ import {
   addPoint,
   cancelPending,
   connect,
+  detachFromNode,
   hitDraft,
   innerPoints,
   pointByKey,
@@ -630,16 +631,23 @@ export function StoreLayoutEditor({
     setAreaDraft({ ...areaDraft, points: areaDraft.points.slice(0, -1) });
   }
 
-  /** The node under a click, if any, so a line end lands on it instead of beside it. */
-  function snapLineEnd(point: { x: number; y: number }, clientX: number, clientY: number): LineDraftEnd {
-    // First, whatever node is drawn under the cursor - a department's whole label box counts,
-    // not just a small radius around its center. The line tool's overlay is on top, so look
-    // through every layer at that spot.
+  /**
+   * The node drawn under the cursor - a department's whole label box counts, not just a small
+   * radius around its center. The line tool's overlay is on top, so look through every layer.
+   */
+  function nodeUnderCursor(clientX: number, clientY: number): MapNode | undefined {
     for (const element of document.elementsFromPoint(clientX, clientY)) {
       const nodeId = element.closest("[data-node-id]")?.getAttribute("data-node-id");
       const node = nodeId ? nodeById.get(nodeId) : undefined;
-      if (node) return { nodeId: node.id, ...node.position };
+      if (node) return node;
     }
+    return undefined;
+  }
+
+  /** The node under a click, if any, so a line end lands on it instead of beside it. */
+  function snapLineEnd(point: { x: number; y: number }, clientX: number, clientY: number): LineDraftEnd {
+    const under = nodeUnderCursor(clientX, clientY);
+    if (under) return { nodeId: under.id, ...under.position };
     let best: { node: MapNode; distance: number } | null = null;
     for (const node of nodes) {
       const distance = Math.hypot((node.position.x - point.x) * mapWidth, (node.position.y - point.y) * mapHeight);
@@ -662,6 +670,13 @@ export function StoreLayoutEditor({
   // on a node of the map, or on the empty spot itself. Nothing is saved until "create".
   function handleLineClick(e: React.MouseEvent) {
     if (savingLine) return;
+    // A second click on a department (or entrance/checkout) a line already joins unhooks it:
+    // that end stays put as a plain new waypoint, not connected to the department.
+    const under = nodeUnderCursor(e.clientX, e.clientY);
+    if (under && under.type !== "waypoint" && lineDraft.points.some((p) => p.nodeId === under.id)) {
+      setLineDraft(detachFromNode(lineDraft, under.id));
+      return;
+    }
     const cursor = screenToNormalized(e.clientX, e.clientY);
     const pendingFrom = lineDraft.pendingFrom;
     const pendingPoint = pendingFrom ? pointByKey(lineDraft, pendingFrom) : undefined;
@@ -1082,7 +1097,8 @@ export function StoreLayoutEditor({
                 <span className="basis-full text-xs text-neutral-500">
                   לחיצה על צומת קיים (מחלקה, כניסה, נקודת ציון) מחברת את הקו אליו; לחיצה על שטח ריק יוצרת שם נקודה
                   חדשה. אחרי שקו נמתח, לחיצה על נקודה שלו (קצה או נקודת ביניים) מותחת ממנה את הקו הבא - כל הקווים
-                  נוצרים יחד בלחיצה על צור. קליק ימני מבטל את הקו שנמתח כעת (ואם אין כזה - את הקו האחרון), Esc
+                  נוצרים יחד בלחיצה על צור. לחיצה נוספת על מחלקה שהקו מחובר אליה מבטלת את החיבור ומשאירה שם נקודת
+                  ציון (לחיצה עליה ממשיכה ממנה קו). קליק ימני מבטל את הקו שנמתח כעת (ואם אין כזה - את הקו האחרון), Esc
                   מנקה הכל, Esc נוסף יוצא מהמצב.
                 </span>
               </div>

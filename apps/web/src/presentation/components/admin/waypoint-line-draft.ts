@@ -100,6 +100,17 @@ export function addPoint(draft: LineDraft, point: Omit<DraftPoint, "key">, newKe
   return { draft: { ...draft, points: [...draft.points, { key: newKey, ...point }] }, key: newKey };
 }
 
+/**
+ * Unhooks the draft's end from a map node: it stays where it is (its lines don't move) but
+ * becomes a plain new waypoint there instead of joining the node.
+ */
+export function detachFromNode(draft: LineDraft, nodeId: string): LineDraft {
+  return {
+    ...draft,
+    points: draft.points.map((p) => (p.nodeId === nodeId ? { key: p.key, x: p.x, y: p.y } : p)),
+  };
+}
+
 /** Appends the line from → to (ignored when both are the same end) and stops stretching. */
 export function connect(draft: LineDraft, from: string, to: string, count: number): LineDraft {
   if (from === to) return draft;

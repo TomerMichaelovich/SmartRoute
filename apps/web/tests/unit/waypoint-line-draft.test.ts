@@ -4,6 +4,7 @@ import {
   addPoint,
   cancelPending,
   connect,
+  detachFromNode,
   hitDraft,
   innerPoints,
   removeLastSegment,
@@ -52,6 +53,14 @@ describe("waypoint line draft", () => {
     const again = addPoint(d, { nodeId: "n1", x: 0.2, y: 0.2 }, "b");
     expect(again.key).toBe("a");
     expect(again.draft.points).toHaveLength(1);
+  });
+
+  it("detaching an end from its node keeps it in place as a plain point", () => {
+    let d = addPoint(EMPTY_LINE_DRAFT, { nodeId: "dept", x: 0.2, y: 0.2 }, "a").draft;
+    d = connect(addPoint(d, { x: 0.8, y: 0.2 }, "b").draft, "a", "b", 2);
+    const detached = detachFromNode(d, "dept");
+    expect(detached.points[0]).toEqual({ key: "a", x: 0.2, y: 0.2 });
+    expect(detached.segments).toEqual(d.segments);
   });
 
   it("ignores a line from an end to itself", () => {
