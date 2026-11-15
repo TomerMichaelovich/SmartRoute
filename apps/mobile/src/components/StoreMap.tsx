@@ -7,6 +7,7 @@ import {
   FOOTPRINT_SOLE_PATH,
   FOOTPRINT_TOES,
   footprintTransform,
+  footstepTrailMetrics,
   type FootstepPlacement,
 } from "@smartroute/core/map/footstep-trail";
 import { he } from "@smartroute/core/i18n/he";
@@ -136,6 +137,8 @@ interface StoreMapProps {
   pathNodeIds: string[];
   stops: RouteStop[];
   checkedStopOrders: Set<number>;
+  /** The store's footprint size multiplier (admin setting); 1 when the API predates it. */
+  footstepScale?: number;
   /** Full-screen mode: the map fills its parent (flex: 1), zoomed in to cover it and centered
    * on the current stop. Inline, the whole map shows at its own proportions. */
   expanded: boolean;
@@ -155,6 +158,7 @@ export function StoreMap({
   pathNodeIds,
   stops,
   checkedStopOrders,
+  footstepScale,
   expanded,
 }: StoreMapProps) {
   // Marker/label sizes are fractions of the map's width, so they read the same on a phone
@@ -179,8 +183,9 @@ export function StoreMap({
     .map((id) => nodeById.get(id))
     .filter((n): n is MapNode => Boolean(n))
     .map((n) => ({ x: n.position.x * mapWidth, y: n.position.y * mapHeight }));
-  const footstepSize = 36 * scale;
-  const footsteps = computeFootstepPlacements(routePathPoints, 40 * scale, 10 * scale);
+  const trail = footstepTrailMetrics(mapWidth, footstepScale);
+  const footstepSize = trail.size;
+  const footsteps = computeFootstepPlacements(routePathPoints, trail.stepDistance, trail.footOffset);
 
   return (
     <View style={[styles.frame, expanded ? styles.frameExpanded : { aspectRatio: mapWidth / mapHeight }]}>

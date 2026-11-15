@@ -178,6 +178,7 @@ export function RouteView({ route, store, mapImageUrl, nodes, stopViews, preview
           checkedStopOrders={checkedStopOrders}
           selectedStopOrder={selectedStopOrder}
           onSelectStop={setSelectedStopOrder}
+          footstepScale={store.footstepScale}
         />
       </div>
 

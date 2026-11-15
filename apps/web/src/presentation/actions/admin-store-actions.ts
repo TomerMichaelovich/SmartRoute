@@ -3,11 +3,9 @@
 import { del } from "@vercel/blob";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import type { MapEdge } from "@smartroute/core/domain/entities/map-edge";
 import type { MapNode, MapNodeType } from "@smartroute/core/domain/entities/map-node";
-import { generateNavGraph } from "@smartroute/core/map/walkable/generate-graph";
-import { type StoredWalkableMask, decodeRle, encodeRle } from "@smartroute/core/map/walkable/mask";
 import { aliasKeys } from "@smartroute/core/application/classification/imported-aliases";
+import { clampFootstepScale } from "@smartroute/core/map/footstep-trail";
 import { findShelfGroup } from "@smartroute/core/domain/value-objects/shelf-group";
 import {
   adminUserRepository,
@@ -49,6 +47,7 @@ export async function createStore(formData: FormData): Promise<void> {
     mapHeight,
     isActive: true,
     promotionsEnabled: true,
+    footstepScale: 1,
     createdAt: now,
     updatedAt: now,
   });
@@ -76,6 +75,16 @@ export async function updateStore(storeId: string, formData: FormData): Promise<
 
   revalidatePath(`/admin/stores/${storeId}`);
   revalidatePath("/admin/stores");
+}
+
+/** Sets how big the footprint trail is drawn on this store's route map (web and app). */
+export async function updateFootstepScale(storeId: string, footstepScale: number): Promise<void> {
+  await requireAdmin("stores");
+  await storeRepository.update(storeId, {
+    footstepScale: clampFootstepScale(footstepScale),
+    updatedAt: new Date().toISOString(),
+  });
+  revalidatePath(`/admin/stores/${storeId}`);
 }
 
 /**
@@ -489,72 +498,62 @@ export async function uploadStoreImage(storeId: string, formData: FormData): Pro
   revalidatePath(`/admin/stores/${storeId}`);
 }
 
-export interface WalkableMapSaveResult {
-  waypointCount: number;
-  edgeCount: number;
-  /** Departments/entrance/checkouts the entrance can't reach through the generated graph. */
-  unreachable: { id: string; label: string }[];
-}
+/** One end of a waypoint line: an existing node (snapped to), or a spot on the map for a new waypoint. */
+export type WaypointLineEnd = { nodeId: string } | { x: number; y: number };
+
+/** Most in-between points one line may get - matches the editor's slider (WAYPOINT_LINE_MAX_POINTS there). */
+const WAYPOINT_LINE_MAX_POINTS = 40;
 
 /**
- * Saves the admin's walkable-floor mask and regenerates the store's navigation graph from it on
- * the server (the client only previews the same generateNavGraph). Every waypoint and every edge
- * of the store is replaced; departments, entrance and checkouts stay, so product listings and
- * promotions keep pointing at them. A waypoint that a listing or promotion points at is kept too
- * and treated like a department.
+ * Lays a straight corridor between two points: `count` waypoints evenly spaced between the two
+ * ends, chained end to end with bidirectional edges. An end on an existing node reuses that node
+ * (so the line joins the graph there); an end on empty map gets a new waypoint.
  */
-export async function saveWalkableMap(storeId: string, stored: StoredWalkableMask): Promise<WalkableMapSaveResult> {
+export async function createWaypointLine(
+  storeId: string,
+  start: WaypointLineEnd,
+  end: WaypointLineEnd,
+  count: number,
+): Promise<void> {
   await requireAdmin({ mapStore: storeId });
-  const mask = decodeRle({
-    cols: Number(stored?.cols),
-    rows: Number(stored?.rows),
-    rle: Array.isArray(stored?.rle) ? stored.rle : [],
-  });
+  const between = Math.max(0, Math.min(WAYPOINT_LINE_MAX_POINTS, Math.floor(Number(count) || 0)));
+  const clamp01 = (v: unknown) => Math.max(0, Math.min(1, Number(v) || 0));
 
-  const [store, nodes, listings, promotions] = await Promise.all([
-    storeRepository.findById(storeId),
-    nodeRepository.findByStore(storeId),
-    productListingRepository.findByStore(storeId),
-    promotionRepository.findAll(),
-  ]);
-  if (!store) throw new Error(`Store not found: ${storeId}`);
+  const newNodes: MapNode[] = [];
+  async function resolveEnd(lineEnd: WaypointLineEnd): Promise<{ id: string; x: number; y: number }> {
+    if ("nodeId" in lineEnd) {
+      const node = await nodeRepository.findById(String(lineEnd.nodeId));
+      if (node?.storeId !== storeId) throw new Error("Unauthorized");
+      return { id: node.id, ...node.position };
+    }
+    const point = { id: crypto.randomUUID(), x: clamp01(lineEnd.x), y: clamp01(lineEnd.y) };
+    newNodes.push(waypointAt(point));
+    return point;
+  }
+  function waypointAt(p: { id: string; x: number; y: number }): MapNode {
+    return { id: p.id, storeId, type: "waypoint", label: NODE_TYPE_LABELS.waypoint, position: { x: p.x, y: p.y } };
+  }
 
-  const referencedIds = new Set([...listings.map((l) => l.nodeId), ...promotions.map((p) => p.attachedNodeId)]);
-  const anchors = nodes.filter((n) => n.type !== "waypoint" || referencedIds.has(n.id));
-  const replacedWaypoints = nodes.filter((n) => n.type === "waypoint" && !referencedIds.has(n.id));
+  const from = await resolveEnd(start);
+  const to = await resolveEnd(end);
+  if (from.id === to.id) return;
 
-  const graph = generateNavGraph(
-    mask,
-    anchors.map((n) => ({ id: n.id, position: n.position, isEntrance: n.type === "entrance" })),
+  const chain = [from.id];
+  for (let i = 1; i <= between; i++) {
+    const t = i / (between + 1);
+    const point = { id: crypto.randomUUID(), x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t };
+    newNodes.push(waypointAt(point));
+    chain.push(point.id);
+  }
+  chain.push(to.id);
+
+  // Nodes first, so no edge is ever written before the node it points at.
+  await Promise.all(newNodes.map((n) => nodeRepository.create(n)));
+  await Promise.all(
+    chain.slice(1).map((toNodeId, i) =>
+      edgeRepository.create({ id: crypto.randomUUID(), storeId, fromNodeId: chain[i], toNodeId, bidirectional: true }),
+    ),
   );
 
-  const idByKey = new Map<string, string>(anchors.map((n) => [n.id, n.id]));
-  const newNodes: MapNode[] = graph.waypoints.map((w) => {
-    const id = crypto.randomUUID();
-    idByKey.set(w.key, id);
-    return { id, storeId, type: "waypoint", label: NODE_TYPE_LABELS.waypoint, position: w.position };
-  });
-  const newEdges: MapEdge[] = graph.edges.map((e) => ({
-    id: crypto.randomUUID(),
-    storeId,
-    fromNodeId: idByKey.get(e.from)!,
-    toNodeId: idByKey.get(e.to)!,
-    bidirectional: true,
-  }));
-
-  await walkableMapRepository.saveMaskAndReplaceGraph({
-    storeId,
-    mask: encodeRle(mask),
-    deleteNodeIds: replacedWaypoints.map((n) => n.id),
-    nodes: newNodes,
-    edges: newEdges,
-  });
-
   revalidatePath(`/admin/stores/${storeId}`);
-  const labelById = new Map(anchors.map((n) => [n.id, n.label]));
-  return {
-    waypointCount: newNodes.length,
-    edgeCount: newEdges.length,
-    unreachable: graph.unreachableAnchorIds.map((id) => ({ id, label: labelById.get(id) ?? id })),
-  };
 }

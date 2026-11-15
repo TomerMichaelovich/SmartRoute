@@ -22,6 +22,7 @@ export const demoStore: Store = {
   mapHeight: 1000,
   isActive: true,
   promotionsEnabled: true,
+  footstepScale: 1,
   createdAt: SEEDED_AT,
   updatedAt: SEEDED_AT,
 };

@@ -252,6 +252,7 @@ export default function RouteScreen() {
           pathNodeIds={displayPathNodeIds}
           stops={mapStops}
           checkedStopOrders={checkedStopOrders}
+          footstepScale={store.footstepScale}
           expanded={mapExpanded}
         />
       </View>

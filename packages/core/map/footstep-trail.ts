@@ -30,6 +30,27 @@ export function footprintTransform(step: FootstepPlacement, size: number): strin
   return `translate(${step.x} ${step.y}) rotate(${step.rotationDeg}) scale(${scaleX} ${scale}) rotate(${FOOTPRINT_TOE_OUT_DEG})`;
 }
 
+/** Admin-settable range for a store's footprint size multiplier (Store.footstepScale). */
+export const FOOTSTEP_SCALE_MIN = 0.3;
+export const FOOTSTEP_SCALE_MAX = 1.5;
+export const FOOTSTEP_SCALE_DEFAULT = 1;
+
+export function clampFootstepScale(value: unknown): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return FOOTSTEP_SCALE_DEFAULT;
+  return Math.min(FOOTSTEP_SCALE_MAX, Math.max(FOOTSTEP_SCALE_MIN, n));
+}
+
+/**
+ * Footprint size, step spacing and left/right offset, in map units, for a map of this width.
+ * Tuned for a 1000-unit-wide map at footstepScale 1; spacing scales with the print so the
+ * gait keeps its proportions. Shared by the web and mobile maps and the admin size preview.
+ */
+export function footstepTrailMetrics(mapWidth: number, footstepScale: number = FOOTSTEP_SCALE_DEFAULT) {
+  const unit = (mapWidth / 1000) * clampFootstepScale(footstepScale);
+  return { size: 36 * unit, stepDistance: 40 * unit, footOffset: 10 * unit };
+}
+
 export interface FootstepPlacement extends Point {
   /** Degrees to rotate the footprint glyph so its toes point along the walking direction. */
   rotationDeg: number;

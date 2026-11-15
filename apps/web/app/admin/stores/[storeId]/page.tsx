@@ -11,13 +11,13 @@ import {
   priceRepository,
   productListingRepository,
   storeRepository,
-  walkableMapRepository,
 } from "@/src/infrastructure/container";
 import {
   addMapVideo,
   addProductToNode,
   createEdge,
   createNode,
+  createWaypointLine,
   deleteEdge,
   deleteMapVideo,
   deleteNode,
@@ -30,7 +30,6 @@ import {
   removeProductFromNode,
   removeProductsFromNode,
   removeShelfGroupFromNode,
-  saveWalkableMap,
   setStorePriceBranch,
   updateMapVideoPosition,
   updateNodeArea,
@@ -38,10 +37,12 @@ import {
   updateNodePosition,
   updateStore,
   unmarkProductsNotSold,
+  updateFootstepScale,
   uploadStoreImage,
 } from "@/src/presentation/actions/admin-store-actions";
 import { setProductsShelfGroup } from "@/src/presentation/actions/admin-product-actions";
 import { requireAdminPage } from "@/src/presentation/auth/admin";
+import { FootstepSizeForm } from "@/src/presentation/components/admin/FootstepSizeForm";
 import { DeleteStoreButton } from "@/src/presentation/components/admin/DeleteStoreButton";
 import { StoreDetailsForm } from "@/src/presentation/components/admin/StoreDetailsForm";
 import { StoreLayoutEditor } from "@/src/presentation/components/admin/StoreLayoutEditor";
@@ -65,7 +66,7 @@ export default async function AdminStoreDetailPage({
 
   // Imported products (whole price files) are too many to send with the page: the editor
   // gets the hand-made ones, a per-shelf-group summary, and searches on demand.
-  const [nodes, edges, products, allListings, storeGroups, hasPriceBranch, excludedProducts, walkableMask, priceBranches, allStores, splitAliases, videos] = await Promise.all([
+  const [nodes, edges, products, allListings, storeGroups, hasPriceBranch, excludedProducts, priceBranches, allStores, splitAliases, videos] = await Promise.all([
     nodeRepository.findByStore(storeId),
     edgeRepository.findByStore(storeId),
     catalogAdminRepository.listedHandMadeProducts(storeId),
@@ -73,7 +74,6 @@ export default async function AdminStoreDetailPage({
     catalogAdminRepository.shelfGroupsForStore(storeId),
     catalogAdminRepository.hasPriceBranch(storeId),
     catalogAdminRepository.excludedProducts(storeId),
-    walkableMapRepository.findMask(storeId),
     manages ? priceRepository.findLinkableBranches() : [],
     manages ? storeRepository.findAll() : [],
     catalogAdminRepository.splitAliases(storeId),
@@ -115,10 +115,6 @@ export default async function AdminStoreDetailPage({
   const boundUpdateNodePosition = updateNodePosition.bind(null, storeId);
   const boundUploadStoreImage = uploadStoreImage.bind(null, storeId);
   const mapImageUrl = store.mapImageUrl ? `${store.mapImageUrl}?v=${encodeURIComponent(store.updatedAt)}` : "";
-  // Blob-hosted images are proxied through our origin so the walkable-area editor can read pixels.
-  const mapPixelSourceUrl = store.mapImageUrl.startsWith("https://")
-    ? `/admin/stores/${storeId}/map-image?v=${encodeURIComponent(store.updatedAt)}`
-    : mapImageUrl;
 
   return (
     <div className="flex flex-col gap-8">
@@ -138,6 +134,14 @@ export default async function AdminStoreDetailPage({
       {manages && (
         <>
           <StoreDetailsForm store={store} updateStore={boundUpdateStore} />
+
+          <FootstepSizeForm
+            mapWidth={store.mapWidth}
+            mapHeight={store.mapHeight}
+            mapImageUrl={mapImageUrl}
+            footstepScale={store.footstepScale}
+            updateFootstepScale={updateFootstepScale.bind(null, storeId)}
+          />
 
           <StorePriceBranchForm
             storeId={storeId}
@@ -182,9 +186,7 @@ export default async function AdminStoreDetailPage({
         markProductsNotSold={markProductsNotSold}
         setProductsShelfGroup={setProductsShelfGroup}
         uploadStoreImage={boundUploadStoreImage}
-        mapPixelSourceUrl={mapPixelSourceUrl}
-        walkableMask={walkableMask}
-        saveWalkableMap={saveWalkableMap.bind(null, storeId)}
+        createWaypointLine={createWaypointLine.bind(null, storeId)}
         videos={videos}
         addMapVideo={addMapVideo.bind(null, storeId)}
         updateMapVideoPosition={updateMapVideoPosition.bind(null, storeId)}

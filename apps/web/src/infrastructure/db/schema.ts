@@ -171,6 +171,7 @@ export const stores = pgTable("stores", {
   mapHeight: doublePrecision("map_height").notNull(),
   isActive: boolean("is_active").notNull(),
   promotionsEnabled: boolean("promotions_enabled").notNull(),
+  footstepScale: doublePrecision("footstep_scale").notNull().default(1),
   createdAt: timestamp("created_at", { mode: "string" }).notNull(),
   updatedAt: timestamp("updated_at", { mode: "string" }).notNull(),
 });

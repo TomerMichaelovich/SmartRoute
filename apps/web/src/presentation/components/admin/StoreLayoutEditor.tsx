@@ -7,14 +7,12 @@ import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ProductListing } from "@smartroute/core/domain/entities/product-listing";
 import { distanceBetweenNodes } from "@smartroute/core/domain/value-objects/geo-point";
 import { NODE_TYPE_LABELS } from "@/src/presentation/node-type-labels";
-import type { StoredWalkableMask } from "@smartroute/core/map/walkable/mask";
-import type { WalkableMapSaveResult } from "@/src/presentation/actions/admin-store-actions";
+import type { WaypointLineEnd } from "@/src/presentation/actions/admin-store-actions";
 import type { StoreMapVideo } from "@/src/infrastructure/repositories/interfaces/map-video-repository";
 import { ProductAutocomplete } from "./ProductAutocomplete";
 import { AliasPlacePanel } from "./AliasPlacePanel";
 import { type ShelfGroupOption, ShelfGroupPanel } from "./ShelfGroupPanel";
 import { MapVideoPlayer, MapVideoUploadPopup } from "./MapVideoPanels";
-import { WalkableAreaEditor } from "./WalkableAreaEditor";
 
 interface StoreLayoutEditorProps {
   storeId: string;
@@ -57,10 +55,8 @@ interface StoreLayoutEditorProps {
   markProductsNotSold: (storeId: string, productIds: string[]) => Promise<void>;
   setProductsShelfGroup: (productIds: string[], groupId: string) => Promise<void>;
   uploadStoreImage: (formData: FormData) => Promise<void>;
-  /** Same-origin URL of the map image, for reading its pixels in the walkable-area mode. */
-  mapPixelSourceUrl: string;
-  walkableMask: StoredWalkableMask | null;
-  saveWalkableMap: (mask: StoredWalkableMask) => Promise<WalkableMapSaveResult>;
+  /** A straight corridor: `count` waypoints evenly between two ends, chained with edges. */
+  createWaypointLine: (start: WaypointLineEnd, end: WaypointLineEnd, count: number) => Promise<void>;
   /** Videos of store areas pinned on the map - admin reference only, never part of the route graph. */
   videos: StoreMapVideo[];
   addMapVideo: (video: { videoUrl: string; title: string; x: number; y: number }) => Promise<void>;
@@ -87,6 +83,14 @@ const DISCONNECTED_COLOR = "#dc2626";
 // A department's area: light blue (the shopper's map lights it up the same way).
 const AREA_FILL = "#38bdf8";
 const AREA_STROKE = "#0284c7";
+// The waypoint-line tool: its slider's top, and the default spacing (fraction of map width).
+const WAYPOINT_LINE_MAX_POINTS = 40;
+const WAYPOINT_LINE_DEFAULT_SPACING = 0.04;
+const LINE_COLOR = "#0891b2";
+
+/** One end of a waypoint line being drawn: snapped to an existing node, or a spot on the map. */
+type LineDraftEnd = { nodeId?: string; x: number; y: number };
+
 // Clicking this close to the first point of an area being drawn closes it (fraction of map width).
 const AREA_CLOSE_DISTANCE = 0.015;
 
@@ -225,15 +229,29 @@ export function StoreLayoutEditor({
   markProductsNotSold,
   setProductsShelfGroup,
   uploadStoreImage,
-  mapPixelSourceUrl,
-  walkableMask,
-  saveWalkableMap,
+  createWaypointLine,
   videos,
   addMapVideo,
   updateMapVideoPosition,
   deleteMapVideo,
 }: StoreLayoutEditorProps) {
-  const [walkableMode, setWalkableMode] = useState(false);
+  // Waypoint-line tool: click a start and an end (on empty map or on a node, which the line then
+  // joins), pick how many points go between them, and they're created chained along a straight line.
+  const [lineMode, setLineMode] = useState(false);
+  const [lineDraft, setLineDraft] = useState<{ start: LineDraftEnd; end: LineDraftEnd | null } | null>(null);
+  const [lineCount, setLineCount] = useState(5);
+  const [lineCursor, setLineCursor] = useState<{ x: number; y: number } | null>(null);
+  const [savingLine, setSavingLine] = useState(false);
+  useEffect(() => {
+    if (!lineMode) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      if (lineDraft) setLineDraft(null);
+      else setLineMode(false);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [lineMode, lineDraft]);
   // A department's area being drawn: each click on the map adds a corner; the lines follow the cursor.
   const [areaDraft, setAreaDraft] = useState<{ nodeId: string; points: Array<{ x: number; y: number }> } | null>(null);
   const [areaCursor, setAreaCursor] = useState<{ x: number; y: number } | null>(null);
@@ -576,6 +594,51 @@ export function StoreLayoutEditor({
     setAreaDraft({ ...areaDraft, points: areaDraft.points.slice(0, -1) });
   }
 
+  /** The node under a click, if any, so a line end lands on it instead of beside it. */
+  function snapLineEnd(point: { x: number; y: number }): LineDraftEnd {
+    let best: { node: MapNode; distance: number } | null = null;
+    for (const node of nodes) {
+      const distance = Math.hypot((node.position.x - point.x) * mapWidth, (node.position.y - point.y) * mapHeight);
+      const drawnType = hideDepartments && node.type === "department" ? "waypoint" : node.type;
+      const reach = Math.max(14, nodeRadius(drawnType) + 6);
+      if (distance <= reach && (!best || distance < best.distance)) best = { node, distance };
+    }
+    return best ? { nodeId: best.node.id, ...best.node.position } : point;
+  }
+
+  function handleLineClick(e: React.MouseEvent) {
+    if (savingLine) return;
+    const end = snapLineEnd(screenToNormalized(e.clientX, e.clientY));
+    // No line yet, or one already complete: this click starts a new one.
+    if (!lineDraft || lineDraft.end) {
+      setLineDraft({ start: end, end: null });
+      return;
+    }
+    if (end.nodeId && end.nodeId === lineDraft.start.nodeId) return;
+    const length = Math.hypot((end.x - lineDraft.start.x) * mapWidth, (end.y - lineDraft.start.y) * mapHeight);
+    const suggested = Math.round(length / (WAYPOINT_LINE_DEFAULT_SPACING * mapWidth)) - 1;
+    setLineCount(Math.max(0, Math.min(WAYPOINT_LINE_MAX_POINTS, suggested)));
+    setLineDraft({ ...lineDraft, end });
+  }
+
+  async function saveLine() {
+    if (!lineDraft?.end || savingLine) return;
+    const toEnd = (p: LineDraftEnd): WaypointLineEnd => (p.nodeId ? { nodeId: p.nodeId } : { x: p.x, y: p.y });
+    setSavingLine(true);
+    try {
+      await createWaypointLine(toEnd(lineDraft.start), toEnd(lineDraft.end), lineCount);
+      setLineDraft(null);
+    } finally {
+      setSavingLine(false);
+    }
+  }
+
+  function exitLineMode() {
+    setLineMode(false);
+    setLineDraft(null);
+    setLineCursor(null);
+  }
+
   function handleEdgeClick(e: React.MouseEvent, edge: MapEdge) {
     closePopups();
 
@@ -675,20 +738,28 @@ export function StoreLayoutEditor({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-base font-semibold text-neutral-900">עריכת פריסה חזותית</h2>
         <div className="flex flex-wrap items-center gap-2">
-          {mapImageUrl && !walkableMode && (
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedNodeIds(new Set());
-                setSelectedEdgeIds(new Set());
-                closePopups();
-                setWalkableMode(true);
-              }}
-              className="rounded-full bg-cyan-600 px-3 py-1.5 text-sm font-semibold text-white"
-            >
-              מיפוי אוטומטי של שטח עביר
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => {
+              if (lineMode) {
+                exitLineMode();
+                return;
+              }
+              setSelectedNodeIds(new Set());
+              setSelectedEdgeIds(new Set());
+              closePopups();
+              cancelAreaDrawing();
+              setPlacingNode(false);
+              setPlacingVideo(false);
+              setLineMode(true);
+            }}
+            aria-pressed={lineMode}
+            className={`rounded-full px-3 py-1.5 text-sm font-semibold ${
+              lineMode ? "border border-cyan-600 bg-white text-cyan-700" : "bg-cyan-600 text-white"
+            }`}
+          >
+            {lineMode ? "סיום הוספת קו" : "הוספת קו נקודות"}
+          </button>
           <form
             action={uploadStoreImage}
             className="flex items-center gap-2 rounded-full border border-neutral-300 bg-white ps-1 pe-3 py-1"
@@ -706,18 +777,7 @@ export function StoreLayoutEditor({
           </form>
         </div>
       </div>
-      {walkableMode ? (
-        <WalkableAreaEditor
-          mapWidth={mapWidth}
-          mapHeight={mapHeight}
-          mapImageUrl={mapImageUrl}
-          pixelSourceUrl={mapPixelSourceUrl}
-          nodes={nodes}
-          initialMask={walkableMask}
-          saveWalkableMap={saveWalkableMap}
-          onClose={() => setWalkableMode(false)}
-        />
-      ) : (
+      {(
         <>
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center gap-3">
@@ -735,6 +795,7 @@ export function StoreLayoutEditor({
                       closePopups();
                       setPlacingNode(false);
                       cancelAreaDrawing();
+                      exitLineMode();
                       setSelectedNodeIds(new Set());
                       setSelectedEdgeIds(new Set());
                       setEditMode(mode);
@@ -811,6 +872,53 @@ export function StoreLayoutEditor({
                 {disconnectedNodeIds.size === 1 ? "צומת אחד לא מחובר" : `${disconnectedNodeIds.size} צמתים לא מחוברים`}{" "}
                 לכניסה, ולכן מסלול לא יכול להגיע אליהם. הם מסומנים באדום - חברו אותם במצב &quot;הוספה וחיבור&quot;.
               </p>
+            )}
+
+            {lineMode && (
+              <div className="flex flex-wrap items-center gap-3 rounded-xl border border-cyan-200 bg-cyan-50 p-3 text-sm">
+                <span className="font-medium text-cyan-900">
+                  {!lineDraft
+                    ? "1. לחצו על נקודת ההתחלה של הקו"
+                    : !lineDraft.end
+                      ? "2. לחצו על נקודת הסיום"
+                      : "3. בחרו כמה נקודות יהיו בקו ולחצו על צור קו"}
+                </span>
+                {lineDraft?.end && (
+                  <>
+                    <label htmlFor="line-count" className="text-neutral-700">
+                      נקודות בין הקצוות
+                    </label>
+                    <input
+                      id="line-count"
+                      type="range"
+                      min={0}
+                      max={WAYPOINT_LINE_MAX_POINTS}
+                      step={1}
+                      value={lineCount}
+                      onChange={(e) => setLineCount(Number(e.target.value))}
+                      className="w-48 accent-cyan-600"
+                    />
+                    <span className="w-6 font-semibold tabular-nums text-neutral-900">{lineCount}</span>
+                    <button
+                      type="button"
+                      onClick={() => void saveLine()}
+                      disabled={savingLine}
+                      className="rounded-lg bg-cyan-600 px-3 py-1.5 font-semibold text-white disabled:opacity-50"
+                    >
+                      {savingLine ? "יוצר…" : "צור קו"}
+                    </button>
+                  </>
+                )}
+                {lineDraft && !savingLine && (
+                  <button type="button" onClick={() => setLineDraft(null)} className="text-cyan-700 hover:underline">
+                    ניקוי
+                  </button>
+                )}
+                <span className="basis-full text-xs text-neutral-500">
+                  לחיצה על צומת קיים (מחלקה, כניסה, נקודת ציון) מחברת את הקו אליו; לחיצה על שטח ריק יוצרת שם נקודה
+                  חדשה. כל הנקודות מחוברות זו לזו לאורך הקו. Esc מנקה את הקו, Esc נוסף יוצא מהמצב.
+                </span>
+              </div>
             )}
 
             <div ref={containerRef} className="relative">
@@ -1035,6 +1143,69 @@ export function StoreLayoutEditor({
                       onClick={handleAreaClick}
                       onPointerMove={(e) => setAreaCursor(screenToNormalized(e.clientX, e.clientY))}
                       onPointerLeave={() => setAreaCursor(null)}
+                    />
+                  </g>
+                )}
+                {lineMode && (
+                  <g>
+                    {lineDraft && (lineDraft.end ?? lineCursor) && (
+                      <line
+                        x1={lineDraft.start.x * mapWidth}
+                        y1={lineDraft.start.y * mapHeight}
+                        x2={(lineDraft.end ?? lineCursor)!.x * mapWidth}
+                        y2={(lineDraft.end ?? lineCursor)!.y * mapHeight}
+                        stroke={LINE_COLOR}
+                        strokeWidth={3}
+                        strokeDasharray={lineDraft.end ? undefined : "8 5"}
+                        vectorEffect="non-scaling-stroke"
+                        pointerEvents="none"
+                      />
+                    )}
+                    {lineDraft?.end &&
+                      Array.from({ length: lineCount }, (_, i) => {
+                        const t = (i + 1) / (lineCount + 1);
+                        const start = lineDraft.start;
+                        const end = lineDraft.end!;
+                        return (
+                          <circle
+                            key={i}
+                            cx={(start.x + (end.x - start.x) * t) * mapWidth}
+                            cy={(start.y + (end.y - start.y) * t) * mapHeight}
+                            r={6}
+                            fill={LINE_COLOR}
+                            stroke="#ffffff"
+                            strokeWidth={1.5}
+                            pointerEvents="none"
+                          />
+                        );
+                      })}
+                    {lineDraft &&
+                      [lineDraft.start, lineDraft.end].map((p, i) =>
+                        p ? (
+                          <circle
+                            key={`end-${i}`}
+                            cx={p.x * mapWidth}
+                            cy={p.y * mapHeight}
+                            r={p.nodeId ? 18 : 8}
+                            fill={p.nodeId ? "none" : LINE_COLOR}
+                            stroke={p.nodeId ? LINE_COLOR : "#ffffff"}
+                            strokeWidth={p.nodeId ? 4 : 2}
+                            pointerEvents="none"
+                          />
+                        ) : null,
+                      )}
+                    {/* Over everything, so a click on a node becomes a line end instead of a selection. */}
+                    <rect
+                      x={0}
+                      y={0}
+                      width={mapWidth}
+                      height={mapHeight}
+                      fill="transparent"
+                      className="cursor-crosshair"
+                      onClick={handleLineClick}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onPointerMove={(e) => setLineCursor(screenToNormalized(e.clientX, e.clientY))}
+                      onPointerLeave={() => setLineCursor(null)}
                     />
                   </g>
                 )}

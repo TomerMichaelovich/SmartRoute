@@ -9,6 +9,8 @@ export interface Store {
   mapHeight: number;
   isActive: boolean;
   promotionsEnabled: boolean;
+  /** Multiplier on the route map's footprint trail size (1 = the original size). Set by the admin. */
+  footstepScale: number;
   createdAt: string;
   updatedAt: string;
 }

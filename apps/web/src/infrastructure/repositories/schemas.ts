@@ -53,6 +53,7 @@ export const storeSchema = z.object({
   mapHeight: z.number(),
   isActive: z.boolean(),
   promotionsEnabled: z.boolean(),
+  footstepScale: z.number(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

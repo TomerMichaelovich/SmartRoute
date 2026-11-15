@@ -6,6 +6,7 @@ import {
   FOOTPRINT_SOLE_PATH,
   FOOTPRINT_TOES,
   footprintTransform,
+  footstepTrailMetrics,
   type FootstepPlacement,
 } from "@smartroute/core/map/footstep-trail";
 import { MultilineSvgText } from "./MultilineSvgText";
@@ -16,7 +17,7 @@ function squareAttrs(cx: number, cy: number, r: number) {
 }
 
 /** One bare-foot print in NAVIO brand teal; `size` is its approximate rendered height in px. */
-function Footprint({ size, ...step }: FootstepPlacement & { size: number }) {
+export function Footprint({ size, ...step }: FootstepPlacement & { size: number }) {
   return (
     <g
       transform={footprintTransform(step, size)}
@@ -44,6 +45,8 @@ interface StoreMapProps {
   checkedStopOrders: Set<number>;
   selectedStopOrder: number | null;
   onSelectStop?: (order: number) => void;
+  /** The store's footprint size multiplier (admin setting). */
+  footstepScale?: number;
 }
 
 /**
@@ -63,6 +66,7 @@ export function StoreMap({
   checkedStopOrders,
   selectedStopOrder,
   onSelectStop,
+  footstepScale,
 }: StoreMapProps) {
   // Marker/font sizes below were originally tuned for a 1000-unit-wide canvas (the old
   // fixed schematic size). Uploaded store photos come in at whatever resolution they
@@ -88,8 +92,9 @@ export function StoreMap({
   // narrow, fixed-max-width column (mobile and desktop alike), so a size tuned to read well
   // at near-native photo resolution was rendering the footstep trail at only a few CSS
   // pixels - effectively invisible, worse on high-DPI phone screens.
-  const footstepSize = 36 * scale;
-  const footsteps = computeFootstepPlacements(routePathPoints, 40 * scale, 10 * scale);
+  const trail = footstepTrailMetrics(mapWidth, footstepScale);
+  const footstepSize = trail.size;
+  const footsteps = computeFootstepPlacements(routePathPoints, trail.stepDistance, trail.footOffset);
 
   return (
     <svg
