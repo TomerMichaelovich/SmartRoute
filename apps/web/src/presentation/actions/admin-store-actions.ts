@@ -518,60 +518,86 @@ export async function resetWaypoints(storeId: string): Promise<{ deleted: number
   return { deleted: toDelete.length, kept: waypoints.length - toDelete.length };
 }
 
-/** One end of a waypoint line: an existing node (snapped to), or a spot on the map for a new waypoint. */
-export type WaypointLineEnd = { nodeId: string } | { x: number; y: number };
+/** One end of a drafted waypoint line: an existing node (snapped to), or a spot on the map for a new waypoint. */
+export type WaypointLinePoint = { key: string; nodeId: string } | { key: string; x: number; y: number };
+
+/** A drafted straight line between two ends (by key), with `count` waypoints evenly between them. */
+export interface WaypointLineSegment {
+  from: string;
+  to: string;
+  count: number;
+}
 
 /** Most in-between points one line may get - matches the editor's slider (WAYPOINT_LINE_MAX_POINTS there). */
 const WAYPOINT_LINE_MAX_POINTS = 40;
+/** Most lines one create may hold. */
+const WAYPOINT_LINES_MAX_SEGMENTS = 200;
 
 /**
- * Lays a straight corridor between two points: `count` waypoints evenly spaced between the two
- * ends, chained end to end with bidirectional edges. An end on an existing node reuses that node
- * (so the line joins the graph there); an end on empty map gets a new waypoint.
+ * Creates the editor's drafted corridor lines in one go: every line gets its in-between
+ * waypoints and is chained end to end with bidirectional edges. Lines sharing an end share the
+ * node there. An end on an existing node reuses it (so the line joins the graph there); an end
+ * on empty map gets a new waypoint.
  */
-export async function createWaypointLine(
+export async function createWaypointLines(
   storeId: string,
-  start: WaypointLineEnd,
-  end: WaypointLineEnd,
-  count: number,
+  points: WaypointLinePoint[],
+  segments: WaypointLineSegment[],
 ): Promise<void> {
   await requireAdmin({ mapStore: storeId });
-  const between = Math.max(0, Math.min(WAYPOINT_LINE_MAX_POINTS, Math.floor(Number(count) || 0)));
+  if (!Array.isArray(points) || !Array.isArray(segments) || segments.length > WAYPOINT_LINES_MAX_SEGMENTS) {
+    throw new Error("Invalid waypoint lines");
+  }
   const clamp01 = (v: unknown) => Math.max(0, Math.min(1, Number(v) || 0));
+  const waypointAt = (id: string, x: number, y: number): MapNode => ({
+    id,
+    storeId,
+    type: "waypoint",
+    label: NODE_TYPE_LABELS.waypoint,
+    position: { x, y },
+  });
 
+  const storeNodes = new Map((await nodeRepository.findByStore(storeId)).map((n) => [n.id, n]));
+  const usedKeys = new Set(segments.flatMap((s) => [String(s.from), String(s.to)]));
   const newNodes: MapNode[] = [];
-  async function resolveEnd(lineEnd: WaypointLineEnd): Promise<{ id: string; x: number; y: number }> {
-    if ("nodeId" in lineEnd) {
-      const node = await nodeRepository.findById(String(lineEnd.nodeId));
-      if (node?.storeId !== storeId) throw new Error("Unauthorized");
-      return { id: node.id, ...node.position };
+  const ends = new Map<string, { id: string; x: number; y: number }>();
+  for (const point of points) {
+    const key = String(point?.key);
+    if (!usedKeys.has(key) || ends.has(key)) continue;
+    if ("nodeId" in point) {
+      const node = storeNodes.get(String(point.nodeId));
+      if (!node) throw new Error("Unauthorized");
+      ends.set(key, { id: node.id, ...node.position });
+    } else {
+      const end = { id: crypto.randomUUID(), x: clamp01(point.x), y: clamp01(point.y) };
+      newNodes.push(waypointAt(end.id, end.x, end.y));
+      ends.set(key, end);
     }
-    const point = { id: crypto.randomUUID(), x: clamp01(lineEnd.x), y: clamp01(lineEnd.y) };
-    newNodes.push(waypointAt(point));
-    return point;
-  }
-  function waypointAt(p: { id: string; x: number; y: number }): MapNode {
-    return { id: p.id, storeId, type: "waypoint", label: NODE_TYPE_LABELS.waypoint, position: { x: p.x, y: p.y } };
   }
 
-  const from = await resolveEnd(start);
-  const to = await resolveEnd(end);
-  if (from.id === to.id) return;
-
-  const chain = [from.id];
-  for (let i = 1; i <= between; i++) {
-    const t = i / (between + 1);
-    const point = { id: crypto.randomUUID(), x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t };
-    newNodes.push(waypointAt(point));
-    chain.push(point.id);
+  const edgePairs: Array<[string, string]> = [];
+  for (const segment of segments) {
+    const from = ends.get(String(segment.from));
+    const to = ends.get(String(segment.to));
+    if (!from || !to) throw new Error("Invalid waypoint lines");
+    if (from.id === to.id) continue;
+    const between = Math.max(0, Math.min(WAYPOINT_LINE_MAX_POINTS, Math.floor(Number(segment.count) || 0)));
+    const chain = [from.id];
+    for (let i = 1; i <= between; i++) {
+      const t = i / (between + 1);
+      const id = crypto.randomUUID();
+      newNodes.push(waypointAt(id, from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t));
+      chain.push(id);
+    }
+    chain.push(to.id);
+    for (let i = 1; i < chain.length; i++) edgePairs.push([chain[i - 1], chain[i]]);
   }
-  chain.push(to.id);
 
   // Nodes first, so no edge is ever written before the node it points at.
   await Promise.all(newNodes.map((n) => nodeRepository.create(n)));
   await Promise.all(
-    chain.slice(1).map((toNodeId, i) =>
-      edgeRepository.create({ id: crypto.randomUUID(), storeId, fromNodeId: chain[i], toNodeId, bidirectional: true }),
+    edgePairs.map(([fromNodeId, toNodeId]) =>
+      edgeRepository.create({ id: crypto.randomUUID(), storeId, fromNodeId, toNodeId, bidirectional: true }),
     ),
   );
 

@@ -7,7 +7,20 @@ import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ProductListing } from "@smartroute/core/domain/entities/product-listing";
 import { distanceBetweenNodes } from "@smartroute/core/domain/value-objects/geo-point";
 import { NODE_TYPE_LABELS } from "@/src/presentation/node-type-labels";
-import type { WaypointLineEnd } from "@/src/presentation/actions/admin-store-actions";
+import type { WaypointLinePoint, WaypointLineSegment } from "@/src/presentation/actions/admin-store-actions";
+import {
+  EMPTY_LINE_DRAFT,
+  type LineDraft,
+  addPoint,
+  cancelPending,
+  connect,
+  hitDraft,
+  innerPoints,
+  pointByKey,
+  removeLastSegment,
+  splitAt,
+  suggestedCount,
+} from "./waypoint-line-draft";
 import type { StoreMapVideo } from "@/src/infrastructure/repositories/interfaces/map-video-repository";
 import { ProductAutocomplete } from "./ProductAutocomplete";
 import { AliasPlacePanel } from "./AliasPlacePanel";
@@ -56,7 +69,7 @@ interface StoreLayoutEditorProps {
   setProductsShelfGroup: (productIds: string[], groupId: string) => Promise<void>;
   uploadStoreImage: (formData: FormData) => Promise<void>;
   /** A straight corridor: `count` waypoints evenly between two ends, chained with edges. */
-  createWaypointLine: (start: WaypointLineEnd, end: WaypointLineEnd, count: number) => Promise<void>;
+  createWaypointLines: (points: WaypointLinePoint[], segments: WaypointLineSegment[]) => Promise<void>;
   /** Deletes all the store's waypoints (and their edges); departments, entrance and checkouts stay. */
   resetWaypoints: () => Promise<{ deleted: number; kept: number }>;
   /** Videos of store areas pinned on the map - admin reference only, never part of the route graph. */
@@ -89,6 +102,8 @@ const AREA_STROKE = "#0284c7";
 const WAYPOINT_LINE_MAX_POINTS = 40;
 const WAYPOINT_LINE_DEFAULT_SPACING = 0.04;
 const LINE_COLOR = "#0891b2";
+// How close a click must land to a drawn line's point to start the next line from it (fraction of map width).
+const DRAFT_POINT_HIT = 0.012;
 
 /** One end of a waypoint line being drawn: snapped to an existing node, or a spot on the map. */
 type LineDraftEnd = { nodeId?: string; x: number; y: number };
@@ -231,7 +246,7 @@ export function StoreLayoutEditor({
   markProductsNotSold,
   setProductsShelfGroup,
   uploadStoreImage,
-  createWaypointLine,
+  createWaypointLines,
   resetWaypoints,
   videos,
   addMapVideo,
@@ -239,10 +254,10 @@ export function StoreLayoutEditor({
   deleteMapVideo,
 }: StoreLayoutEditorProps) {
   // Waypoint-line tool: click a start and an end (on empty map or on a node, which the line then
-  // joins), pick how many points go between them, and they're created chained along a straight line.
+  // joins) and pick how many points go between them; a click on a point of a drawn line stretches
+  // the next one from there. All the lines are created together, chained along straight lines.
   const [lineMode, setLineMode] = useState(false);
-  const [lineDraft, setLineDraft] = useState<{ start: LineDraftEnd; end: LineDraftEnd | null } | null>(null);
-  const [lineCount, setLineCount] = useState(5);
+  const [lineDraft, setLineDraft] = useState<LineDraft>(EMPTY_LINE_DRAFT);
   const [lineCursor, setLineCursor] = useState<{ x: number; y: number } | null>(null);
   const [savingLine, setSavingLine] = useState(false);
   // "Edit walking points" opens the waypoint tools: the line tool and the reset.
@@ -257,7 +272,7 @@ export function StoreLayoutEditor({
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Shift") setShiftHeld(true);
       if (e.key !== "Escape") return;
-      if (lineDraft) setLineDraft(null);
+      if (lineDraft.points.length > 0) setLineDraft(EMPTY_LINE_DRAFT);
       else setLineMode(false);
     }
     function handleKeyUp(e: KeyboardEvent) {
@@ -642,33 +657,62 @@ export function StoreLayoutEditor({
     return dx >= dy ? { x: point.x, y: start.y } : { x: start.x, y: point.y };
   }
 
+  // A click starts a line or ends the one being stretched. It lands, in order of preference, on
+  // a point of a line already drawn (its end, or a point between - which splits that line there),
+  // on a node of the map, or on the empty spot itself. Nothing is saved until "create".
   function handleLineClick(e: React.MouseEvent) {
     if (savingLine) return;
-    let point = screenToNormalized(e.clientX, e.clientY);
-    const drawingEnd = lineDraft && !lineDraft.end;
-    if (drawingEnd && e.shiftKey) point = constrainToAxis(lineDraft.start, point);
-    // A straightened end still joins a node right where it lands (off the axis by at most the
-    // node's small click radius) - connecting the corridor matters more than a perfect line.
-    const end = snapLineEnd(point, e.clientX, e.clientY);
-    // No line yet, or one already complete: this click starts a new one.
-    if (!lineDraft || lineDraft.end) {
-      setLineDraft({ start: end, end: null });
+    const cursor = screenToNormalized(e.clientX, e.clientY);
+    const pendingFrom = lineDraft.pendingFrom;
+    const pendingPoint = pendingFrom ? pointByKey(lineDraft, pendingFrom) : undefined;
+    const newKey = crypto.randomUUID();
+    let draft = lineDraft;
+    let key: string;
+    const hit = hitDraft(lineDraft, cursor, DRAFT_POINT_HIT * mapWidth, mapWidth, mapHeight);
+    if (hit?.kind === "end") {
+      key = hit.key;
+    } else if (hit?.kind === "inner") {
+      ({ draft, key } = splitAt(draft, hit.segment, hit.index, newKey));
+    } else {
+      // A straightened end still joins a node right where it lands (off the axis by at most the
+      // node's click area) - connecting the corridor matters more than a perfect line.
+      const point = pendingPoint && e.shiftKey ? constrainToAxis(pendingPoint, cursor) : cursor;
+      ({ draft, key } = addPoint(draft, snapLineEnd(point, e.clientX, e.clientY), newKey));
+    }
+    if (!pendingFrom || !pendingPoint) {
+      setLineDraft({ ...draft, pendingFrom: key });
       return;
     }
-    if (end.nodeId && end.nodeId === lineDraft.start.nodeId) return;
-    const length = Math.hypot((end.x - lineDraft.start.x) * mapWidth, (end.y - lineDraft.start.y) * mapHeight);
-    const suggested = Math.round(length / (WAYPOINT_LINE_DEFAULT_SPACING * mapWidth)) - 1;
-    setLineCount(Math.max(0, Math.min(WAYPOINT_LINE_MAX_POINTS, suggested)));
-    setLineDraft({ ...lineDraft, end });
+    if (key === pendingFrom) return;
+    const target = pointByKey(draft, key)!;
+    const count = suggestedCount(
+      pendingPoint,
+      target,
+      mapWidth,
+      mapHeight,
+      WAYPOINT_LINE_DEFAULT_SPACING,
+      WAYPOINT_LINE_MAX_POINTS,
+    );
+    setLineDraft(connect(draft, pendingFrom, key, count));
   }
 
-  async function saveLine() {
-    if (!lineDraft?.end || savingLine) return;
-    const toEnd = (p: LineDraftEnd): WaypointLineEnd => (p.nodeId ? { nodeId: p.nodeId } : { x: p.x, y: p.y });
+  /** The slider sets the in-between points of the line drawn last. */
+  function setLastLineCount(count: number) {
+    if (lineDraft.segments.length === 0) return;
+    const segments = [...lineDraft.segments];
+    segments[segments.length - 1] = { ...segments[segments.length - 1], count };
+    setLineDraft({ ...lineDraft, segments });
+  }
+
+  async function saveLines() {
+    if (lineDraft.segments.length === 0 || savingLine) return;
+    const points: WaypointLinePoint[] = lineDraft.points.map((p) =>
+      p.nodeId ? { key: p.key, nodeId: p.nodeId } : { key: p.key, x: p.x, y: p.y },
+    );
     setSavingLine(true);
     try {
-      await createWaypointLine(toEnd(lineDraft.start), toEnd(lineDraft.end), lineCount);
-      setLineDraft(null);
+      await createWaypointLines(points, lineDraft.segments);
+      setLineDraft(EMPTY_LINE_DRAFT);
     } finally {
       setSavingLine(false);
     }
@@ -676,7 +720,7 @@ export function StoreLayoutEditor({
 
   function exitLineMode() {
     setLineMode(false);
-    setLineDraft(null);
+    setLineDraft(EMPTY_LINE_DRAFT);
     setLineCursor(null);
   }
 
@@ -753,9 +797,12 @@ export function StoreLayoutEditor({
   // The drawing only lives while its department is the one selected.
   const activeAreaDraft = areaDraft && singleSelectedNode?.id === areaDraft.nodeId ? areaDraft : null;
   // Where the line being drawn ends: its set end, else the cursor (straightened while Shift is held).
+  // The line being stretched: from its start to the cursor (straightened while Shift is held).
+  const linePendingPoint = lineDraft.pendingFrom ? pointByKey(lineDraft, lineDraft.pendingFrom) : undefined;
   const lineEndPreview =
-    lineDraft?.end ??
-    (lineDraft && lineCursor ? (shiftHeld ? constrainToAxis(lineDraft.start, lineCursor) : lineCursor) : null);
+    linePendingPoint && lineCursor ? (shiftHeld ? constrainToAxis(linePendingPoint, lineCursor) : lineCursor) : null;
+  const lastLine = lineDraft.segments.at(-1);
+  const lineNodeIds = new Set(lineDraft.points.flatMap((p) => (p.nodeId ? [p.nodeId] : [])));
   const toSvgPoints = (points: Array<{ x: number; y: number }>) =>
     points.map((p) => `${p.x * mapWidth},${p.y * mapHeight}`).join(" ");
   const listedProductIdsAtNode = new Set(
@@ -987,16 +1034,16 @@ export function StoreLayoutEditor({
             {lineMode && (
               <div className="flex flex-wrap items-center gap-3 rounded-xl border border-cyan-200 bg-cyan-50 p-3 text-sm">
                 <span className="font-medium text-cyan-900">
-                  {!lineDraft
-                    ? "1. לחצו על נקודת ההתחלה של הקו"
-                    : !lineDraft.end
-                      ? "2. לחצו על נקודת הסיום (החזיקו Shift לקו אופקי או אנכי)"
-                      : "3. בחרו כמה נקודות יהיו בקו ולחצו על צור קו"}
+                  {linePendingPoint
+                    ? "לחצו על נקודת הסיום (החזיקו Shift לקו אופקי או אנכי)"
+                    : lineDraft.segments.length === 0
+                      ? "1. לחצו על נקודת ההתחלה של הקו"
+                      : "לחצו על נקודה בקו כדי למתוח ממנה קו נוסף, או על צור קו לסיום"}
                 </span>
-                {lineDraft?.end && (
+                {lastLine && (
                   <>
                     <label htmlFor="line-count" className="text-neutral-700">
-                      נקודות בין הקצוות
+                      נקודות בקו האחרון
                     </label>
                     <input
                       id="line-count"
@@ -1004,29 +1051,39 @@ export function StoreLayoutEditor({
                       min={0}
                       max={WAYPOINT_LINE_MAX_POINTS}
                       step={1}
-                      value={lineCount}
-                      onChange={(e) => setLineCount(Number(e.target.value))}
+                      value={lastLine.count}
+                      onChange={(e) => setLastLineCount(Number(e.target.value))}
                       className="w-48 accent-cyan-600"
                     />
-                    <span className="w-6 font-semibold tabular-nums text-neutral-900">{lineCount}</span>
+                    <span className="w-6 font-semibold tabular-nums text-neutral-900">{lastLine.count}</span>
                     <button
                       type="button"
-                      onClick={() => void saveLine()}
+                      onClick={() => void saveLines()}
                       disabled={savingLine}
                       className="rounded-lg bg-cyan-600 px-3 py-1.5 font-semibold text-white disabled:opacity-50"
                     >
-                      {savingLine ? "יוצר…" : "צור קו"}
+                      {savingLine
+                        ? "יוצר…"
+                        : lineDraft.segments.length === 1
+                          ? "צור קו"
+                          : `צור ${lineDraft.segments.length} קווים`}
                     </button>
                   </>
                 )}
-                {lineDraft && !savingLine && (
-                  <button type="button" onClick={() => setLineDraft(null)} className="text-cyan-700 hover:underline">
+                {lineDraft.points.length > 0 && !savingLine && (
+                  <button
+                    type="button"
+                    onClick={() => setLineDraft(EMPTY_LINE_DRAFT)}
+                    className="text-cyan-700 hover:underline"
+                  >
                     ניקוי
                   </button>
                 )}
                 <span className="basis-full text-xs text-neutral-500">
                   לחיצה על צומת קיים (מחלקה, כניסה, נקודת ציון) מחברת את הקו אליו; לחיצה על שטח ריק יוצרת שם נקודה
-                  חדשה. כל הנקודות מחוברות זו לזו לאורך הקו. קליק ימני או Esc מבטלים את הקו, Esc נוסף יוצא מהמצב.
+                  חדשה. אחרי שקו נמתח, לחיצה על נקודה שלו (קצה או נקודת ביניים) מותחת ממנה את הקו הבא - כל הקווים
+                  נוצרים יחד בלחיצה על צור. קליק ימני מבטל את הקו שנמתח כעת (ואם אין כזה - את הקו האחרון), Esc
+                  מנקה הכל, Esc נוסף יוצא מהמצב.
                 </span>
               </div>
             )}
@@ -1131,7 +1188,7 @@ export function StoreLayoutEditor({
                   // A node a line being drawn starts or ends at shows as selected, so it's clear the line joins it.
                   const isSelected =
                     selectedNodeIds.has(node.id) ||
-                    (lineMode && (lineDraft?.start.nodeId === node.id || lineDraft?.end?.nodeId === node.id));
+                    (lineMode && lineNodeIds.has(node.id));
                   // A hidden department is drawn as a waypoint-sized dot, but stays draggable and connectable.
                   const isDot = node.type === "waypoint" || isHiddenDepartment;
 
@@ -1262,52 +1319,60 @@ export function StoreLayoutEditor({
                 )}
                 {lineMode && (
                   <g>
-                    {lineDraft && lineEndPreview && (
+                    {lineDraft.segments.map((segment, s) => {
+                      const a = pointByKey(lineDraft, segment.from);
+                      const b = pointByKey(lineDraft, segment.to);
+                      if (!a || !b) return null;
+                      return (
+                        <g key={`${segment.from}-${segment.to}-${s}`} pointerEvents="none">
+                          <line
+                            x1={a.x * mapWidth}
+                            y1={a.y * mapHeight}
+                            x2={b.x * mapWidth}
+                            y2={b.y * mapHeight}
+                            stroke={LINE_COLOR}
+                            strokeWidth={3}
+                            vectorEffect="non-scaling-stroke"
+                          />
+                          {innerPoints(a, b, segment.count).map((p, i) => (
+                            <circle
+                              key={i}
+                              cx={p.x * mapWidth}
+                              cy={p.y * mapHeight}
+                              r={6}
+                              fill={LINE_COLOR}
+                              stroke="#ffffff"
+                              strokeWidth={1.5}
+                            />
+                          ))}
+                        </g>
+                      );
+                    })}
+                    {linePendingPoint && lineEndPreview && (
                       <line
-                        x1={lineDraft.start.x * mapWidth}
-                        y1={lineDraft.start.y * mapHeight}
+                        x1={linePendingPoint.x * mapWidth}
+                        y1={linePendingPoint.y * mapHeight}
                         x2={lineEndPreview.x * mapWidth}
                         y2={lineEndPreview.y * mapHeight}
                         stroke={LINE_COLOR}
                         strokeWidth={3}
-                        strokeDasharray={lineDraft.end ? undefined : "8 5"}
+                        strokeDasharray="8 5"
                         vectorEffect="non-scaling-stroke"
                         pointerEvents="none"
                       />
                     )}
-                    {lineDraft?.end &&
-                      Array.from({ length: lineCount }, (_, i) => {
-                        const t = (i + 1) / (lineCount + 1);
-                        const start = lineDraft.start;
-                        const end = lineDraft.end!;
-                        return (
-                          <circle
-                            key={i}
-                            cx={(start.x + (end.x - start.x) * t) * mapWidth}
-                            cy={(start.y + (end.y - start.y) * t) * mapHeight}
-                            r={6}
-                            fill={LINE_COLOR}
-                            stroke="#ffffff"
-                            strokeWidth={1.5}
-                            pointerEvents="none"
-                          />
-                        );
-                      })}
-                    {lineDraft &&
-                      [lineDraft.start, lineDraft.end].map((p, i) =>
-                        p ? (
-                          <circle
-                            key={`end-${i}`}
-                            cx={p.x * mapWidth}
-                            cy={p.y * mapHeight}
-                            r={p.nodeId ? 18 : 8}
-                            fill={p.nodeId ? "none" : LINE_COLOR}
-                            stroke={p.nodeId ? LINE_COLOR : "#ffffff"}
-                            strokeWidth={p.nodeId ? 4 : 2}
-                            pointerEvents="none"
-                          />
-                        ) : null,
-                      )}
+                    {lineDraft.points.map((p) => (
+                      <circle
+                        key={p.key}
+                        cx={p.x * mapWidth}
+                        cy={p.y * mapHeight}
+                        r={p.nodeId ? 18 : p.key === lineDraft.pendingFrom ? 10 : 8}
+                        fill={p.nodeId ? "none" : LINE_COLOR}
+                        stroke={p.nodeId ? LINE_COLOR : p.key === lineDraft.pendingFrom ? "#facc15" : "#ffffff"}
+                        strokeWidth={p.nodeId ? 4 : p.key === lineDraft.pendingFrom ? 3 : 2}
+                        pointerEvents="none"
+                      />
+                    ))}
                     {/* Over everything, so a click on a node becomes a line end instead of a selection. */}
                     <rect
                       x={0}
@@ -1317,10 +1382,12 @@ export function StoreLayoutEditor({
                       fill="transparent"
                       className="cursor-crosshair"
                       onClick={handleLineClick}
-                      // Right click drops the line being drawn (instead of the browser's menu).
+                      // Right click (instead of the browser's menu) drops the line being stretched,
+                      // or with none, the line drawn last.
                       onContextMenu={(e) => {
                         e.preventDefault();
-                        if (!savingLine) setLineDraft(null);
+                        if (savingLine) return;
+                        setLineDraft(lineDraft.pendingFrom ? cancelPending(lineDraft) : removeLastSegment(lineDraft));
                       }}
                       onPointerDown={(e) => e.stopPropagation()}
                       onPointerMove={(e) => {

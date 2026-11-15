@@ -17,7 +17,7 @@ import {
   addProductToNode,
   createEdge,
   createNode,
-  createWaypointLine,
+  createWaypointLines,
   deleteEdge,
   deleteMapVideo,
   deleteNode,
@@ -187,7 +187,7 @@ export default async function AdminStoreDetailPage({
         markProductsNotSold={markProductsNotSold}
         setProductsShelfGroup={setProductsShelfGroup}
         uploadStoreImage={boundUploadStoreImage}
-        createWaypointLine={createWaypointLine.bind(null, storeId)}
+        createWaypointLines={createWaypointLines.bind(null, storeId)}
         resetWaypoints={resetWaypoints.bind(null, storeId)}
         videos={videos}
         addMapVideo={addMapVideo.bind(null, storeId)}
