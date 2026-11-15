@@ -9,4 +9,6 @@ export interface INodeRepository {
   /** Sets (or, with null, clears) a department's floor area. */
   setArea(id: string, area: GeoPoint[] | null): Promise<void>;
   delete(id: string): Promise<void>;
+  /** Deletes these nodes and every edge touching them, as one transaction. */
+  deleteManyWithEdges(storeId: string, ids: string[]): Promise<void>;
 }

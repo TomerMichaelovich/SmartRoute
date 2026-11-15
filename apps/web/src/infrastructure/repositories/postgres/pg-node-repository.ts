@@ -1,8 +1,8 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import type { MapNode } from "@smartroute/core/domain/entities/map-node";
 import type { GeoPoint } from "@smartroute/core/domain/value-objects/geo-point";
 import { db } from "../../db/client";
-import { mapNodes } from "../../db/schema";
+import { mapEdges, mapNodes } from "../../db/schema";
 import type { INodeRepository } from "../interfaces/node-repository";
 import { mapNodeSchema } from "../schemas";
 import { cleanPatch } from "./patch-utils";
@@ -48,5 +48,16 @@ export class PgNodeRepository implements INodeRepository {
 
   async delete(id: string): Promise<void> {
     await db.delete(mapNodes).where(eq(mapNodes.id, id));
+  }
+
+  async deleteManyWithEdges(storeId: string, ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    // neon-http has no interactive transactions; batch() runs these as one transaction.
+    await db.batch([
+      db
+        .delete(mapEdges)
+        .where(and(eq(mapEdges.storeId, storeId), or(inArray(mapEdges.fromNodeId, ids), inArray(mapEdges.toNodeId, ids)))),
+      db.delete(mapNodes).where(and(eq(mapNodes.storeId, storeId), inArray(mapNodes.id, ids))),
+    ]);
   }
 }

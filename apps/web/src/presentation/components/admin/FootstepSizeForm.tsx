@@ -40,6 +40,8 @@ export function FootstepSizeForm({
   footstepScale,
   updateFootstepScale,
 }: FootstepSizeFormProps) {
+  // Collapsed to one button until the admin opens it - the previews are big and rarely needed.
+  const [open, setOpen] = useState(false);
   const [value, setValue] = useState(footstepScale);
   const [saved, setSaved] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -86,10 +88,46 @@ export function FootstepSizeForm({
     </svg>
   );
 
+  const toast = saved && (
+    <div
+      role="status"
+      className="fixed bottom-6 start-1/2 z-50 -translate-x-1/2 rounded-full bg-neutral-900 px-4 py-2 text-sm font-medium text-white shadow-lg"
+    >
+      ✓ גודל הצעדים נשמר
+    </div>
+  );
+
+  if (!open) {
+    return (
+      <div className="flex">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-semibold text-neutral-700 hover:border-cyan-600 hover:text-cyan-700"
+        >
+          הגדרת גודל הצעדים במפה <span className="font-normal text-neutral-400">({Math.round(footstepScale * 100)}%)</span>
+        </button>
+        {toast}
+      </div>
+    );
+  }
+
   return (
     <section className="flex flex-col gap-4 rounded-xl border border-neutral-200 bg-white p-4">
       <div className="flex flex-col gap-1">
-        <h2 className="text-base font-semibold text-neutral-900">גודל הצעדים במפה</h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-base font-semibold text-neutral-900">גודל הצעדים במפה</h2>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              setValue(footstepScale);
+            }}
+            className="text-sm text-neutral-500 hover:text-neutral-900"
+          >
+            סגירה ✕
+          </button>
+        </div>
         <p className="text-xs text-neutral-500">
           טביעות הרגליים שמסמנות לקונה את הדרך למחלקה. המרווח בין הצעדים משתנה יחד עם הגודל. התצוגה למטה מציירת מסלול
           לדוגמה על מפת הסניף ברוחב שבו היא מוצגת באפליקציה.
@@ -143,14 +181,7 @@ export function FootstepSizeForm({
         </figure>
       </div>
 
-      {saved && (
-        <div
-          role="status"
-          className="fixed bottom-6 start-1/2 z-50 -translate-x-1/2 rounded-full bg-neutral-900 px-4 py-2 text-sm font-medium text-white shadow-lg"
-        >
-          ✓ גודל הצעדים נשמר
-        </div>
-      )}
+      {toast}
     </section>
   );
 }

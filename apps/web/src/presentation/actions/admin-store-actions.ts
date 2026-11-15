@@ -498,6 +498,26 @@ export async function uploadStoreImage(storeId: string, formData: FormData): Pro
   revalidatePath(`/admin/stores/${storeId}`);
 }
 
+/**
+ * Reset of the walking graph: deletes every waypoint of the store and every edge touching one.
+ * Departments, entrances and checkouts stay. A waypoint that products or a promotion are placed
+ * on is kept too - it's acting as a department, and deleting it would drop those placements.
+ */
+export async function resetWaypoints(storeId: string): Promise<{ deleted: number; kept: number }> {
+  await requireAdmin({ mapStore: storeId });
+  const [nodes, listings, promotions] = await Promise.all([
+    nodeRepository.findByStore(storeId),
+    productListingRepository.findByStore(storeId),
+    promotionRepository.findAll(),
+  ]);
+  const referencedIds = new Set([...listings.map((l) => l.nodeId), ...promotions.map((p) => p.attachedNodeId)]);
+  const waypoints = nodes.filter((n) => n.type === "waypoint");
+  const toDelete = waypoints.filter((n) => !referencedIds.has(n.id)).map((n) => n.id);
+  await nodeRepository.deleteManyWithEdges(storeId, toDelete);
+  revalidatePath(`/admin/stores/${storeId}`);
+  return { deleted: toDelete.length, kept: waypoints.length - toDelete.length };
+}
+
 /** One end of a waypoint line: an existing node (snapped to), or a spot on the map for a new waypoint. */
 export type WaypointLineEnd = { nodeId: string } | { x: number; y: number };
 

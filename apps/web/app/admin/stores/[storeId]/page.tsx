@@ -30,6 +30,7 @@ import {
   removeProductFromNode,
   removeProductsFromNode,
   removeShelfGroupFromNode,
+  resetWaypoints,
   setStorePriceBranch,
   updateMapVideoPosition,
   updateNodeArea,
@@ -187,6 +188,7 @@ export default async function AdminStoreDetailPage({
         setProductsShelfGroup={setProductsShelfGroup}
         uploadStoreImage={boundUploadStoreImage}
         createWaypointLine={createWaypointLine.bind(null, storeId)}
+        resetWaypoints={resetWaypoints.bind(null, storeId)}
         videos={videos}
         addMapVideo={addMapVideo.bind(null, storeId)}
         updateMapVideoPosition={updateMapVideoPosition.bind(null, storeId)}

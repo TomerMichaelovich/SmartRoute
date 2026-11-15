@@ -57,6 +57,8 @@ interface StoreLayoutEditorProps {
   uploadStoreImage: (formData: FormData) => Promise<void>;
   /** A straight corridor: `count` waypoints evenly between two ends, chained with edges. */
   createWaypointLine: (start: WaypointLineEnd, end: WaypointLineEnd, count: number) => Promise<void>;
+  /** Deletes all the store's waypoints (and their edges); departments, entrance and checkouts stay. */
+  resetWaypoints: () => Promise<{ deleted: number; kept: number }>;
   /** Videos of store areas pinned on the map - admin reference only, never part of the route graph. */
   videos: StoreMapVideo[];
   addMapVideo: (video: { videoUrl: string; title: string; x: number; y: number }) => Promise<void>;
@@ -230,6 +232,7 @@ export function StoreLayoutEditor({
   setProductsShelfGroup,
   uploadStoreImage,
   createWaypointLine,
+  resetWaypoints,
   videos,
   addMapVideo,
   updateMapVideoPosition,
@@ -242,6 +245,10 @@ export function StoreLayoutEditor({
   const [lineCount, setLineCount] = useState(5);
   const [lineCursor, setLineCursor] = useState<{ x: number; y: number } | null>(null);
   const [savingLine, setSavingLine] = useState(false);
+  // "Edit walking points" opens the waypoint tools: the line tool and the reset.
+  const [waypointToolsOpen, setWaypointToolsOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
   useEffect(() => {
     if (!lineMode) return;
     function handleKeyDown(e: KeyboardEvent) {
@@ -639,6 +646,35 @@ export function StoreLayoutEditor({
     setLineCursor(null);
   }
 
+  async function handleResetWaypoints() {
+    const count = nodes.filter((n) => n.type === "waypoint").length;
+    if (count === 0) {
+      setResetMessage("אין נקודות הליכה למחיקה.");
+      return;
+    }
+    if (
+      !window.confirm(
+        `למחוק את כל ${count} נקודות ההליכה ואת החיבורים שלהן?\nמחלקות, כניסות וקופות לא יימחקו. אי אפשר לבטל את הפעולה.`,
+      )
+    ) {
+      return;
+    }
+    setResetting(true);
+    setResetMessage(null);
+    try {
+      exitLineMode();
+      setSelectedNodeIds(new Set());
+      setSelectedEdgeIds(new Set());
+      const { deleted, kept } = await resetWaypoints();
+      setResetMessage(
+        `נמחקו ${deleted} נקודות הליכה.` +
+          (kept > 0 ? ` ${kept} נקודות נשארו כי משויכים אליהן מוצרים או מבצעים.` : ""),
+      );
+    } finally {
+      setResetting(false);
+    }
+  }
+
   function handleEdgeClick(e: React.MouseEvent, edge: MapEdge) {
     closePopups();
 
@@ -738,27 +774,54 @@ export function StoreLayoutEditor({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-base font-semibold text-neutral-900">עריכת פריסה חזותית</h2>
         <div className="flex flex-wrap items-center gap-2">
+          {waypointToolsOpen && (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setResetMessage(null);
+                  if (lineMode) {
+                    exitLineMode();
+                    return;
+                  }
+                  setSelectedNodeIds(new Set());
+                  setSelectedEdgeIds(new Set());
+                  closePopups();
+                  cancelAreaDrawing();
+                  setPlacingNode(false);
+                  setPlacingVideo(false);
+                  setLineMode(true);
+                }}
+                aria-pressed={lineMode}
+                className={`rounded-full px-3 py-1.5 text-sm font-semibold ${
+                  lineMode ? "bg-cyan-600 text-white" : "border border-cyan-600 bg-white text-cyan-700"
+                }`}
+              >
+                {lineMode ? "סיום הוספת קו" : "הוספת קו נקודות"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleResetWaypoints()}
+                disabled={resetting}
+                className="rounded-full border border-red-300 bg-white px-3 py-1.5 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+              >
+                {resetting ? "מוחק…" : "ריסט"}
+              </button>
+            </>
+          )}
           <button
             type="button"
             onClick={() => {
-              if (lineMode) {
-                exitLineMode();
-                return;
-              }
-              setSelectedNodeIds(new Set());
-              setSelectedEdgeIds(new Set());
-              closePopups();
-              cancelAreaDrawing();
-              setPlacingNode(false);
-              setPlacingVideo(false);
-              setLineMode(true);
+              if (waypointToolsOpen) exitLineMode();
+              setResetMessage(null);
+              setWaypointToolsOpen((v) => !v);
             }}
-            aria-pressed={lineMode}
+            aria-expanded={waypointToolsOpen}
             className={`rounded-full px-3 py-1.5 text-sm font-semibold ${
-              lineMode ? "border border-cyan-600 bg-white text-cyan-700" : "bg-cyan-600 text-white"
+              waypointToolsOpen ? "border border-cyan-600 bg-white text-cyan-700" : "bg-cyan-600 text-white"
             }`}
           >
-            {lineMode ? "סיום הוספת קו" : "הוספת קו נקודות"}
+            {waypointToolsOpen ? "סגירת עריכת נקודות הליכה" : "עריכת נקודות הליכה"}
           </button>
           <form
             action={uploadStoreImage}
@@ -871,6 +934,15 @@ export function StoreLayoutEditor({
               <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">
                 {disconnectedNodeIds.size === 1 ? "צומת אחד לא מחובר" : `${disconnectedNodeIds.size} צמתים לא מחוברים`}{" "}
                 לכניסה, ולכן מסלול לא יכול להגיע אליהם. הם מסומנים באדום - חברו אותם במצב &quot;הוספה וחיבור&quot;.
+              </p>
+            )}
+
+            {resetMessage && (
+              <p className="flex items-center justify-between gap-2 rounded-lg bg-neutral-100 p-2 text-sm text-neutral-700">
+                {resetMessage}
+                <button type="button" onClick={() => setResetMessage(null)} className="text-neutral-400 hover:text-neutral-700">
+                  ✕
+                </button>
               </p>
             )}
 
