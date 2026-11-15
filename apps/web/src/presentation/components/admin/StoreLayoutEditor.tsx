@@ -249,15 +249,29 @@ export function StoreLayoutEditor({
   const [waypointToolsOpen, setWaypointToolsOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [resetMessage, setResetMessage] = useState<string | null>(null);
+  // Shift held while drawing a line straightens it to horizontal or vertical. Tracked from the
+  // keyboard too, so pressing Shift updates the preview without moving the mouse.
+  const [shiftHeld, setShiftHeld] = useState(false);
   useEffect(() => {
     if (!lineMode) return;
     function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Shift") setShiftHeld(true);
       if (e.key !== "Escape") return;
       if (lineDraft) setLineDraft(null);
       else setLineMode(false);
     }
+    function handleKeyUp(e: KeyboardEvent) {
+      if (e.key === "Shift") setShiftHeld(false);
+    }
+    const releaseShift = () => setShiftHeld(false);
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", releaseShift);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", releaseShift);
+    };
   }, [lineMode, lineDraft]);
   // A department's area being drawn: each click on the map adds a corner; the lines follow the cursor.
   const [areaDraft, setAreaDraft] = useState<{ nodeId: string; points: Array<{ x: number; y: number }> } | null>(null);
@@ -613,9 +627,21 @@ export function StoreLayoutEditor({
     return best ? { nodeId: best.node.id, ...best.node.position } : point;
   }
 
+  /** Straightens start→point to horizontal or vertical, whichever it's closer to. */
+  function constrainToAxis(start: { x: number; y: number }, point: { x: number; y: number }) {
+    const dx = Math.abs((point.x - start.x) * mapWidth);
+    const dy = Math.abs((point.y - start.y) * mapHeight);
+    return dx >= dy ? { x: point.x, y: start.y } : { x: start.x, y: point.y };
+  }
+
   function handleLineClick(e: React.MouseEvent) {
     if (savingLine) return;
-    const end = snapLineEnd(screenToNormalized(e.clientX, e.clientY));
+    let point = screenToNormalized(e.clientX, e.clientY);
+    const drawingEnd = lineDraft && !lineDraft.end;
+    if (drawingEnd && e.shiftKey) point = constrainToAxis(lineDraft.start, point);
+    // A straightened end still joins a node right where it lands (off the axis by at most the
+    // node's small click radius) - connecting the corridor matters more than a perfect line.
+    const end = snapLineEnd(point);
     // No line yet, or one already complete: this click starts a new one.
     if (!lineDraft || lineDraft.end) {
       setLineDraft({ start: end, end: null });
@@ -718,6 +744,10 @@ export function StoreLayoutEditor({
   const showsProductPanel = singleSelectedNode?.type === "department";
   // The drawing only lives while its department is the one selected.
   const activeAreaDraft = areaDraft && singleSelectedNode?.id === areaDraft.nodeId ? areaDraft : null;
+  // Where the line being drawn ends: its set end, else the cursor (straightened while Shift is held).
+  const lineEndPreview =
+    lineDraft?.end ??
+    (lineDraft && lineCursor ? (shiftHeld ? constrainToAxis(lineDraft.start, lineCursor) : lineCursor) : null);
   const toSvgPoints = (points: Array<{ x: number; y: number }>) =>
     points.map((p) => `${p.x * mapWidth},${p.y * mapHeight}`).join(" ");
   const listedProductIdsAtNode = new Set(
@@ -952,7 +982,7 @@ export function StoreLayoutEditor({
                   {!lineDraft
                     ? "1. לחצו על נקודת ההתחלה של הקו"
                     : !lineDraft.end
-                      ? "2. לחצו על נקודת הסיום"
+                      ? "2. לחצו על נקודת הסיום (החזיקו Shift לקו אופקי או אנכי)"
                       : "3. בחרו כמה נקודות יהיו בקו ולחצו על צור קו"}
                 </span>
                 {lineDraft?.end && (
@@ -1220,12 +1250,12 @@ export function StoreLayoutEditor({
                 )}
                 {lineMode && (
                   <g>
-                    {lineDraft && (lineDraft.end ?? lineCursor) && (
+                    {lineDraft && lineEndPreview && (
                       <line
                         x1={lineDraft.start.x * mapWidth}
                         y1={lineDraft.start.y * mapHeight}
-                        x2={(lineDraft.end ?? lineCursor)!.x * mapWidth}
-                        y2={(lineDraft.end ?? lineCursor)!.y * mapHeight}
+                        x2={lineEndPreview.x * mapWidth}
+                        y2={lineEndPreview.y * mapHeight}
                         stroke={LINE_COLOR}
                         strokeWidth={3}
                         strokeDasharray={lineDraft.end ? undefined : "8 5"}
@@ -1276,7 +1306,10 @@ export function StoreLayoutEditor({
                       className="cursor-crosshair"
                       onClick={handleLineClick}
                       onPointerDown={(e) => e.stopPropagation()}
-                      onPointerMove={(e) => setLineCursor(screenToNormalized(e.clientX, e.clientY))}
+                      onPointerMove={(e) => {
+                        setLineCursor(screenToNormalized(e.clientX, e.clientY));
+                        setShiftHeld(e.shiftKey);
+                      }}
                       onPointerLeave={() => setLineCursor(null)}
                     />
                   </g>
