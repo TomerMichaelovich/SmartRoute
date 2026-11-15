@@ -67,6 +67,7 @@ export const mapNodeSchema = z.object({
   position: geoPointSchema,
   zone: z.string().optional(),
   iconKey: z.string().optional(),
+  area: z.array(geoPointSchema).min(3).optional(),
 });
 
 export const mapEdgeSchema = z.object({

@@ -211,6 +211,7 @@ export const mapNodes = pgTable(
     position: jsonb("position").notNull().$type<{ x: number; y: number }>(),
     zone: text("zone"),
     iconKey: text("icon_key"),
+    area: jsonb("area").$type<Array<{ x: number; y: number }>>(),
   },
   (table) => [index("map_nodes_store_id_idx").on(table.storeId)],
 );

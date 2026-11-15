@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, View } from "react-native";
-import Svg, { Circle, Ellipse, G, Image as SvgImage, Path, Rect, Text as SvgText } from "react-native-svg";
+import Svg, { Circle, Ellipse, G, Image as SvgImage, Path, Polygon, Rect, Text as SvgText } from "react-native-svg";
 import type { MapNode } from "@smartroute/core/domain/entities/map-node";
 import type { RouteStop } from "@smartroute/core/domain/entities/route";
 import {
@@ -188,6 +188,18 @@ export function StoreMap({
         <Svg width="100%" height="100%" viewBox={`0 0 ${mapWidth} ${mapHeight}`}>
           {mapImageUrl && (
             <SvgImage href={mapImageUrl} x={0} y={0} width={mapWidth} height={mapHeight} preserveAspectRatio="xMidYMid slice" />
+          )}
+
+          {/* The department the shopper is heading to, lit up in light blue where the admin outlined it. */}
+          {currentNode?.area && currentNode.area.length >= 3 && (
+            <Polygon
+              points={currentNode.area.map((p) => `${p.x * mapWidth},${p.y * mapHeight}`).join(" ")}
+              fill="#38bdf8"
+              fillOpacity={0.35}
+              stroke="#0ea5e9"
+              strokeWidth={3 * scale}
+              strokeLinejoin="round"
+            />
           )}
 
           {footsteps.map((step, i) => (

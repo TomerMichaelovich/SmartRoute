@@ -33,6 +33,7 @@ import {
   saveWalkableMap,
   setStorePriceBranch,
   updateMapVideoPosition,
+  updateNodeArea,
   updateNodeLabel,
   updateNodePosition,
   updateStore,
@@ -169,6 +170,7 @@ export default async function AdminStoreDetailPage({
         deleteEdge={deleteEdge}
         updateNodePosition={boundUpdateNodePosition}
         updateNodeLabel={updateNodeLabel}
+        updateNodeArea={updateNodeArea.bind(null, storeId)}
         addProductToNode={addProductToNode}
         removeProductFromNode={removeProductFromNode}
         placeShelfGroupOnNode={placeShelfGroupOnNode}

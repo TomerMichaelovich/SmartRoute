@@ -39,6 +39,8 @@ interface StoreLayoutEditorProps {
   deleteEdge: (storeId: string, edgeId: string) => Promise<void>;
   updateNodePosition: (nodeId: string, x: number, y: number) => Promise<void>;
   updateNodeLabel: (storeId: string, nodeId: string, formData: FormData) => Promise<void>;
+  /** Sets (null: clears) the polygon a department covers - lit up on the shopper's map. */
+  updateNodeArea: (nodeId: string, area: Array<{ x: number; y: number }> | null) => Promise<void>;
   addProductToNode: (storeId: string, nodeId: string, formData: FormData) => Promise<void>;
   removeProductFromNode: (storeId: string, nodeId: string, productId: string) => Promise<void>;
   placeShelfGroupOnNode: (storeId: string, nodeId: string, groupId: string) => Promise<number>;
@@ -82,6 +84,11 @@ function nodeRadius(type: MapNodeType): number {
 const LABEL_FONT_SIZE = 18;
 const VIDEO_PIN_RADIUS = 20;
 const DISCONNECTED_COLOR = "#dc2626";
+// A department's area: light blue (the shopper's map lights it up the same way).
+const AREA_FILL = "#38bdf8";
+const AREA_STROKE = "#0284c7";
+// Clicking this close to the first point of an area being drawn closes it (fraction of map width).
+const AREA_CLOSE_DISTANCE = 0.015;
 
 /**
  * Nodes a route can never reach: everything outside the part of the graph that's connected
@@ -206,6 +213,7 @@ export function StoreLayoutEditor({
   deleteEdge,
   updateNodePosition,
   updateNodeLabel,
+  updateNodeArea,
   addProductToNode,
   removeProductFromNode,
   placeShelfGroupOnNode,
@@ -226,6 +234,15 @@ export function StoreLayoutEditor({
   deleteMapVideo,
 }: StoreLayoutEditorProps) {
   const [walkableMode, setWalkableMode] = useState(false);
+  // A department's area being drawn: each click on the map adds a corner; the lines follow the cursor.
+  const [areaDraft, setAreaDraft] = useState<{ nodeId: string; points: Array<{ x: number; y: number }> } | null>(null);
+  const [areaCursor, setAreaCursor] = useState<{ x: number; y: number } | null>(null);
+  const [savingArea, setSavingArea] = useState(false);
+  // Read by the Esc handler, which is registered once.
+  const areaDraftRef = useRef(areaDraft);
+  useEffect(() => {
+    areaDraftRef.current = areaDraft;
+  }, [areaDraft]);
   // The split alias being moved to another node, while its move runs.
   const [movingAlias, setMovingAlias] = useState<string | null>(null);
   const [, startMoveTransition] = useTransition();
@@ -264,6 +281,12 @@ export function StoreLayoutEditor({
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
+      // While drawing an area, Esc only drops the drawing - the department stays selected.
+      if (areaDraftRef.current) {
+        setAreaDraft(null);
+        setAreaCursor(null);
+        return;
+      }
       setAddPopup(null);
       setPlacingNode(false);
       setPlacingVideo(false);
@@ -509,6 +532,50 @@ export function StoreLayoutEditor({
     setVideoDrag(null);
   }
 
+  function startAreaDrawing(nodeId: string) {
+    closePopups();
+    setPlacingNode(false);
+    setPlacingVideo(false);
+    setAreaCursor(null);
+    setAreaDraft({ nodeId, points: [] });
+  }
+
+  function cancelAreaDrawing() {
+    setAreaDraft(null);
+    setAreaCursor(null);
+  }
+
+  async function saveArea(nodeId: string, area: Array<{ x: number; y: number }> | null) {
+    setSavingArea(true);
+    try {
+      await updateNodeArea(nodeId, area);
+      cancelAreaDrawing();
+    } finally {
+      setSavingArea(false);
+    }
+  }
+
+  function handleAreaClick(e: React.MouseEvent) {
+    if (!areaDraft || savingArea) return;
+    const point = screenToNormalized(e.clientX, e.clientY);
+    const first = areaDraft.points[0];
+    // A click back on the first corner closes the shape and saves it.
+    if (
+      first &&
+      areaDraft.points.length >= 3 &&
+      Math.hypot((point.x - first.x) * mapWidth, (point.y - first.y) * mapHeight) <= AREA_CLOSE_DISTANCE * mapWidth
+    ) {
+      void saveArea(areaDraft.nodeId, areaDraft.points);
+      return;
+    }
+    setAreaDraft({ ...areaDraft, points: [...areaDraft.points, point] });
+  }
+
+  function undoAreaPoint() {
+    if (!areaDraft) return;
+    setAreaDraft({ ...areaDraft, points: areaDraft.points.slice(0, -1) });
+  }
+
   function handleEdgeClick(e: React.MouseEvent, edge: MapEdge) {
     closePopups();
 
@@ -550,6 +617,10 @@ export function StoreLayoutEditor({
       : null;
 
   const showsProductPanel = singleSelectedNode?.type === "department";
+  // The drawing only lives while its department is the one selected.
+  const activeAreaDraft = areaDraft && singleSelectedNode?.id === areaDraft.nodeId ? areaDraft : null;
+  const toSvgPoints = (points: Array<{ x: number; y: number }>) =>
+    points.map((p) => `${p.x * mapWidth},${p.y * mapHeight}`).join(" ");
   const listedProductIdsAtNode = new Set(
     showsProductPanel
       ? listings.filter((l) => l.nodeId === singleSelectedNode!.id).map((l) => l.productId)
@@ -663,6 +734,7 @@ export function StoreLayoutEditor({
                     onClick={() => {
                       closePopups();
                       setPlacingNode(false);
+                      cancelAreaDrawing();
                       setSelectedNodeIds(new Set());
                       setSelectedEdgeIds(new Set());
                       setEditMode(mode);
@@ -779,6 +851,22 @@ export function StoreLayoutEditor({
                       העלו תמונת מפה כדי להתחיל
                     </text>
                   </>
+                )}
+
+                {nodes.map((node) =>
+                  node.type === "department" && node.area && node.id !== activeAreaDraft?.nodeId ? (
+                    <polygon
+                      key={`area-${node.id}`}
+                      points={toSvgPoints(node.area)}
+                      fill={AREA_FILL}
+                      fillOpacity={selectedNodeIds.has(node.id) ? 0.4 : 0.15}
+                      stroke={AREA_STROKE}
+                      strokeOpacity={selectedNodeIds.has(node.id) ? 1 : 0.5}
+                      strokeWidth={2}
+                      vectorEffect="non-scaling-stroke"
+                      pointerEvents="none"
+                    />
+                  ) : null,
                 )}
 
                 {edges.map((edge) => {
@@ -899,6 +987,57 @@ export function StoreLayoutEditor({
                     pointerEvents="none"
                   />
                 )}
+
+                {activeAreaDraft && (
+                  <g>
+                    {activeAreaDraft.points.length >= 3 && (
+                      <polygon
+                        points={toSvgPoints(activeAreaDraft.points)}
+                        fill={AREA_FILL}
+                        fillOpacity={0.3}
+                        stroke="none"
+                        pointerEvents="none"
+                      />
+                    )}
+                    <polyline
+                      points={toSvgPoints(
+                        areaCursor ? [...activeAreaDraft.points, areaCursor] : activeAreaDraft.points,
+                      )}
+                      fill="none"
+                      stroke={AREA_STROKE}
+                      strokeWidth={3}
+                      strokeDasharray="8 5"
+                      vectorEffect="non-scaling-stroke"
+                      pointerEvents="none"
+                    />
+                    {activeAreaDraft.points.map((p, i) => (
+                      <circle
+                        key={i}
+                        cx={p.x * mapWidth}
+                        cy={p.y * mapHeight}
+                        r={i === 0 && activeAreaDraft.points.length >= 3 ? AREA_CLOSE_DISTANCE * mapWidth : 6}
+                        fill={i === 0 ? "#ffffff" : AREA_STROKE}
+                        fillOpacity={i === 0 ? 0.8 : 1}
+                        stroke={AREA_STROKE}
+                        strokeWidth={2}
+                        vectorEffect="non-scaling-stroke"
+                        pointerEvents="none"
+                      />
+                    ))}
+                    {/* Over everything while drawing, so a click on a node or line adds a corner too. */}
+                    <rect
+                      x={0}
+                      y={0}
+                      width={mapWidth}
+                      height={mapHeight}
+                      fill="transparent"
+                      className="cursor-crosshair"
+                      onClick={handleAreaClick}
+                      onPointerMove={(e) => setAreaCursor(screenToNormalized(e.clientX, e.clientY))}
+                      onPointerLeave={() => setAreaCursor(null)}
+                    />
+                  </g>
+                )}
               </svg>
 
               {videoPopup && (
@@ -1006,6 +1145,67 @@ export function StoreLayoutEditor({
                 </button>
                 <span className="text-xs text-neutral-400">{NODE_TYPE_LABELS[singleSelectedNode.type]}</span>
               </form>
+
+              <div className="flex flex-col gap-2 rounded-lg border border-sky-200 bg-sky-50 p-2 text-sm">
+                {activeAreaDraft ? (
+                  <>
+                    <p className="text-sky-900">
+                      לחצו על המפה בפינות האזור, אחת אחרי השנייה. לסיום - לחצו שוב על הנקודה הראשונה או על
+                      &quot;סיום ושמירה&quot; · Esc לביטול ({activeAreaDraft.points.length} נקודות)
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={activeAreaDraft.points.length < 3 || savingArea}
+                        onClick={() => void saveArea(activeAreaDraft.nodeId, activeAreaDraft.points)}
+                        className="rounded-lg bg-sky-600 px-3 py-1 font-semibold text-white disabled:opacity-40"
+                      >
+                        {savingArea ? "שומר..." : "סיום ושמירה"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={activeAreaDraft.points.length === 0 || savingArea}
+                        onClick={undoAreaPoint}
+                        className="rounded-lg border border-sky-300 bg-white px-3 py-1 text-sky-800 disabled:opacity-40"
+                      >
+                        ביטול נקודה אחרונה
+                      </button>
+                      <button
+                        type="button"
+                        disabled={savingArea}
+                        onClick={cancelAreaDrawing}
+                        className="rounded-lg border border-neutral-300 bg-white px-3 py-1 text-neutral-600"
+                      >
+                        ביטול
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-sky-900">אזור המחלקה:</span>
+                    <span className="text-sky-800">
+                      {singleSelectedNode.area ? "מוגדר - יואר בתכלת כשהלקוח צריך להגיע לכאן" : "לא מוגדר"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => startAreaDrawing(singleSelectedNode.id)}
+                      className="rounded-lg bg-sky-600 px-3 py-1 font-semibold text-white"
+                    >
+                      {singleSelectedNode.area ? "סימון מחדש" : "סימון אזור"}
+                    </button>
+                    {singleSelectedNode.area && (
+                      <button
+                        type="button"
+                        disabled={savingArea}
+                        onClick={() => void saveArea(singleSelectedNode.id, null)}
+                        className="text-red-600 hover:underline disabled:opacity-40"
+                      >
+                        מחיקת אזור
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {splitHere.length > 0 && (
                 <div className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">

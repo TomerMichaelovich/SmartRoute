@@ -284,6 +284,32 @@ export async function updateNodeLabel(storeId: string, nodeId: string, formData:
   revalidatePath(`/admin/stores/${storeId}`);
 }
 
+const MAX_AREA_POINTS = 200;
+
+/**
+ * Sets the floor area a department covers - a polygon the admin drew around it on the map -
+ * or clears it with null. The shopper's map lights the area up while it's the next stop.
+ */
+export async function updateNodeArea(
+  storeId: string,
+  nodeId: string,
+  area: Array<{ x: number; y: number }> | null,
+): Promise<void> {
+  await requireAdmin({ mapStore: storeId });
+  const node = await nodeRepository.findById(nodeId);
+  if (node?.storeId !== storeId) throw new Error("Unauthorized");
+  if (node.type !== "department") throw new Error("Only departments have an area");
+  if (area === null) {
+    await nodeRepository.setArea(nodeId, null);
+  } else {
+    const clamp = (n: unknown) => Math.max(0, Math.min(1, Number(n) || 0));
+    const points = area.slice(0, MAX_AREA_POINTS).map((p) => ({ x: clamp(p.x), y: clamp(p.y) }));
+    if (points.length < 3) throw new Error("An area needs at least 3 points");
+    await nodeRepository.setArea(nodeId, points);
+  }
+  revalidatePath(`/admin/stores/${storeId}`);
+}
+
 export async function addProductToNode(storeId: string, nodeId: string, formData: FormData): Promise<void> {
   await requireAdmin({ mapStore: storeId });
   await assertNodeInStore(storeId, nodeId);

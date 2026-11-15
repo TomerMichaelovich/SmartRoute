@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { MapNode } from "@smartroute/core/domain/entities/map-node";
+import type { GeoPoint } from "@smartroute/core/domain/value-objects/geo-point";
 import { db } from "../../db/client";
 import { mapNodes } from "../../db/schema";
 import type { INodeRepository } from "../interfaces/node-repository";
@@ -11,6 +12,7 @@ function toDomain(row: typeof mapNodes.$inferSelect): MapNode {
     ...row,
     zone: row.zone ?? undefined,
     iconKey: row.iconKey ?? undefined,
+    area: row.area && row.area.length >= 3 ? row.area : undefined,
   });
 }
 
@@ -38,6 +40,10 @@ export class PgNodeRepository implements INodeRepository {
       .returning();
     if (!row) throw new Error(`MapNode not found: ${id}`);
     return toDomain(row);
+  }
+
+  async setArea(id: string, area: GeoPoint[] | null): Promise<void> {
+    await db.update(mapNodes).set({ area }).where(eq(mapNodes.id, id));
   }
 
   async delete(id: string): Promise<void> {
