@@ -10,6 +10,7 @@ import {
   footstepTrailMetrics,
   type FootstepPlacement,
 } from "@smartroute/core/map/footstep-trail";
+import { MINOR_LABEL_FONT_FRACTION } from "@smartroute/core/map/map-labels";
 import { he } from "@smartroute/core/i18n/he";
 import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
@@ -167,7 +168,7 @@ export function StoreMap({
   const markerRadius = mapWidth * 0.022;
   const markerFontSize = mapWidth * 0.025;
   const labelFontSize = mapWidth * 0.025;
-  const minorLabelFontSize = mapWidth * 0.019;
+  const minorLabelFontSize = mapWidth * MINOR_LABEL_FONT_FRACTION;
 
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
   const stopByNodeId = new Map(stops.map((s) => [s.nodeId, s]));

@@ -7,6 +7,7 @@ import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ProductListing } from "@smartroute/core/domain/entities/product-listing";
 import { distanceBetweenNodes } from "@smartroute/core/domain/value-objects/geo-point";
 import { findUnroutableNodeIds } from "@smartroute/core/application/routing/reachability";
+import { MINOR_LABEL_FONT_FRACTION } from "@smartroute/core/map/map-labels";
 import { NODE_TYPE_LABELS } from "@/src/presentation/node-type-labels";
 import type { WaypointLinePoint, WaypointLineSegment } from "@/src/presentation/actions/admin-store-actions";
 import {
@@ -193,6 +194,8 @@ function NodeLabel({
   color,
   selected,
   disconnected,
+  fontSize = LABEL_FONT_SIZE,
+  mapWidth,
 }: {
   x: number;
   y: number;
@@ -200,19 +203,25 @@ function NodeLabel({
   color: string;
   selected: boolean;
   disconnected: boolean;
+  /** Defaults to the editor's own label size; entrance/exit/checkout pass the app's. */
+  fontSize?: number;
+  /** When given, the box is kept inside the map like the app does. */
+  mapWidth?: number;
 }) {
   const lines = (text || "?").split("\n").map((l) => l.trim()).filter(Boolean);
-  const lineHeight = LABEL_FONT_SIZE * 1.2;
-  const width = Math.max(...lines.map((l) => l.length)) * LABEL_FONT_SIZE * LABEL_CHAR_WIDTH_EM + LABEL_FONT_SIZE;
-  const height = lines.length * lineHeight + LABEL_FONT_SIZE * 0.5;
+  const lineHeight = fontSize * 1.2;
+  const width = Math.max(...lines.map((l) => l.length)) * fontSize * LABEL_CHAR_WIDTH_EM + fontSize;
+  const height = lines.length * lineHeight + fontSize * 0.5;
   const top = y - height / 2;
+  // The app nudges a label that would stick out past the map's edge back inside it.
+  const cx = mapWidth === undefined ? x : Math.min(Math.max(x, width / 2), mapWidth - width / 2);
   return (
     <>
       {selected && (
-        <rect x={x - width / 2 - 5} y={top - 5} width={width + 10} height={height + 10} rx={12} fill="none" stroke="#059669" strokeWidth={3} />
+        <rect x={cx - width / 2 - 5} y={top - 5} width={width + 10} height={height + 10} rx={12} fill="none" stroke="#059669" strokeWidth={3} />
       )}
       <rect
-        x={x - width / 2}
+        x={cx - width / 2}
         y={top}
         width={width}
         height={height}
@@ -224,10 +233,10 @@ function NodeLabel({
       {lines.map((line, i) => (
         <text
           key={i}
-          x={x}
-          y={top + LABEL_FONT_SIZE * 0.25 + lineHeight * i + LABEL_FONT_SIZE * 0.95}
+          x={cx}
+          y={top + fontSize * 0.25 + lineHeight * i + fontSize * 0.95}
           textAnchor="middle"
-          fontSize={LABEL_FONT_SIZE}
+          fontSize={fontSize}
           fontWeight={700}
           fill="#111827"
         >
@@ -1738,6 +1747,10 @@ export function StoreLayoutEditor({
                           color={NODE_COLORS[node.type]}
                           selected={isSelected}
                           disconnected={disconnectedNodeIds.has(node.id)}
+                          // Entrance, exit and checkout at the size the shopper's app shows them.
+                          {...(node.type === "entrance" || node.type === "exit" || node.type === "checkout"
+                            ? { fontSize: MINOR_LABEL_FONT_FRACTION * mapWidth, mapWidth }
+                            : {})}
                         />
                       )}
                     </g>
