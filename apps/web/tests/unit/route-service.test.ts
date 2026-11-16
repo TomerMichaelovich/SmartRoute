@@ -34,9 +34,9 @@ describe("dijkstra against the seeded store graph", () => {
   // Ground truth computed by running the real implementation against the seeded graph -
   // edge weights are straight-line distance between node coordinates in the store's pixel
   // canvas (relative map-space units, not real-world distance), not hand-typed integers, so
-  // these are irrational and compared with a tolerance. The entrance-checkout direct edge
-  // still makes several of these shorter via checkout than the "long way around" through
-  // bakery/dairy/frozen.
+  // these are irrational and compared with a tolerance. No path leads out of a checkout, so
+  // the entrance-checkout direct edge can't be used as a shortcut to the far side: those
+  // nodes are reached the long way around through bakery/dairy/frozen.
   const graph = buildGraph(demoNodes, demoEdges, demoStore.mapWidth, demoStore.mapHeight);
   const fromEntrance = dijkstra(graph, "n-entrance");
 
@@ -46,12 +46,31 @@ describe("dijkstra against the seeded store graph", () => {
     ["n-bakery", 250],
     ["n-int-1", 550],
     ["n-dairy", 850],
-    ["n-meat-fish", 920.087713],
-    ["n-int-3", 1220.087713],
+    ["n-meat-fish", 2050],
+    ["n-int-3", 1750],
     ["n-personal-care", 1021.699057],
-    ["n-beverages", 1478.201596],
+    ["n-beverages", 1571.699057],
   ])("shortest distance entrance -> %s is ~%s", (nodeId, expected) => {
     expect(fromEntrance.distances.get(nodeId)).toBeCloseTo(expected, 5);
+  });
+});
+
+describe("checkouts end the route", () => {
+  it("no path leads out of a checkout", () => {
+    const graph = buildGraph(demoNodes, demoEdges, demoStore.mapWidth, demoStore.mapHeight);
+    for (const node of demoNodes.filter((n) => n.type === "checkout")) {
+      expect(graph.adjacency.get(node.id)).toEqual([]);
+    }
+  });
+
+  it("a one-way edge is walkable only from its fromNodeId", () => {
+    const nodes = [
+      { id: "a", storeId: "s", type: "waypoint" as const, label: "a", position: { x: 0, y: 0 } },
+      { id: "b", storeId: "s", type: "waypoint" as const, label: "b", position: { x: 1, y: 0 } },
+    ];
+    const graph = buildGraph(nodes, [{ id: "e", storeId: "s", fromNodeId: "a", toNodeId: "b", bidirectional: false }], 100, 100);
+    expect(graph.adjacency.get("a")!.map((n) => n.to)).toEqual(["b"]);
+    expect(graph.adjacency.get("b")).toEqual([]);
   });
 });
 

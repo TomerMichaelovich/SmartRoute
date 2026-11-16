@@ -106,6 +106,19 @@ const LINE_COLOR = "#0891b2";
 // How close a click must land to a drawn line's point to start the next line from it (fraction of map width).
 const DRAFT_POINT_HIT = 0.012;
 
+// Alignment grid: square cells, this many across the map's width (the density slider's range).
+const GRID_CELLS_MIN = 10;
+const GRID_CELLS_MAX = 100;
+const GRID_CELLS_DEFAULT = 40;
+
+interface GridSettings {
+  visible: boolean;
+  cells: number;
+  snap: boolean;
+}
+
+const DEFAULT_GRID: GridSettings = { visible: false, cells: GRID_CELLS_DEFAULT, snap: true };
+
 /** One end of a waypoint line being drawn: snapped to an existing node, or a spot on the map. */
 type LineDraftEnd = { nodeId?: string; x: number; y: number };
 
@@ -265,6 +278,36 @@ export function StoreLayoutEditor({
   const [waypointToolsOpen, setWaypointToolsOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [resetMessage, setResetMessage] = useState<string | null>(null);
+  // Alignment grid, remembered per store in this browser only (it's an editing aid, not map data).
+  const gridStorageKey = `navio.mapGrid.${storeId}`;
+  const [grid, setGrid] = useState<GridSettings>(DEFAULT_GRID);
+  const gridLoadedRef = useRef(false);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(gridStorageKey) ?? "null") as Partial<GridSettings> | null;
+      if (saved) {
+        // localStorage isn't available during SSR, so the saved settings can only load after mount.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setGrid({
+          visible: saved.visible === true,
+          cells: Math.min(GRID_CELLS_MAX, Math.max(GRID_CELLS_MIN, Number(saved.cells) || GRID_CELLS_DEFAULT)),
+          snap: saved.snap !== false,
+        });
+      }
+    } catch {
+      // No storage (private window, blocked site data): the defaults do.
+    }
+    gridLoadedRef.current = true;
+  }, [gridStorageKey]);
+  useEffect(() => {
+    if (!gridLoadedRef.current) return;
+    try {
+      window.localStorage.setItem(gridStorageKey, JSON.stringify(grid));
+    } catch {
+      // Not remembered - fine.
+    }
+  }, [grid, gridStorageKey]);
+  const gridSpacing = mapWidth / grid.cells;
   // Shift held while drawing a line straightens it to horizontal or vertical. Tracked from the
   // keyboard too, so pressing Shift updates the preview without moving the mouse.
   const [shiftHeld, setShiftHeld] = useState(false);
@@ -368,6 +411,17 @@ export function StoreLayoutEditor({
     };
   }
 
+  /**
+   * Snaps a normalized point to the nearest grid crossing while the grid is shown with snapping
+   * on. Holding Alt places freely.
+   */
+  function snapToGrid(point: { x: number; y: number }, altKey: boolean): { x: number; y: number } {
+    if (!grid.visible || !grid.snap || altKey) return point;
+    const snap = (value: number, size: number) =>
+      Math.max(0, Math.min(1, (Math.round((value * size) / gridSpacing) * gridSpacing) / size));
+    return { x: snap(point.x, mapWidth), y: snap(point.y, mapHeight) };
+  }
+
   function containerOffset(clientX: number, clientY: number): { left: number; top: number } {
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return { left: 0, top: 0 };
@@ -414,20 +468,22 @@ export function StoreLayoutEditor({
       setSelectedEdgeIds(new Set());
       return;
     }
+    // New departments and waypoints land on the grid too.
+    const placed = snapToGrid({ x, y }, e.altKey);
     if (placingNode) {
       const { left, top } = containerOffset(e.clientX, e.clientY);
       setPlacingNode(false);
       setSelectedNodeIds(new Set());
       setSelectedEdgeIds(new Set());
-      setAddPopup({ screenLeft: left, screenTop: top, normX: x, normY: y, presetType: "department" });
+      setAddPopup({ screenLeft: left, screenTop: top, normX: placed.x, normY: placed.y, presetType: "department" });
       return;
     }
     const newNodeId = crypto.randomUUID();
     const formData = new FormData();
     formData.set("id", newNodeId);
     formData.set("type", "waypoint");
-    formData.set("x", String(x));
-    formData.set("y", String(y));
+    formData.set("x", String(placed.x));
+    formData.set("y", String(placed.y));
     enqueueMutation(() => createNode(formData));
 
     if (selectedNodeIds.size === 1 && selectedEdgeIds.size === 0) {
@@ -540,7 +596,7 @@ export function StoreLayoutEditor({
     const dy = e.clientY - start.clientY;
     if (!start.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
     start.moved = true;
-    const { x, y } = screenToNormalized(e.clientX, e.clientY);
+    const { x, y } = snapToGrid(screenToNormalized(e.clientX, e.clientY), e.altKey);
     setDragState({ nodeId: node.id, x, y });
   }
 
@@ -551,7 +607,7 @@ export function StoreLayoutEditor({
 
     if (start.moved) {
       justDraggedRef.current = true;
-      const { x, y } = screenToNormalized(e.clientX, e.clientY);
+      const { x, y } = snapToGrid(screenToNormalized(e.clientX, e.clientY), e.altKey);
       setDragState(null);
       await updateNodePosition(node.id, x, y);
     }
@@ -691,7 +747,8 @@ export function StoreLayoutEditor({
     } else {
       // A straightened end still joins a node right where it lands (off the axis by at most the
       // node's click area) - connecting the corridor matters more than a perfect line.
-      const point = pendingPoint && e.shiftKey ? constrainToAxis(pendingPoint, cursor) : cursor;
+      const onGrid = snapToGrid(cursor, e.altKey);
+      const point = pendingPoint && e.shiftKey ? constrainToAxis(pendingPoint, onGrid) : onGrid;
       ({ draft, key } = addPoint(draft, snapLineEnd(point, e.clientX, e.clientY), newKey));
     }
     if (!pendingFrom || !pendingPoint) {
@@ -711,11 +768,11 @@ export function StoreLayoutEditor({
     setLineDraft(connect(draft, pendingFrom, key, count));
   }
 
-  /** The slider sets the in-between points of the line drawn last. */
-  function setLastLineCount(count: number) {
+  /** The slider edits the line drawn last. */
+  function updateLastLine(patch: { count?: number }) {
     if (lineDraft.segments.length === 0) return;
     const segments = [...lineDraft.segments];
-    segments[segments.length - 1] = { ...segments[segments.length - 1], count };
+    segments[segments.length - 1] = { ...segments[segments.length - 1], ...patch };
     setLineDraft({ ...lineDraft, segments });
   }
 
@@ -799,6 +856,7 @@ export function StoreLayoutEditor({
   const disconnectedNodeIds = findDisconnectedNodeIds(nodes, edges);
   const hasEntrance = nodes.some((n) => n.type === "entrance");
   const totalSelected = selectedNodeIds.size + selectedEdgeIds.size;
+
   const singleSelectedNode =
     totalSelected === 1 && selectedNodeIds.size === 1
       ? (nodeById.get(Array.from(selectedNodeIds)[0]) ?? null)
@@ -1017,6 +1075,42 @@ export function StoreLayoutEditor({
               >
                 {hideDepartments ? "הצגת מחלקות" : "הסתרת מחלקות"}
               </button>
+              <button
+                type="button"
+                onClick={() => setGrid((g) => ({ ...g, visible: !g.visible }))}
+                aria-pressed={grid.visible}
+                className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                  grid.visible ? "bg-cyan-600 text-white" : "border border-neutral-300 bg-white text-neutral-700"
+                }`}
+              >
+                {grid.visible ? "הסתרת רשת" : "# רשת"}
+              </button>
+              {grid.visible && (
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-1 text-sm text-neutral-700">
+                  <label htmlFor="grid-cells">צפיפות</label>
+                  <input
+                    id="grid-cells"
+                    type="range"
+                    min={GRID_CELLS_MIN}
+                    max={GRID_CELLS_MAX}
+                    step={1}
+                    value={grid.cells}
+                    onChange={(e) => setGrid((g) => ({ ...g, cells: Number(e.target.value) }))}
+                    className="w-32 accent-cyan-600"
+                  />
+                  <span className="w-7 tabular-nums">{grid.cells}</span>
+                  <label className="flex items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      checked={grid.snap}
+                      onChange={(e) => setGrid((g) => ({ ...g, snap: e.target.checked }))}
+                      className="accent-cyan-600"
+                    />
+                    הצמדה לרשת
+                  </label>
+                  {grid.snap && <span className="text-xs text-neutral-500">(Alt למיקום חופשי)</span>}
+                </div>
+              )}
             </div>
 
             <p className="text-xs text-neutral-500">
@@ -1067,7 +1161,7 @@ export function StoreLayoutEditor({
                       max={WAYPOINT_LINE_MAX_POINTS}
                       step={1}
                       value={lastLine.count}
-                      onChange={(e) => setLastLineCount(Number(e.target.value))}
+                      onChange={(e) => updateLastLine({ count: Number(e.target.value) })}
                       className="w-48 accent-cyan-600"
                     />
                     <span className="w-6 font-semibold tabular-nums text-neutral-900">{lastLine.count}</span>
@@ -1142,6 +1236,31 @@ export function StoreLayoutEditor({
                       העלו תמונת מפה כדי להתחיל
                     </text>
                   </>
+                )}
+
+                {grid.visible && (
+                  <g pointerEvents="none" stroke="#0e7490" strokeOpacity={0.35} strokeWidth={1}>
+                    {Array.from({ length: Math.max(0, Math.ceil(mapWidth / gridSpacing) - 1) }, (_, i) => (
+                      <line
+                        key={`gx-${i}`}
+                        x1={(i + 1) * gridSpacing}
+                        y1={0}
+                        x2={(i + 1) * gridSpacing}
+                        y2={mapHeight}
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    ))}
+                    {Array.from({ length: Math.max(0, Math.ceil(mapHeight / gridSpacing) - 1) }, (_, i) => (
+                      <line
+                        key={`gy-${i}`}
+                        x1={0}
+                        y1={(i + 1) * gridSpacing}
+                        x2={mapWidth}
+                        y2={(i + 1) * gridSpacing}
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    ))}
+                  </g>
                 )}
 
                 {nodes.map((node) =>
@@ -1407,7 +1526,7 @@ export function StoreLayoutEditor({
                       }}
                       onPointerDown={(e) => e.stopPropagation()}
                       onPointerMove={(e) => {
-                        setLineCursor(screenToNormalized(e.clientX, e.clientY));
+                        setLineCursor(snapToGrid(screenToNormalized(e.clientX, e.clientY), e.altKey));
                         setShiftHeld(e.shiftKey);
                       }}
                       onPointerLeave={() => setLineCursor(null)}
