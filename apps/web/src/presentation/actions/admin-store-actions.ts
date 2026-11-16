@@ -229,6 +229,22 @@ export async function updateNodePosition(
   revalidatePath(`/admin/stores/${storeId}`);
 }
 
+/** Moves several of the store's nodes at once (the editor's align/distribute buttons). */
+export async function updateNodePositions(
+  storeId: string,
+  positions: Array<{ id: string; x: number; y: number }>,
+): Promise<void> {
+  await requireAdmin({ mapStore: storeId });
+  if (!Array.isArray(positions)) return;
+  const storeNodeIds = new Set((await nodeRepository.findByStore(storeId)).map((n) => n.id));
+  if (positions.some((p) => !storeNodeIds.has(String(p?.id)))) throw new Error("Unauthorized");
+  const clamp = (n: unknown) => Math.max(0, Math.min(1, Number(n) || 0));
+  await Promise.all(
+    positions.map((p) => nodeRepository.update(String(p.id), { position: { x: clamp(p.x), y: clamp(p.y) } })),
+  );
+  revalidatePath(`/admin/stores/${storeId}`);
+}
+
 /**
  * Pins a video the editor just uploaded to Blob (via the video-upload route) on the store's map.
  * The URL comes from the browser, so it must point into this store's video folder on our Blob store.

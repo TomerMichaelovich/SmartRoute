@@ -36,6 +36,7 @@ import {
   updateNodeArea,
   updateNodeLabel,
   updateNodePosition,
+  updateNodePositions,
   updateStore,
   unmarkProductsNotSold,
   updateFootstepScale,
@@ -174,6 +175,7 @@ export default async function AdminStoreDetailPage({
         deleteNode={deleteNode}
         deleteEdge={deleteEdge}
         updateNodePosition={boundUpdateNodePosition}
+        updateNodePositions={updateNodePositions.bind(null, storeId)}
         updateNodeLabel={updateNodeLabel}
         updateNodeArea={updateNodeArea.bind(null, storeId)}
         addProductToNode={addProductToNode}

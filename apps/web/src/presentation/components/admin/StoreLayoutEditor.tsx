@@ -22,6 +22,7 @@ import {
   splitAt,
   suggestedCount,
 } from "./waypoint-line-draft";
+import { type AlignMode, type Guides, alignPositions, autoStraighten, snapToGuides } from "./map-editor-snapping";
 import type { StoreMapVideo } from "@/src/infrastructure/repositories/interfaces/map-video-repository";
 import { ProductAutocomplete } from "./ProductAutocomplete";
 import { AliasPlacePanel } from "./AliasPlacePanel";
@@ -50,6 +51,8 @@ interface StoreLayoutEditorProps {
   deleteNode: (storeId: string, nodeId: string) => Promise<void>;
   deleteEdge: (storeId: string, edgeId: string) => Promise<void>;
   updateNodePosition: (nodeId: string, x: number, y: number) => Promise<void>;
+  /** Moves several nodes at once (align / distribute). */
+  updateNodePositions: (positions: Array<{ id: string; x: number; y: number }>) => Promise<void>;
   updateNodeLabel: (storeId: string, nodeId: string, formData: FormData) => Promise<void>;
   /** Sets (null: clears) the polygon a department covers - lit up on the shopper's map. */
   updateNodeArea: (nodeId: string, area: Array<{ x: number; y: number }> | null) => Promise<void>;
@@ -105,6 +108,12 @@ const WAYPOINT_LINE_DEFAULT_SPACING = 0.04;
 const LINE_COLOR = "#0891b2";
 // How close a click must land to a drawn line's point to start the next line from it (fraction of map width).
 const DRAFT_POINT_HIT = 0.012;
+
+// Smart alignment guides catch a point this many screen pixels from another point's x or y.
+const GUIDE_SNAP_PX = 8;
+// A line drawn within this many degrees of horizontal/vertical comes out straight (Shift: free angle).
+const AUTO_STRAIGHTEN_DEGREES = 7;
+const GUIDE_COLOR = "#db2777";
 
 // Alignment grid: how many columns (across the width) and rows (down the height) - each has
 // its own density slider with this range.
@@ -250,6 +259,7 @@ export function StoreLayoutEditor({
   deleteNode,
   deleteEdge,
   updateNodePosition,
+  updateNodePositions,
   updateNodeLabel,
   updateNodeArea,
   addProductToNode,
@@ -323,23 +333,47 @@ export function StoreLayoutEditor({
       // Not remembered - fine.
     }
   }, [grid, gridStorageKey]);
+  // Alignment guides shown while dragging a node.
+  const [dragGuides, setDragGuides] = useState<Guides | null>(null);
+  const [aligning, setAligning] = useState(false);
+  // The map's on-screen width, so snapping distances can be set in screen pixels.
+  const [svgWidthPx, setSvgWidthPx] = useState(0);
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const observer = new ResizeObserver(() => setSvgWidthPx(svg.getBoundingClientRect().width));
+    observer.observe(svg);
+    return () => observer.disconnect();
+  }, []);
   const gridSpacingX = mapWidth / grid.cols;
   const gridSpacingY = mapHeight / grid.rows;
-  // Shift held while drawing a line straightens it to horizontal or vertical. Tracked from the
-  // keyboard too, so pressing Shift updates the preview without moving the mouse.
+  // While drawing a line: Shift draws at a free angle (no auto-straightening) and Alt places
+  // freely (no guides or grid). Tracked from the keyboard too, so the preview follows them
+  // without moving the mouse.
   const [shiftHeld, setShiftHeld] = useState(false);
+  const [altHeld, setAltHeld] = useState(false);
   useEffect(() => {
     if (!lineMode) return;
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Shift") setShiftHeld(true);
+      if (e.key === "Alt") {
+        e.preventDefault(); // keeps the browser's menu bar from taking focus
+        setAltHeld(true);
+      }
+      // Enter ends the chain being drawn; the lines stay in the draft.
+      if (e.key === "Enter" && lineDraft.pendingFrom) setLineDraft(cancelPending(lineDraft));
       if (e.key !== "Escape") return;
       if (lineDraft.points.length > 0) setLineDraft(EMPTY_LINE_DRAFT);
       else setLineMode(false);
     }
     function handleKeyUp(e: KeyboardEvent) {
       if (e.key === "Shift") setShiftHeld(false);
+      if (e.key === "Alt") setAltHeld(false);
     }
-    const releaseShift = () => setShiftHeld(false);
+    const releaseShift = () => {
+      setShiftHeld(false);
+      setAltHeld(false);
+    };
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
     window.addEventListener("blur", releaseShift);
@@ -443,6 +477,56 @@ export function StoreLayoutEditor({
     const toVertical = Math.abs(x - point.x) * mapWidth;
     const toHorizontal = Math.abs(y - point.y) * mapHeight;
     return toVertical <= toHorizontal ? { x, y: point.y } : { x: point.x, y };
+  }
+
+  /**
+   * Where a dragged or placed point lands: lined up with another point's x/y when one is within
+   * a few pixels (smart guides), else on the grid. Alt places freely.
+   */
+  function placePoint(raw: { x: number; y: number }, others: readonly { x: number; y: number }[], altKey: boolean) {
+    if (altKey) return { point: raw, guides: {} as Guides };
+    const threshold = svgWidthPx > 0 ? (GUIDE_SNAP_PX * mapWidth) / svgWidthPx : 0;
+    const guided = snapToGuides(raw, others, threshold, mapWidth, mapHeight);
+    if (guided.guides.x !== undefined || guided.guides.y !== undefined) return guided;
+    return { point: snapToGrid(raw, false), guides: {} as Guides };
+  }
+
+  /** A free line end: guides/grid, then straightened when nearly horizontal or vertical (unless Shift). */
+  function placeLineEnd(
+    cursor: { x: number; y: number },
+    pendingPoint: { x: number; y: number } | undefined,
+    altKey: boolean,
+    shiftKey: boolean,
+  ) {
+    const others = [...nodes.map((n) => n.position), ...lineDraft.points];
+    const placed = placePoint(cursor, others, altKey);
+    if (!pendingPoint || shiftKey) return placed;
+    const point = autoStraighten(pendingPoint, placed.point, mapWidth, mapHeight, AUTO_STRAIGHTEN_DEGREES);
+    return {
+      point,
+      guides: {
+        x: placed.guides.x === point.x ? placed.guides.x : undefined,
+        y: placed.guides.y === point.y ? placed.guides.y : undefined,
+      },
+    };
+  }
+
+  function otherNodePositions(nodeId: string) {
+    return nodes.filter((n) => n.id !== nodeId).map((n) => n.position);
+  }
+
+  async function handleAlign(mode: AlignMode) {
+    const selected = nodes
+      .filter((n) => selectedNodeIds.has(n.id))
+      .map((n) => ({ id: n.id, x: n.position.x, y: n.position.y }));
+    const positions = alignPositions(selected, mode, mapWidth, mapHeight);
+    if (positions.length === 0 || aligning) return;
+    setAligning(true);
+    try {
+      await updateNodePositions(positions);
+    } finally {
+      setAligning(false);
+    }
   }
 
   function containerOffset(clientX: number, clientY: number): { left: number; top: number } {
@@ -619,8 +703,9 @@ export function StoreLayoutEditor({
     const dy = e.clientY - start.clientY;
     if (!start.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
     start.moved = true;
-    const { x, y } = snapToGrid(screenToNormalized(e.clientX, e.clientY), e.altKey);
-    setDragState({ nodeId: node.id, x, y });
+    const { point, guides } = placePoint(screenToNormalized(e.clientX, e.clientY), otherNodePositions(node.id), e.altKey);
+    setDragState({ nodeId: node.id, ...point });
+    setDragGuides(guides);
   }
 
   async function handleNodePointerUp(e: React.PointerEvent<SVGGElement>, node: MapNode) {
@@ -630,9 +715,10 @@ export function StoreLayoutEditor({
 
     if (start.moved) {
       justDraggedRef.current = true;
-      const { x, y } = snapToGrid(screenToNormalized(e.clientX, e.clientY), e.altKey);
+      const { point } = placePoint(screenToNormalized(e.clientX, e.clientY), otherNodePositions(node.id), e.altKey);
       setDragState(null);
-      await updateNodePosition(node.id, x, y);
+      setDragGuides(null);
+      await updateNodePosition(node.id, point.x, point.y);
     }
   }
 
@@ -737,13 +823,6 @@ export function StoreLayoutEditor({
     return best ? { nodeId: best.node.id, ...best.node.position } : point;
   }
 
-  /** Straightens start→point to horizontal or vertical, whichever it's closer to. */
-  function constrainToAxis(start: { x: number; y: number }, point: { x: number; y: number }) {
-    const dx = Math.abs((point.x - start.x) * mapWidth);
-    const dy = Math.abs((point.y - start.y) * mapHeight);
-    return dx >= dy ? { x: point.x, y: start.y } : { x: start.x, y: point.y };
-  }
-
   // A click starts a line or ends the one being stretched. It lands, in order of preference, on
   // a point of a line already drawn (its end, or a point between - which splits that line there),
   // on a node of the map, or on the empty spot itself. Nothing is saved until "create".
@@ -770,8 +849,7 @@ export function StoreLayoutEditor({
     } else {
       // A straightened end still joins a node right where it lands (off the axis by at most the
       // node's click area) - connecting the corridor matters more than a perfect line.
-      const onGrid = snapToGrid(cursor, e.altKey);
-      const point = pendingPoint && e.shiftKey ? constrainToAxis(pendingPoint, onGrid) : onGrid;
+      const { point } = placeLineEnd(cursor, pendingPoint, e.altKey, e.shiftKey);
       ({ draft, key } = addPoint(draft, snapLineEnd(point, e.clientX, e.clientY), newKey));
     }
     if (!pendingFrom || !pendingPoint) {
@@ -788,7 +866,8 @@ export function StoreLayoutEditor({
       WAYPOINT_LINE_DEFAULT_SPACING,
       WAYPOINT_LINE_MAX_POINTS,
     );
-    setLineDraft(connect(draft, pendingFrom, key, count));
+    // Drawing goes on from the end just placed: the next click stretches the next line from it.
+    setLineDraft({ ...connect(draft, pendingFrom, key, count), pendingFrom: key });
   }
 
   /** The slider edits the line drawn last. */
@@ -892,11 +971,11 @@ export function StoreLayoutEditor({
   const showsProductPanel = singleSelectedNode?.type === "department";
   // The drawing only lives while its department is the one selected.
   const activeAreaDraft = areaDraft && singleSelectedNode?.id === areaDraft.nodeId ? areaDraft : null;
-  // Where the line being drawn ends: its set end, else the cursor (straightened while Shift is held).
-  // The line being stretched: from its start to the cursor (straightened while Shift is held).
+  // The line being stretched: from its start to where a click would put its end.
   const linePendingPoint = lineDraft.pendingFrom ? pointByKey(lineDraft, lineDraft.pendingFrom) : undefined;
-  const lineEndPreview =
-    linePendingPoint && lineCursor ? (shiftHeld ? constrainToAxis(linePendingPoint, lineCursor) : lineCursor) : null;
+  const linePlacement = lineMode && lineCursor ? placeLineEnd(lineCursor, linePendingPoint, altHeld, shiftHeld) : null;
+  const lineEndPreview = linePendingPoint && linePlacement ? linePlacement.point : null;
+  const shownGuides = dragGuides ?? linePlacement?.guides ?? null;
   const lastLine = lineDraft.segments.at(-1);
   const lineNodeIds = new Set(lineDraft.points.flatMap((p) => (p.nodeId ? [p.nodeId] : [])));
   const toSvgPoints = (points: Array<{ x: number; y: number }>) =>
@@ -1176,10 +1255,10 @@ export function StoreLayoutEditor({
               <div className="flex flex-wrap items-center gap-3 rounded-xl border border-cyan-200 bg-cyan-50 p-3 text-sm">
                 <span className="font-medium text-cyan-900">
                   {linePendingPoint
-                    ? "לחצו על נקודת הסיום (החזיקו Shift לקו אופקי או אנכי)"
+                    ? "לחצו על נקודת הסיום - הקו ממשיך ברצף (קליק ימני או Enter מסיימים את הרצף)"
                     : lineDraft.segments.length === 0
                       ? "1. לחצו על נקודת ההתחלה של הקו"
-                      : "לחצו על נקודה בקו כדי למתוח ממנה קו נוסף, או על צור קו לסיום"}
+                      : "לחצו על נקודה בקו כדי להמשיך ממנה, או על צור קו לסיום"}
                 </span>
                 {lastLine && (
                   <>
@@ -1221,11 +1300,12 @@ export function StoreLayoutEditor({
                   </button>
                 )}
                 <span className="basis-full text-xs text-neutral-500">
-                  לחיצה על צומת קיים (מחלקה, כניסה, נקודת ציון) מחברת את הקו אליו; לחיצה על שטח ריק יוצרת שם נקודה
-                  חדשה. אחרי שקו נמתח, לחיצה על נקודה שלו (קצה או נקודת ביניים) מותחת ממנה את הקו הבא - כל הקווים
-                  נוצרים יחד בלחיצה על צור. לחיצה נוספת על מחלקה שהקו מחובר אליה מבטלת את החיבור ומשאירה שם נקודת
-                  ציון (לחיצה עליה ממשיכה ממנה קו). קליק ימני מבטל את הקו שנמתח כעת (ואם אין כזה - את הקו האחרון), Esc
-                  מנקה הכל, Esc נוסף יוצא מהמצב.
+                  קו שקרוב לאופקי או לאנכי מתיישר לבד (Shift: זווית חופשית). הקצה נצמד לגובה/לרוחב של נקודות
+                  אחרות (קו עזר ורוד) או לרשת; Alt: מיקום חופשי. לחיצה על צומת קיים מחברת את הקו אליו; לחיצה על
+                  שטח ריק יוצרת שם נקודה חדשה. כל לחיצה ממשיכה את הרצף; קליק ימני או Enter מסיימים אותו, ולחיצה על
+                  נקודה של קו (קצה או נקודת ביניים) מתחילה ממנה רצף חדש. כל הקווים נוצרים יחד בלחיצה על צור. לחיצה
+                  נוספת על מחלקה שהקו מחובר אליה מבטלת את החיבור ומשאירה שם נקודת ציון. קליק ימני בלי רצף פעיל מבטל
+                  את הקו האחרון, Esc מנקה הכל, Esc נוסף יוצא מהמצב.
                 </span>
               </div>
             )}
@@ -1418,6 +1498,29 @@ export function StoreLayoutEditor({
                   );
                 })}
 
+                {shownGuides && (
+                  <g pointerEvents="none" stroke={GUIDE_COLOR} strokeWidth={1.5} strokeDasharray="6 4">
+                    {shownGuides.x !== undefined && (
+                      <line
+                        x1={shownGuides.x * mapWidth}
+                        y1={0}
+                        x2={shownGuides.x * mapWidth}
+                        y2={mapHeight}
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    )}
+                    {shownGuides.y !== undefined && (
+                      <line
+                        x1={0}
+                        y1={shownGuides.y * mapHeight}
+                        x2={mapWidth}
+                        y2={shownGuides.y * mapHeight}
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    )}
+                  </g>
+                )}
+
                 {marquee && (
                   <rect
                     x={Math.min(marquee.x1, marquee.x2) * mapWidth}
@@ -1558,7 +1661,8 @@ export function StoreLayoutEditor({
                       }}
                       onPointerDown={(e) => e.stopPropagation()}
                       onPointerMove={(e) => {
-                        setLineCursor(snapToGrid(screenToNormalized(e.clientX, e.clientY), e.altKey));
+                        setLineCursor(screenToNormalized(e.clientX, e.clientY));
+                        setAltHeld(e.altKey);
                         setShiftHeld(e.shiftKey);
                       }}
                       onPointerLeave={() => setLineCursor(null)}
@@ -1860,13 +1964,34 @@ export function StoreLayoutEditor({
           )}
 
           {totalSelected > 1 && (
-            <div className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-neutral-200 bg-white p-3">
               <span className="text-sm text-neutral-700">
                 נבחרו{" "}
                 {selectedNodeIds.size > 0 && <strong>{selectedNodeIds.size} צמתים</strong>}
                 {selectedNodeIds.size > 0 && selectedEdgeIds.size > 0 && " ו-"}
                 {selectedEdgeIds.size > 0 && <strong>{selectedEdgeIds.size} קשתות</strong>}
               </span>
+              {selectedNodeIds.size >= 2 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {(
+                    [
+                      ["row", "⇔ יישור לשורה"],
+                      ["column", "⇕ יישור לעמודה"],
+                      ["distribute", "↔ פיזור שווה"],
+                    ] as const
+                  ).map(([mode, label]) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      disabled={aligning || (mode === "distribute" && selectedNodeIds.size < 3)}
+                      onClick={() => void handleAlign(mode)}
+                      className="rounded-lg border border-neutral-300 bg-white px-3 py-1 text-sm font-medium text-neutral-700 hover:border-cyan-600 hover:text-cyan-700 disabled:opacity-40"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
               <button
                 type="button"
                 onClick={() => void handleDeleteSelected()}
