@@ -461,6 +461,22 @@ export function StoreLayoutEditor({
   const [areaCursor, setAreaCursor] = useState<{ x: number; y: number } | null>(null);
   const [savingArea, setSavingArea] = useState(false);
   // Read by the Esc handler, which is registered once.
+  useEffect(() => {
+    if (!areaDraft) return;
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Shift") setShiftHeld(e.type === "keydown");
+      if (e.key === "Alt") {
+        if (e.type === "keydown") e.preventDefault(); // keeps the browser's menu bar from taking focus
+        setAltHeld(e.type === "keydown");
+      }
+    }
+    window.addEventListener("keydown", handleKey);
+    window.addEventListener("keyup", handleKey);
+    return () => {
+      window.removeEventListener("keydown", handleKey);
+      window.removeEventListener("keyup", handleKey);
+    };
+  }, [areaDraft]);
   const areaDraftRef = useRef(areaDraft);
   useEffect(() => {
     areaDraftRef.current = areaDraft;
@@ -571,10 +587,24 @@ export function StoreLayoutEditor({
     altKey: boolean,
     shiftKey: boolean,
   ) {
-    const others = [...nodes.map((n) => n.position), ...lineDraft.points];
+    return placeStraight(cursor, pendingPoint, [...nodes.map((n) => n.position), ...lineDraft.points], altKey, shiftKey);
+  }
+
+  /**
+   * A point drawn on from `previous`: guides/grid (Alt: free), then straightened when the line
+   * from `previous` is nearly horizontal or vertical (Shift: free angle). Used for waypoint
+   * line ends and department area corners alike.
+   */
+  function placeStraight(
+    cursor: { x: number; y: number },
+    previous: { x: number; y: number } | undefined,
+    others: readonly { x: number; y: number }[],
+    altKey: boolean,
+    shiftKey: boolean,
+  ) {
     const placed = placePoint(cursor, others, altKey);
-    if (!pendingPoint || shiftKey) return placed;
-    const point = autoStraighten(pendingPoint, placed.point, mapWidth, mapHeight, AUTO_STRAIGHTEN_DEGREES);
+    if (!previous || shiftKey) return placed;
+    const point = autoStraighten(previous, placed.point, mapWidth, mapHeight, AUTO_STRAIGHTEN_DEGREES);
     return {
       point,
       guides: {
@@ -848,19 +878,35 @@ export function StoreLayoutEditor({
     }
   }
 
+  /**
+   * Where the next corner of the area being drawn lands - straightened and aligned the same way
+   * as a waypoint line: lined up with the other corners, the map's nodes and other departments'
+   * area corners.
+   */
+  function placeAreaCorner(cursor: { x: number; y: number }, altKey: boolean, shiftKey: boolean) {
+    if (!areaDraft) return { point: cursor, guides: {} as Guides };
+    const others = [
+      ...areaDraft.points,
+      ...nodes.map((n) => n.position),
+      ...nodes.flatMap((n) => (n.id !== areaDraft.nodeId && n.area ? n.area : [])),
+    ];
+    return placeStraight(cursor, areaDraft.points.at(-1), others, altKey, shiftKey);
+  }
+
   function handleAreaClick(e: React.MouseEvent) {
     if (!areaDraft || savingArea) return;
-    const point = screenToNormalized(e.clientX, e.clientY);
+    const cursor = screenToNormalized(e.clientX, e.clientY);
     const first = areaDraft.points[0];
     // A click back on the first corner closes the shape and saves it.
     if (
       first &&
       areaDraft.points.length >= 3 &&
-      Math.hypot((point.x - first.x) * mapWidth, (point.y - first.y) * mapHeight) <= AREA_CLOSE_DISTANCE * mapWidth
+      Math.hypot((cursor.x - first.x) * mapWidth, (cursor.y - first.y) * mapHeight) <= AREA_CLOSE_DISTANCE * mapWidth
     ) {
       void saveArea(areaDraft.nodeId, areaDraft.points);
       return;
     }
+    const { point } = placeAreaCorner(cursor, e.altKey, e.shiftKey);
     setAreaDraft({ ...areaDraft, points: [...areaDraft.points, point] });
   }
 
@@ -1160,7 +1206,9 @@ export function StoreLayoutEditor({
       ? resolveLineTarget(lineCursor, lineCursor.clientX, lineCursor.clientY, linePendingPoint, altHeld, shiftHeld)
       : null;
   const lineEndPreview = linePendingPoint && lineTarget ? lineTarget.point : null;
-  const shownGuides = dragGuides ?? lineTarget?.guides ?? null;
+  // The next corner of the area being drawn, where a click would put it.
+  const areaPlacement = areaDraft && areaCursor ? placeAreaCorner(areaCursor, altHeld, shiftHeld) : null;
+  const shownGuides = dragGuides ?? lineTarget?.guides ?? areaPlacement?.guides ?? null;
   const lastLine = lineDraft.segments.at(-1);
   const lineNodeIds = new Set(lineDraft.points.flatMap((p) => (p.nodeId ? [p.nodeId] : [])));
   const toSvgPoints = (points: Array<{ x: number; y: number }>) =>
@@ -1791,7 +1839,7 @@ export function StoreLayoutEditor({
                     )}
                     <polyline
                       points={toSvgPoints(
-                        areaCursor ? [...activeAreaDraft.points, areaCursor] : activeAreaDraft.points,
+                        areaPlacement ? [...activeAreaDraft.points, areaPlacement.point] : activeAreaDraft.points,
                       )}
                       fill="none"
                       stroke={AREA_STROKE}
@@ -1823,7 +1871,11 @@ export function StoreLayoutEditor({
                       fill="transparent"
                       className="cursor-crosshair"
                       onClick={handleAreaClick}
-                      onPointerMove={(e) => setAreaCursor(screenToNormalized(e.clientX, e.clientY))}
+                      onPointerMove={(e) => {
+                        setAreaCursor(screenToNormalized(e.clientX, e.clientY));
+                        setShiftHeld(e.shiftKey);
+                        setAltHeld(e.altKey);
+                      }}
                       onPointerLeave={() => setAreaCursor(null)}
                     />
                   </g>
@@ -2076,6 +2128,10 @@ export function StoreLayoutEditor({
                     <p className="text-sky-900">
                       לחצו על המפה בפינות האזור, אחת אחרי השנייה. לסיום - לחצו שוב על הנקודה הראשונה או על
                       &quot;סיום ושמירה&quot; · Esc לביטול ({activeAreaDraft.points.length} נקודות)
+                    </p>
+                    <p className="text-xs text-sky-800">
+                      צלע שקרובה לאופקי או לאנכי מתיישרת לבד (Shift: זווית חופשית). הפינה נצמדת לגובה/לרוחב של פינות
+                      ונקודות אחרות (קו עזר ורוד) או לרשת; Alt: מיקום חופשי.
                     </p>
                     <div className="flex flex-wrap gap-2">
                       <button
