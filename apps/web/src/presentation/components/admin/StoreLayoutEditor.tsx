@@ -106,18 +106,21 @@ const LINE_COLOR = "#0891b2";
 // How close a click must land to a drawn line's point to start the next line from it (fraction of map width).
 const DRAFT_POINT_HIT = 0.012;
 
-// Alignment grid: square cells, this many across the map's width (the density slider's range).
-const GRID_CELLS_MIN = 10;
+// Alignment grid: how many columns (across the width) and rows (down the height) - each has
+// its own density slider with this range.
+const GRID_CELLS_MIN = 5;
 const GRID_CELLS_MAX = 100;
 const GRID_CELLS_DEFAULT = 40;
 
 interface GridSettings {
   visible: boolean;
-  cells: number;
+  cols: number;
+  rows: number;
   snap: boolean;
 }
 
-const DEFAULT_GRID: GridSettings = { visible: false, cells: GRID_CELLS_DEFAULT, snap: true };
+const clampGridCells = (n: unknown, fallback: number) =>
+  Math.min(GRID_CELLS_MAX, Math.max(GRID_CELLS_MIN, Math.round(Number(n)) || fallback));
 
 /** One end of a waypoint line being drawn: snapped to an existing node, or a spot on the map. */
 type LineDraftEnd = { nodeId?: string; x: number; y: number };
@@ -280,17 +283,28 @@ export function StoreLayoutEditor({
   const [resetMessage, setResetMessage] = useState<string | null>(null);
   // Alignment grid, remembered per store in this browser only (it's an editing aid, not map data).
   const gridStorageKey = `navio.mapGrid.${storeId}`;
-  const [grid, setGrid] = useState<GridSettings>(DEFAULT_GRID);
+  // Rows default to whatever makes the cells square on this map.
+  const squareRows = (cols: number) => clampGridCells((cols * mapHeight) / mapWidth, GRID_CELLS_DEFAULT);
+  const [grid, setGrid] = useState<GridSettings>(() => ({
+    visible: false,
+    cols: GRID_CELLS_DEFAULT,
+    rows: squareRows(GRID_CELLS_DEFAULT),
+    snap: true,
+  }));
   const gridLoadedRef = useRef(false);
   useEffect(() => {
     try {
-      const saved = JSON.parse(window.localStorage.getItem(gridStorageKey) ?? "null") as Partial<GridSettings> | null;
+      const saved = JSON.parse(window.localStorage.getItem(gridStorageKey) ?? "null") as
+        | (Partial<GridSettings> & { cells?: number })
+        | null;
       if (saved) {
         // localStorage isn't available during SSR, so the saved settings can only load after mount.
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setGrid({
           visible: saved.visible === true,
-          cells: Math.min(GRID_CELLS_MAX, Math.max(GRID_CELLS_MIN, Number(saved.cells) || GRID_CELLS_DEFAULT)),
+          // `cells` is the older single density (square cells).
+          cols: clampGridCells(saved.cols ?? saved.cells, GRID_CELLS_DEFAULT),
+          rows: clampGridCells(saved.rows, squareRows(clampGridCells(saved.cols ?? saved.cells, GRID_CELLS_DEFAULT))),
           snap: saved.snap !== false,
         });
       }
@@ -298,6 +312,8 @@ export function StoreLayoutEditor({
       // No storage (private window, blocked site data): the defaults do.
     }
     gridLoadedRef.current = true;
+    // squareRows only depends on the map's size, which doesn't change while editing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gridStorageKey]);
   useEffect(() => {
     if (!gridLoadedRef.current) return;
@@ -307,7 +323,8 @@ export function StoreLayoutEditor({
       // Not remembered - fine.
     }
   }, [grid, gridStorageKey]);
-  const gridSpacing = mapWidth / grid.cells;
+  const gridSpacingX = mapWidth / grid.cols;
+  const gridSpacingY = mapHeight / grid.rows;
   // Shift held while drawing a line straightens it to horizontal or vertical. Tracked from the
   // keyboard too, so pressing Shift updates the preview without moving the mouse.
   const [shiftHeld, setShiftHeld] = useState(false);
@@ -417,9 +434,9 @@ export function StoreLayoutEditor({
    */
   function snapToGrid(point: { x: number; y: number }, altKey: boolean): { x: number; y: number } {
     if (!grid.visible || !grid.snap || altKey) return point;
-    const snap = (value: number, size: number) =>
-      Math.max(0, Math.min(1, (Math.round((value * size) / gridSpacing) * gridSpacing) / size));
-    return { x: snap(point.x, mapWidth), y: snap(point.y, mapHeight) };
+    const snap = (value: number, size: number, spacing: number) =>
+      Math.max(0, Math.min(1, (Math.round((value * size) / spacing) * spacing) / size));
+    return { x: snap(point.x, mapWidth, gridSpacingX), y: snap(point.y, mapHeight, gridSpacingY) };
   }
 
   function containerOffset(clientX: number, clientY: number): { left: number; top: number } {
@@ -1087,18 +1104,27 @@ export function StoreLayoutEditor({
               </button>
               {grid.visible && (
                 <div className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-1 text-sm text-neutral-700">
-                  <label htmlFor="grid-cells">צפיפות</label>
-                  <input
-                    id="grid-cells"
-                    type="range"
-                    min={GRID_CELLS_MIN}
-                    max={GRID_CELLS_MAX}
-                    step={1}
-                    value={grid.cells}
-                    onChange={(e) => setGrid((g) => ({ ...g, cells: Number(e.target.value) }))}
-                    className="w-32 accent-cyan-600"
-                  />
-                  <span className="w-7 tabular-nums">{grid.cells}</span>
+                  {(
+                    [
+                      ["cols", "קווי אורך"],
+                      ["rows", "קווי רוחב"],
+                    ] as const
+                  ).map(([axis, label]) => (
+                    <span key={axis} className="flex items-center gap-1.5">
+                      <label htmlFor={`grid-${axis}`}>{label}</label>
+                      <input
+                        id={`grid-${axis}`}
+                        type="range"
+                        min={GRID_CELLS_MIN}
+                        max={GRID_CELLS_MAX}
+                        step={1}
+                        value={grid[axis]}
+                        onChange={(e) => setGrid((g) => ({ ...g, [axis]: Number(e.target.value) }))}
+                        className="w-28 accent-cyan-600"
+                      />
+                      <span className="w-7 tabular-nums">{grid[axis]}</span>
+                    </span>
+                  ))}
                   <label className="flex items-center gap-1.5">
                     <input
                       type="checkbox"
@@ -1240,23 +1266,23 @@ export function StoreLayoutEditor({
 
                 {grid.visible && (
                   <g pointerEvents="none" stroke="#0e7490" strokeOpacity={0.35} strokeWidth={1}>
-                    {Array.from({ length: Math.max(0, Math.ceil(mapWidth / gridSpacing) - 1) }, (_, i) => (
+                    {Array.from({ length: grid.cols - 1 }, (_, i) => (
                       <line
                         key={`gx-${i}`}
-                        x1={(i + 1) * gridSpacing}
+                        x1={(i + 1) * gridSpacingX}
                         y1={0}
-                        x2={(i + 1) * gridSpacing}
+                        x2={(i + 1) * gridSpacingX}
                         y2={mapHeight}
                         vectorEffect="non-scaling-stroke"
                       />
                     ))}
-                    {Array.from({ length: Math.max(0, Math.ceil(mapHeight / gridSpacing) - 1) }, (_, i) => (
+                    {Array.from({ length: grid.rows - 1 }, (_, i) => (
                       <line
                         key={`gy-${i}`}
                         x1={0}
-                        y1={(i + 1) * gridSpacing}
+                        y1={(i + 1) * gridSpacingY}
                         x2={mapWidth}
-                        y2={(i + 1) * gridSpacing}
+                        y2={(i + 1) * gridSpacingY}
                         vectorEffect="non-scaling-stroke"
                       />
                     ))}
