@@ -429,14 +429,20 @@ export function StoreLayoutEditor({
   }
 
   /**
-   * Snaps a normalized point to the nearest grid crossing while the grid is shown with snapping
-   * on. Holding Alt places freely.
+   * Snaps a normalized point to the nearest grid line while the grid is shown with snapping on.
+   * Holding Alt places freely.
    */
   function snapToGrid(point: { x: number; y: number }, altKey: boolean): { x: number; y: number } {
     if (!grid.visible || !grid.snap || altKey) return point;
-    const snap = (value: number, size: number, spacing: number) =>
+    // Onto the nearest grid line - vertical or horizontal, whichever is closer - not a crossing:
+    // only that one coordinate moves, the point slides freely along the line.
+    const nearest = (value: number, size: number, spacing: number) =>
       Math.max(0, Math.min(1, (Math.round((value * size) / spacing) * spacing) / size));
-    return { x: snap(point.x, mapWidth, gridSpacingX), y: snap(point.y, mapHeight, gridSpacingY) };
+    const x = nearest(point.x, mapWidth, gridSpacingX);
+    const y = nearest(point.y, mapHeight, gridSpacingY);
+    const toVertical = Math.abs(x - point.x) * mapWidth;
+    const toHorizontal = Math.abs(y - point.y) * mapHeight;
+    return toVertical <= toHorizontal ? { x, y: point.y } : { x: point.x, y };
   }
 
   function containerOffset(clientX: number, clientY: number): { left: number; top: number } {
