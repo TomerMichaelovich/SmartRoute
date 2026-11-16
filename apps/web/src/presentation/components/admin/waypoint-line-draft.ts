@@ -183,6 +183,23 @@ export function cancelPending(draft: LineDraft): LineDraft {
   return { ...draft, points: draft.points.filter((p) => used.has(p.key)), pendingFrom: null };
 }
 
+/**
+ * Shifts one drafted line - both its ends - by (dx, dy), parallel to itself; lines sharing those
+ * ends stretch to stay joined. An end that sat on a map node or edge comes loose and moves too
+ * (it becomes a plain new waypoint).
+ */
+export function moveSegment(draft: LineDraft, segment: number, dx: number, dy: number): LineDraft {
+  const s = draft.segments[segment];
+  if (!s) return draft;
+  const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+  return {
+    ...draft,
+    points: draft.points.map((p) =>
+      p.key === s.from || p.key === s.to ? { key: p.key, x: clamp01(p.x + dx), y: clamp01(p.y + dy) } : p,
+    ),
+  };
+}
+
 /** Drops the last line, and any end no line uses any more. */
 export function removeLastSegment(draft: LineDraft): LineDraft {
   const segments = draft.segments.slice(0, -1);

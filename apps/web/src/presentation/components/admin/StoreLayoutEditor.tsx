@@ -18,6 +18,7 @@ import {
   hitDraft,
   hitDraftLine,
   innerPoints,
+  moveSegment,
   nearestOnSegment,
   pointByKey,
   removeLastSegment,
@@ -127,6 +128,13 @@ const GUIDE_SNAP_PX = 8;
 // A line drawn within this many degrees of horizontal/vertical comes out straight (Shift: free angle).
 const AUTO_STRAIGHTEN_DEGREES = 7;
 const GUIDE_COLOR = "#db2777";
+// Arrow key → direction to nudge the last drafted line.
+const ARROW_NUDGES: Record<string, readonly [number, number]> = {
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+};
 
 // Alignment grid: how many columns (across the width) and rows (down the height) - each has
 // its own density slider with this range.
@@ -386,6 +394,25 @@ export function StoreLayoutEditor({
       }
       // Enter ends the chain being drawn; the lines stay in the draft.
       if (e.key === "Enter" && lineDraft.pendingFrom) setLineDraft(cancelPending(lineDraft));
+      // Arrow keys nudge the last drafted line, parallel to itself: 1 screen pixel, 10 with Shift.
+      // Not while a field (e.g. the points slider) has focus - the arrows are its own there.
+      const nudge = ARROW_NUDGES[e.key];
+      const typing = e.target instanceof HTMLElement && e.target.closest("input, textarea, select");
+      if (nudge && !typing && lineDraft.segments.length > 0) {
+        e.preventDefault();
+        const widthPx = svgRef.current?.getBoundingClientRect().width || mapWidth;
+        const stepPx = e.shiftKey ? 10 : 1;
+        const units = (stepPx * mapWidth) / widthPx;
+        setLineDraft(
+          moveSegment(
+            lineDraft,
+            lineDraft.segments.length - 1,
+            (nudge[0] * units) / mapWidth,
+            (nudge[1] * units) / mapHeight,
+          ),
+        );
+        return;
+      }
       if (e.key !== "Escape") return;
       if (lineDraft.points.length > 0) setLineDraft(EMPTY_LINE_DRAFT);
       else setLineMode(false);
@@ -406,7 +433,7 @@ export function StoreLayoutEditor({
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", releaseShift);
     };
-  }, [lineMode, lineDraft]);
+  }, [lineMode, lineDraft, mapWidth, mapHeight]);
   // A department's area being drawn: each click on the map adds a corner; the lines follow the cursor.
   const [areaDraft, setAreaDraft] = useState<{ nodeId: string; points: Array<{ x: number; y: number }> } | null>(null);
   const [areaCursor, setAreaCursor] = useState<{ x: number; y: number } | null>(null);
@@ -1393,7 +1420,8 @@ export function StoreLayoutEditor({
                   שטח ריק יוצרת שם נקודה חדשה. כל לחיצה ממשיכה את הרצף; קליק ימני או Enter מסיימים אותו, ולחיצה על
                   נקודה של קו (קצה או נקודת ביניים) מתחילה ממנה רצף חדש. כל הקווים נוצרים יחד בלחיצה על צור. לחיצה
                   נוספת על מחלקה שהקו מחובר אליה מבטלת את החיבור ומשאירה שם נקודת ציון. קליק ימני בלי רצף פעיל מבטל
-                  את הקו האחרון, Esc מנקה הכל, Esc נוסף יוצא מהמצב.
+                  את הקו האחרון, Esc מנקה הכל, Esc נוסף יוצא מהמצב. החצים במקלדת מזיזים את הקו האחרון במקביל לעצמו
+                  (Shift: צעד גדול); קצה שלו שמחובר למחלקה או לקו קיים מתנתק וזז איתו.
                 </span>
               </div>
             )}

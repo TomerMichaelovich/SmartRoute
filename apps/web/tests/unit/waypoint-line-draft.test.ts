@@ -9,6 +9,7 @@ import {
   hitDraftLine,
   nearestOnSegment,
   innerPoints,
+  moveSegment,
   removeLastSegment,
   splitAt,
   splitAtPosition,
@@ -76,6 +77,20 @@ describe("waypoint line draft", () => {
     const pending = { ...addPoint(d, { x: 0.3, y: 0.9 }, "c").draft, pendingFrom: "c" };
     expect(cancelPending(pending).points.map((p) => p.key)).toEqual(["a", "b"]);
     expect(removeLastSegment(d)).toEqual(EMPTY_LINE_DRAFT);
+  });
+
+  it("moves a line parallel to itself, the line before it stretching along", () => {
+    let d = addPoint(EMPTY_LINE_DRAFT, { nodeId: "dept", x: 0.1, y: 0.1 }, "a").draft;
+    d = addPoint(d, { x: 0.1, y: 0.5 }, "b").draft;
+    d = addPoint(d, { x: 0.9, y: 0.5 }, "c").draft;
+    d = connect(connect(d, "a", "b", 1), "b", "c", 3);
+    const moved = moveSegment(d, 1, 0, 0.01);
+    expect(moved.points).toEqual([
+      { key: "a", nodeId: "dept", x: 0.1, y: 0.1 },
+      { key: "b", x: 0.1, y: 0.51 },
+      { key: "c", x: 0.9, y: 0.51 },
+    ]);
+    expect(moved.segments).toEqual(d.segments);
   });
 
   it("finds the nearest spot on a segment", () => {
