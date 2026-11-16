@@ -11,6 +11,7 @@ import {
   type FootstepPlacement,
 } from "@smartroute/core/map/footstep-trail";
 import { MINOR_LABEL_FONT_FRACTION } from "@smartroute/core/map/map-labels";
+import { type LabelSide, pointInPolygon, stopMarkerPlacement } from "@smartroute/core/map/stop-marker";
 import { he } from "@smartroute/core/i18n/he";
 import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
@@ -33,7 +34,7 @@ function LabelPill({
   color,
   mapWidth,
   scale,
-  above = false,
+  side,
 }: {
   text: string;
   x: number;
@@ -42,7 +43,11 @@ function LabelPill({
   color: string;
   mapWidth: number;
   scale: number;
-  above?: boolean;
+  /**
+   * Which side of (x, y) the pill sits on, (x, y) being its nearest edge's middle; centered on
+   * (x, y) when not given.
+   */
+  side?: LabelSide;
 }) {
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
   if (lines.length === 0) return null;
@@ -51,8 +56,10 @@ function LabelPill({
   const padY = fontSize * 0.25;
   const width = Math.max(...lines.map((l) => l.length)) * fontSize * CHAR_WIDTH_EM + padX * 2;
   const height = lines.length * lineHeight + padY * 2;
-  const left = Math.min(Math.max(x - width / 2, 2 * scale), mapWidth - width - 2 * scale);
-  const top = above ? Math.max(y - height, 2 * scale) : y - height / 2;
+  const centeredLeft = side === "left" ? x - width : side === "right" ? x : x - width / 2;
+  const left = Math.min(Math.max(centeredLeft, 2 * scale), mapWidth - width - 2 * scale);
+  const top =
+    side === "above" ? Math.max(y - height, 2 * scale) : side === "below" ? y : y - height / 2;
   const centerX = left + width / 2;
   return (
     <G>
@@ -180,7 +187,21 @@ export function StoreMap({
 
   const currentNode = currentStop ? nodeById.get(currentStop.nodeId) : undefined;
 
-  const routePathPoints = pathNodeIds
+  // With an outlined area, the trail ends where the stop's marker stands (on the path, just
+  // outside the area) instead of walking on into the lit-up shelf.
+  let trailNodeIds = pathNodeIds;
+  const currentArea = currentNode?.area;
+  if (currentArea && currentArea.length >= 3 && pathNodeIds.at(-1) === currentNode?.id) {
+    let end = pathNodeIds.length - 1;
+    while (end > 0) {
+      const position = nodeById.get(pathNodeIds[end - 1])?.position;
+      if (!position || !pointInPolygon(position, currentArea)) break;
+      end--;
+    }
+    if (end > 0) trailNodeIds = pathNodeIds.slice(0, end);
+  }
+
+  const routePathPoints = trailNodeIds
     .map((id) => nodeById.get(id))
     .filter((n): n is MapNode => Boolean(n))
     .map((n) => ({ x: n.position.x * mapWidth, y: n.position.y * mapHeight }));
@@ -239,12 +260,32 @@ export function StoreMap({
             const isCurrent = stop.order === currentStop?.order;
             const isChecked = checkedStopOrders.has(stop.order);
             const accent = isChecked ? "#9ca3af" : COLORS.brandDark;
+            // With an outlined area, the number goes on the path where it reaches the department
+            // and the name faces away, so neither covers the lit-up shelf.
+            const placement = stopMarkerPlacement(
+              node.id,
+              node.position,
+              node.area,
+              pathNodeIds,
+              (id) => nodeById.get(id)?.position,
+              mapWidth,
+              mapHeight,
+            );
+            const mx = placement.position.x * mapWidth;
+            const my = placement.position.y * mapHeight;
+            const gap = markerRadius + 6 * scale;
+            const labelAnchor = {
+              above: { x: mx, y: my - gap },
+              below: { x: mx, y: my + gap },
+              left: { x: mx - gap, y: my },
+              right: { x: mx + gap, y: my },
+            }[placement.labelSide];
 
             return (
               <G key={node.id}>
                 <Circle
-                  cx={cx}
-                  cy={cy}
+                  cx={mx}
+                  cy={my}
                   r={markerRadius}
                   fill={isCurrent ? accent : "#ffffff"}
                   stroke={isCurrent ? "#ffffff" : accent}
@@ -253,8 +294,8 @@ export function StoreMap({
                 {/* react-native-svg's <Text> has no dominantBaseline; nudge y by ~0.35*fontSize to
                     approximate vertical centering on the default alphabetic baseline. */}
                 <SvgText
-                  x={cx}
-                  y={cy + markerFontSize * 0.35}
+                  x={mx}
+                  y={my + markerFontSize * 0.35}
                   textAnchor="middle"
                   fontSize={markerFontSize}
                   fontFamily={FONTS.bold}
@@ -264,13 +305,13 @@ export function StoreMap({
                 </SvgText>
                 <LabelPill
                   text={stop.label}
-                  x={cx}
-                  y={cy - markerRadius - 6 * scale}
+                  x={labelAnchor.x}
+                  y={labelAnchor.y}
                   fontSize={labelFontSize}
                   color={isCurrent ? COLORS.neutral900 : COLORS.neutral600}
                   mapWidth={mapWidth}
                   scale={scale}
-                  above
+                  side={placement.labelSide}
                 />
               </G>
             );
