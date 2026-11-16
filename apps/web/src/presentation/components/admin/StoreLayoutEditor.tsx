@@ -34,6 +34,7 @@ import {
   snapToGuides,
   straightOntoSegment,
 } from "./map-editor-snapping";
+import { type ConnectionProposal, proposeConnections } from "./auto-connect";
 import type { StoreMapVideo } from "@/src/infrastructure/repositories/interfaces/map-video-repository";
 import { ProductAutocomplete } from "./ProductAutocomplete";
 import { AliasPlacePanel } from "./AliasPlacePanel";
@@ -128,6 +129,12 @@ const GUIDE_SNAP_PX = 8;
 // A line drawn within this many degrees of horizontal/vertical comes out straight (Shift: free angle).
 const AUTO_STRAIGHTEN_DEGREES = 7;
 const GUIDE_COLOR = "#db2777";
+// Auto-connect: corridors farther than this (fraction of map width) aren't proposed, and a spot
+// this close to a corridor's waypoint joins that waypoint instead of adding one.
+const AUTO_CONNECT_MAX_DISTANCE = 0.2;
+const AUTO_CONNECT_JOIN_POINT = 0.005;
+const PROPOSAL_COLOR = "#16a34a";
+
 // Arrow key → direction to nudge the last drafted line.
 const ARROW_NUDGES: Record<string, readonly [number, number]> = {
   ArrowLeft: [-1, 0],
@@ -323,6 +330,21 @@ export function StoreLayoutEditor({
   const [waypointToolsOpen, setWaypointToolsOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [resetMessage, setResetMessage] = useState<string | null>(null);
+  // "Connect departments automatically": proposed links under review (a click drops one) until approved.
+  const [autoConnect, setAutoConnect] = useState<{
+    proposals: ConnectionProposal[];
+    rejected: Set<string>;
+    tooFar: string[];
+  } | null>(null);
+  const [savingAutoConnect, setSavingAutoConnect] = useState(false);
+  useEffect(() => {
+    if (!autoConnect) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setAutoConnect(null);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [autoConnect]);
   // Alignment grid, remembered per store in this browser only (it's an editing aid, not map data).
   const gridStorageKey = `navio.mapGrid.${storeId}`;
   // Rows default to whatever makes the cells square on this map.
@@ -1004,6 +1026,54 @@ export function StoreLayoutEditor({
     }
   }
 
+  function startAutoConnect() {
+    exitLineMode();
+    setResetMessage(null);
+    setSelectedNodeIds(new Set());
+    setSelectedEdgeIds(new Set());
+    closePopups();
+    cancelAreaDrawing();
+    setPlacingNode(false);
+    setPlacingVideo(false);
+    const { proposals, tooFar } = proposeConnections(nodes, edges, mapWidth, mapHeight, {
+      maxDistance: AUTO_CONNECT_MAX_DISTANCE * mapWidth,
+      joinPointDistance: AUTO_CONNECT_JOIN_POINT * mapWidth,
+    });
+    setAutoConnect({ proposals, rejected: new Set(), tooFar });
+  }
+
+  function toggleProposal(nodeId: string) {
+    if (!autoConnect) return;
+    const rejected = new Set(autoConnect.rejected);
+    if (rejected.has(nodeId)) rejected.delete(nodeId);
+    else rejected.add(nodeId);
+    setAutoConnect({ ...autoConnect, rejected });
+  }
+
+  /** Saves the approved links: each department joined to its corridor (splitting that edge there). */
+  async function approveAutoConnect() {
+    if (!autoConnect || savingAutoConnect) return;
+    const accepted = autoConnect.proposals.filter((p) => !autoConnect.rejected.has(p.nodeId));
+    if (accepted.length === 0) {
+      setAutoConnect(null);
+      return;
+    }
+    const points: WaypointLinePoint[] = accepted.flatMap((p, i) => [
+      { key: `d${i}`, nodeId: p.nodeId },
+      p.target.kind === "node"
+        ? { key: `t${i}`, nodeId: p.target.nodeId }
+        : { key: `t${i}`, x: p.target.x, y: p.target.y, edgeId: p.target.edgeId },
+    ]);
+    const segments = accepted.map((_, i) => ({ from: `d${i}`, to: `t${i}`, count: 0 }));
+    setSavingAutoConnect(true);
+    try {
+      await createWaypointLines(points, segments);
+      setAutoConnect(null);
+    } finally {
+      setSavingAutoConnect(false);
+    }
+  }
+
   function exitLineMode() {
     setLineMode(false);
     setLineDraft(EMPTY_LINE_DRAFT);
@@ -1165,6 +1235,7 @@ export function StoreLayoutEditor({
                   cancelAreaDrawing();
                   setPlacingNode(false);
                   setPlacingVideo(false);
+                  setAutoConnect(null);
                   setLineMode(true);
                 }}
                 aria-pressed={lineMode}
@@ -1181,6 +1252,16 @@ export function StoreLayoutEditor({
                 className="rounded-full border border-red-300 bg-white px-3 py-1.5 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
               >
                 {resetting ? "מוחק…" : "ריסט"}
+              </button>
+              <button
+                type="button"
+                onClick={() => (autoConnect ? setAutoConnect(null) : startAutoConnect())}
+                aria-pressed={autoConnect !== null}
+                className={`rounded-full px-3 py-1.5 text-sm font-semibold ${
+                  autoConnect ? "bg-green-600 text-white" : "border border-green-600 bg-white text-green-700"
+                }`}
+              >
+                {autoConnect ? "ביטול חיבור אוטומטי" : "חיבור אוטומטי של מחלקות"}
               </button>
             </>
           )}
@@ -1355,6 +1436,50 @@ export function StoreLayoutEditor({
                 {disconnectedNodeIds.size === 1 ? "צומת אחד לא מחובר" : `${disconnectedNodeIds.size} צמתים לא מחוברים`}{" "}
                 לכניסה, ולכן מסלול לא יכול להגיע אליהם. הם מסומנים באדום - חברו אותם במצב &quot;הוספה וחיבור&quot;.
               </p>
+            )}
+
+            {autoConnect && (
+              <div className="flex flex-wrap items-center gap-3 rounded-xl border border-green-200 bg-green-50 p-3 text-sm">
+                {autoConnect.proposals.length === 0 && autoConnect.tooFar.length === 0 ? (
+                  <span className="font-medium text-green-900">כל המחלקות כבר מחוברות - אין מה לחבר.</span>
+                ) : (
+                  <span className="font-medium text-green-900">
+                    {autoConnect.proposals.length > 0
+                      ? `הוצעו ${autoConnect.proposals.length} חיבורים (מקווקו ירוק). לחצו על חיבור כדי לבטל אותו או להחזיר אותו, ואז אשרו.`
+                      : "לא נמצא מסדרון קרוב לאף מחלקה לא מחוברת."}
+                  </span>
+                )}
+                {autoConnect.proposals.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => void approveAutoConnect()}
+                    disabled={savingAutoConnect}
+                    className="rounded-lg bg-green-600 px-3 py-1.5 font-semibold text-white disabled:opacity-50"
+                  >
+                    {savingAutoConnect
+                      ? "מחבר…"
+                      : `אישור (${autoConnect.proposals.length - autoConnect.rejected.size})`}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setAutoConnect(null)}
+                  disabled={savingAutoConnect}
+                  className="text-green-800 hover:underline"
+                >
+                  {autoConnect.proposals.length > 0 ? "ביטול" : "סגירה"}
+                </button>
+                {autoConnect.tooFar.length > 0 && (
+                  <span className="basis-full text-xs text-amber-800">
+                    רחוקות מכל מסדרון, לא הוצע להן חיבור:{" "}
+                    {autoConnect.tooFar.map((id) => nodeById.get(id)?.label.replace(/\s*\n\s*/g, " ") ?? id).join(" · ")}
+                  </span>
+                )}
+                <span className="basis-full text-xs text-neutral-500">
+                  לכל מחלקה (או כניסה/קופה) שאין לה אף חיבור, הוצע הקו הקצר אל המסדרון הקרוב - בניצב אליו. המערכת לא
+                  רואה מדפים בתמונה, אז בדקו שאף חיבור לא עובר דרך מדף. Esc סוגר בלי לשמור.
+                </span>
+              </div>
             )}
 
             {resetMessage && (
@@ -1703,6 +1828,45 @@ export function StoreLayoutEditor({
                     />
                   </g>
                 )}
+                {autoConnect && (
+                  <g>
+                    {/* Over the map, so clicks only toggle proposals while reviewing. */}
+                    <rect x={0} y={0} width={mapWidth} height={mapHeight} fill="transparent" />
+                    {autoConnect.proposals.map((p) => {
+                      const rejected = autoConnect.rejected.has(p.nodeId);
+                      const x1 = p.from.x * mapWidth;
+                      const y1 = p.from.y * mapHeight;
+                      const x2 = p.target.x * mapWidth;
+                      const y2 = p.target.y * mapHeight;
+                      return (
+                        <g key={p.nodeId} className="cursor-pointer" onClick={() => toggleProposal(p.nodeId)}>
+                          <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="transparent" strokeWidth={22} />
+                          <line
+                            x1={x1}
+                            y1={y1}
+                            x2={x2}
+                            y2={y2}
+                            stroke={rejected ? DISCONNECTED_COLOR : PROPOSAL_COLOR}
+                            strokeOpacity={rejected ? 0.45 : 1}
+                            strokeWidth={4}
+                            strokeDasharray="10 6"
+                            strokeLinecap="round"
+                            vectorEffect="non-scaling-stroke"
+                          />
+                          <circle
+                            cx={x2}
+                            cy={y2}
+                            r={7}
+                            fill={rejected ? "#ffffff" : PROPOSAL_COLOR}
+                            stroke={rejected ? DISCONNECTED_COLOR : "#ffffff"}
+                            strokeWidth={2}
+                          />
+                        </g>
+                      );
+                    })}
+                  </g>
+                )}
+
                 {lineMode && (
                   <g>
                     {lineDraft.segments.map((segment, s) => {
