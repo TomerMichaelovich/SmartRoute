@@ -215,8 +215,9 @@ export function StoreMap({
             const cx = node.position.x * mapWidth;
             const cy = node.position.y * mapHeight;
 
-            // Entrance/checkout: a small label for orientation, nothing more.
-            if (node.type === "entrance" || node.type === "checkout") {
+            // Entrance/exit/checkout: a small label for orientation, nothing more. The exit is
+            // labelled just like the entrance.
+            if (node.type === "entrance" || node.type === "exit" || node.type === "checkout") {
               return (
                 <LabelPill
                   key={node.id}
@@ -224,7 +225,7 @@ export function StoreMap({
                   x={cx}
                   y={cy}
                   fontSize={minorLabelFontSize}
-                  color={node.type === "entrance" ? "#1d4ed8" : "#6d28d9"}
+                  color={node.type === "checkout" ? "#6d28d9" : "#1d4ed8"}
                   mapWidth={mapWidth}
                   scale={scale}
                 />

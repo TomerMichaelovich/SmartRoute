@@ -129,8 +129,9 @@ export function StoreMap({
           return null;
         }
 
-        if (node.type === "entrance" || node.type === "checkout") {
-          const ringColor = node.type === "entrance" ? "#2563eb" : "#7c3aed";
+        // The exit is labelled just like the entrance.
+        if (node.type === "entrance" || node.type === "exit" || node.type === "checkout") {
+          const ringColor = node.type === "checkout" ? "#7c3aed" : "#2563eb";
           return (
             <g key={node.id}>
               {icon ? (

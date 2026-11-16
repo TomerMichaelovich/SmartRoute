@@ -52,7 +52,7 @@ import { StorePriceBranchForm } from "@/src/presentation/components/admin/StoreP
 import { cityCodeFromName, cityName } from "@/src/infrastructure/prices/settlements";
 import { NODE_TYPE_LABELS } from "@/src/presentation/node-type-labels";
 
-const NODE_TYPES: MapNodeType[] = ["entrance", "checkout", "waypoint", "department"];
+const NODE_TYPES: MapNodeType[] = ["entrance", "checkout", "exit", "waypoint", "department"];
 
 export default async function AdminStoreDetailPage({
   params,

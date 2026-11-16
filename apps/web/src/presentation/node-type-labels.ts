@@ -4,6 +4,7 @@ import type { MapNodeType } from "@smartroute/core/domain/entities/map-node";
 export const NODE_TYPE_LABELS: Record<MapNodeType, string> = {
   entrance: "כניסה",
   checkout: "קופה",
+  exit: "יציאה",
   waypoint: "נקודת ציון",
   department: "מחלקה",
 };

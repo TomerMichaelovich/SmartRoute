@@ -1,6 +1,7 @@
 import type { MapEdge } from "@smartroute/core/domain/entities/map-edge";
 import type { MapNode } from "@smartroute/core/domain/entities/map-node";
 import { distanceBetweenNodes } from "@smartroute/core/domain/value-objects/geo-point";
+import { isRouteEnd } from "./reachability";
 
 export interface GraphNeighbor {
   to: string;
@@ -19,8 +20,9 @@ export interface Graph {
  * read from a stored field), so they're always correct even right after a node is
  * dragged to a new spot. These are relative map-space units, not real-world distance.
  *
- * A checkout is where shopping ends: no path leads out of one. Otherwise a route could cut
- * through the checkouts and along the corridor beyond them (to the exit) to reach a stop.
+ * A checkout is where shopping ends, and an exit lies beyond it: no path leads out of either.
+ * Otherwise a route could cut through the checkouts and along the corridor beyond them (to the
+ * exit) to reach a stop.
  */
 export function buildGraph(
   nodes: MapNode[],
@@ -37,8 +39,8 @@ export function buildGraph(
     const to = nodeMap.get(e.toNodeId);
     if (!from || !to) continue;
     const distance = distanceBetweenNodes(from.position, to.position, mapWidth, mapHeight);
-    if (from.type !== "checkout") adjacency.get(e.fromNodeId)!.push({ to: e.toNodeId, distance });
-    if (e.bidirectional && to.type !== "checkout") {
+    if (!isRouteEnd(from)) adjacency.get(e.fromNodeId)!.push({ to: e.toNodeId, distance });
+    if (e.bidirectional && !isRouteEnd(to)) {
       adjacency.get(e.toNodeId)!.push({ to: e.fromNodeId, distance });
     }
   }

@@ -1,6 +1,10 @@
 import type { GeoPoint } from "../value-objects/geo-point";
 
-export type MapNodeType = "entrance" | "checkout" | "waypoint" | "department";
+/**
+ * "exit" is the way out past the checkouts: shown to the shopper like the entrance, but never a
+ * place a route starts from or walks through.
+ */
+export type MapNodeType = "entrance" | "checkout" | "exit" | "waypoint" | "department";
 
 export interface MapNode {
   id: string;

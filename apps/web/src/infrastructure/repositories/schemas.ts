@@ -58,7 +58,7 @@ export const storeSchema = z.object({
   updatedAt: z.string(),
 });
 
-export const mapNodeTypeSchema = z.enum(["entrance", "checkout", "waypoint", "department"]);
+export const mapNodeTypeSchema = z.enum(["entrance", "checkout", "exit", "waypoint", "department"]);
 
 export const mapNodeSchema = z.object({
   id: z.string(),

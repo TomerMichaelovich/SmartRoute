@@ -6,6 +6,7 @@ import type { MapNode, MapNodeType } from "@smartroute/core/domain/entities/map-
 import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ProductListing } from "@smartroute/core/domain/entities/product-listing";
 import { distanceBetweenNodes } from "@smartroute/core/domain/value-objects/geo-point";
+import { findUnroutableNodeIds } from "@smartroute/core/application/routing/reachability";
 import { NODE_TYPE_LABELS } from "@/src/presentation/node-type-labels";
 import type { WaypointLinePoint, WaypointLineSegment } from "@/src/presentation/actions/admin-store-actions";
 import {
@@ -98,13 +99,14 @@ interface StoreLayoutEditorProps {
 const NODE_COLORS: Record<MapNodeType, string> = {
   entrance: "#2563eb",
   checkout: "#7c3aed",
+  exit: "#0f766e",
   waypoint: "#9ca3af",
   department: "#059669",
 };
 
 function nodeRadius(type: MapNodeType): number {
   if (type === "waypoint") return 5;
-  if (type === "entrance" || type === "checkout") return 28;
+  if (type === "entrance" || type === "checkout" || type === "exit") return 28;
   return 21;
 }
 
@@ -176,33 +178,6 @@ type LineTarget = { point: { x: number; y: number }; guides?: Guides } & (
 // Clicking this close to the first point of an area being drawn closes it (fraction of map width).
 const AREA_CLOSE_DISTANCE = 0.015;
 
-/**
- * Nodes a route can never reach: everything outside the part of the graph that's connected
- * (either direction) to an entrance. These are what make route building fail, so the editor
- * paints them red. With no entrance at all, nothing is flagged here (the page says so instead).
- */
-function findDisconnectedNodeIds(nodes: MapNode[], edges: MapEdge[]): Set<string> {
-  const entrances = nodes.filter((n) => n.type === "entrance");
-  if (entrances.length === 0) return new Set();
-  const nodeIds = new Set(nodes.map((n) => n.id));
-  const neighbours = new Map<string, string[]>();
-  // Edges left pointing at a deleted node don't count - the route graph skips them too.
-  for (const edge of edges.filter((e) => nodeIds.has(e.fromNodeId) && nodeIds.has(e.toNodeId))) {
-    neighbours.set(edge.fromNodeId, [...(neighbours.get(edge.fromNodeId) ?? []), edge.toNodeId]);
-    neighbours.set(edge.toNodeId, [...(neighbours.get(edge.toNodeId) ?? []), edge.fromNodeId]);
-  }
-  const reached = new Set(entrances.map((n) => n.id));
-  const queue = [...reached];
-  while (queue.length > 0) {
-    for (const next of neighbours.get(queue.pop()!) ?? []) {
-      if (!reached.has(next)) {
-        reached.add(next);
-        queue.push(next);
-      }
-    }
-  }
-  return new Set(nodes.filter((n) => !reached.has(n.id)).map((n) => n.id));
-}
 // Rough Heebo width per Hebrew letter, to size the label's box without measuring.
 const LABEL_CHAR_WIDTH_EM = 0.6;
 
@@ -592,8 +567,7 @@ export function StoreLayoutEditor({
 
   /**
    * A point drawn on from `previous`: guides/grid (Alt: free), then straightened when the line
-   * from `previous` is nearly horizontal or vertical (Shift: free angle). Used for waypoint
-   * line ends and department area corners alike.
+   * from `previous` is nearly horizontal or vertical (Shift: free angle).
    */
   function placeStraight(
     cursor: { x: number; y: number },
@@ -879,18 +853,15 @@ export function StoreLayoutEditor({
   }
 
   /**
-   * Where the next corner of the area being drawn lands - straightened and aligned the same way
-   * as a waypoint line: lined up with the other corners, the map's nodes and other departments'
-   * area corners.
+   * Where the next corner of the area being drawn lands: right where clicked - no guides or grid
+   * (a map full of nodes would catch nearly every click) - except that a side within a few
+   * degrees of horizontal or vertical comes out straight (Shift: exactly as clicked).
    */
-  function placeAreaCorner(cursor: { x: number; y: number }, altKey: boolean, shiftKey: boolean) {
-    if (!areaDraft) return { point: cursor, guides: {} as Guides };
-    const others = [
-      ...areaDraft.points,
-      ...nodes.map((n) => n.position),
-      ...nodes.flatMap((n) => (n.id !== areaDraft.nodeId && n.area ? n.area : [])),
-    ];
-    return placeStraight(cursor, areaDraft.points.at(-1), others, altKey, shiftKey);
+  function placeAreaCorner(cursor: { x: number; y: number }, shiftKey: boolean) {
+    const previous = areaDraft?.points.at(-1);
+    const point =
+      previous && !shiftKey ? autoStraighten(previous, cursor, mapWidth, mapHeight, AUTO_STRAIGHTEN_DEGREES) : cursor;
+    return { point };
   }
 
   function handleAreaClick(e: React.MouseEvent) {
@@ -906,7 +877,7 @@ export function StoreLayoutEditor({
       void saveArea(areaDraft.nodeId, areaDraft.points);
       return;
     }
-    const { point } = placeAreaCorner(cursor, e.altKey, e.shiftKey);
+    const { point } = placeAreaCorner(cursor, e.shiftKey);
     setAreaDraft({ ...areaDraft, points: [...areaDraft.points, point] });
   }
 
@@ -1183,8 +1154,10 @@ export function StoreLayoutEditor({
 
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
   const playingVideo = videos.find((v) => v.id === playingVideoId) ?? null;
-  const disconnectedNodeIds = findDisconnectedNodeIds(nodes, edges);
-  const hasEntrance = nodes.some((n) => n.type === "entrance");
+  // Painted red: what a route can't reach, judged exactly as route building does it.
+  const disconnectedNodeIds = findUnroutableNodeIds(nodes, edges);
+  const entranceCount = nodes.filter((n) => n.type === "entrance").length;
+  const hasEntrance = entranceCount > 0;
   const totalSelected = selectedNodeIds.size + selectedEdgeIds.size;
 
   const singleSelectedNode =
@@ -1207,8 +1180,8 @@ export function StoreLayoutEditor({
       : null;
   const lineEndPreview = linePendingPoint && lineTarget ? lineTarget.point : null;
   // The next corner of the area being drawn, where a click would put it.
-  const areaPlacement = areaDraft && areaCursor ? placeAreaCorner(areaCursor, altHeld, shiftHeld) : null;
-  const shownGuides = dragGuides ?? lineTarget?.guides ?? areaPlacement?.guides ?? null;
+  const areaPlacement = areaDraft && areaCursor ? placeAreaCorner(areaCursor, shiftHeld) : null;
+  const shownGuides = dragGuides ?? lineTarget?.guides ?? null;
   const lastLine = lineDraft.segments.at(-1);
   const lineNodeIds = new Set(lineDraft.points.flatMap((p) => (p.nodeId ? [p.nodeId] : [])));
   const toSvgPoints = (points: Array<{ x: number; y: number }>) =>
@@ -1479,10 +1452,17 @@ export function StoreLayoutEditor({
                 אין כניסה במפה - בלי כניסה אי אפשר לבנות מסלול. הוסיפו צומת מסוג כניסה.
               </p>
             )}
+            {entranceCount > 1 && (
+              <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">
+                יש במפה {entranceCount} צמתים מסוג כניסה - מסלול יוצא רק מאחד מהם, אז השאירו כניסה אחת. ליציאה מהחנות
+                יש סוג משלה: &quot;יציאה&quot;.
+              </p>
+            )}
             {disconnectedNodeIds.size > 0 && (
               <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">
-                {disconnectedNodeIds.size === 1 ? "צומת אחד לא מחובר" : `${disconnectedNodeIds.size} צמתים לא מחוברים`}{" "}
-                לכניסה, ולכן מסלול לא יכול להגיע אליהם. הם מסומנים באדום - חברו אותם במצב &quot;הוספה וחיבור&quot;.
+                {disconnectedNodeIds.size === 1 ? "צומת אחד" : `${disconnectedNodeIds.size} צמתים`} שמסלול מהכניסה לא
+                יכול להגיע אליהם (מסלול לא ממשיך הלאה מקופה או מיציאה). הם מסומנים באדום - חברו אותם במצב &quot;הוספה
+                וחיבור&quot;.
               </p>
             )}
 
@@ -2130,8 +2110,8 @@ export function StoreLayoutEditor({
                       &quot;סיום ושמירה&quot; · Esc לביטול ({activeAreaDraft.points.length} נקודות)
                     </p>
                     <p className="text-xs text-sky-800">
-                      צלע שקרובה לאופקי או לאנכי מתיישרת לבד (Shift: זווית חופשית). הפינה נצמדת לגובה/לרוחב של פינות
-                      ונקודות אחרות (קו עזר ורוד) או לרשת; Alt: מיקום חופשי.
+                      הפינה נוצרת בדיוק במקום הלחיצה. צלע שקרובה מאוד לאופקי או לאנכי מתיישרת לבד (Shift: בלי
+                      יישור).
                     </p>
                     <div className="flex flex-wrap gap-2">
                       <button
