@@ -6,9 +6,12 @@ import {
   connect,
   detachFromNode,
   hitDraft,
+  hitDraftLine,
+  nearestOnSegment,
   innerPoints,
   removeLastSegment,
   splitAt,
+  splitAtPosition,
 } from "@/src/presentation/components/admin/waypoint-line-draft";
 
 const W = 1000;
@@ -73,5 +76,28 @@ describe("waypoint line draft", () => {
     const pending = { ...addPoint(d, { x: 0.3, y: 0.9 }, "c").draft, pendingFrom: "c" };
     expect(cancelPending(pending).points.map((p) => p.key)).toEqual(["a", "b"]);
     expect(removeLastSegment(d)).toEqual(EMPTY_LINE_DRAFT);
+  });
+
+  it("finds the nearest spot on a segment", () => {
+    const near = nearestOnSegment({ x: 0, y: 0.5 }, { x: 1, y: 0.5 }, { x: 0.3, y: 0.51 }, W, H);
+    expect(near.t).toBeCloseTo(0.3);
+    expect(near.point).toEqual({ x: 0.3, y: 0.5 });
+    expect(near.distance).toBeCloseTo(10);
+  });
+
+  it("hits a drafted line anywhere between its ends", () => {
+    const d = twoPointLine(3);
+    expect(hitDraftLine(d, { x: 0.37, y: 0.505 }, 10, W, H)).toEqual({ segment: 0, t: 0.37 });
+    expect(hitDraftLine(d, { x: 0.37, y: 0.6 }, 10, W, H)).toBeNull();
+  });
+
+  it("splits a drafted line at any spot, sharing out its in-between points", () => {
+    const d = twoPointLine(3); // in-between points at 0.25, 0.5, 0.75
+    const { draft, key } = splitAtPosition(d, 0, 0.6, "m");
+    expect(draft.points.find((p) => p.key === key)).toEqual({ key: "m", x: 0.6, y: 0.5 });
+    expect(draft.segments).toEqual([
+      { from: "a", to: "m", count: 2 },
+      { from: "m", to: "b", count: 1 },
+    ]);
   });
 });

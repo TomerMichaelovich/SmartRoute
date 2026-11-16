@@ -53,6 +53,30 @@ export function autoStraighten(start: Point, point: Point, mapWidth: number, map
   return point;
 }
 
+/**
+ * Where on segment a-b a line from `start` should end: if a line to `candidate` (a point on
+ * a-b) would get auto-straightened, the spot on a-b that keeps it exactly horizontal or vertical
+ * - when a-b crosses that height or x - else `candidate` itself.
+ */
+export function straightOntoSegment(
+  start: Point,
+  candidate: Point,
+  a: Point,
+  b: Point,
+  mapWidth: number,
+  mapHeight: number,
+  maxDegrees: number,
+): Point {
+  const straight = autoStraighten(start, candidate, mapWidth, mapHeight, maxDegrees);
+  if (straight.x === candidate.x && straight.y === candidate.y) return candidate;
+  const horizontal = straight.y === start.y && straight.x === candidate.x;
+  const [from, to, target] = horizontal ? [a.y, b.y, start.y] : [a.x, b.x, start.x];
+  if (from === to) return candidate;
+  const t = (target - from) / (to - from);
+  if (t <= 0 || t >= 1) return candidate;
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+}
+
 export type AlignMode = "row" | "column" | "distribute";
 
 /**

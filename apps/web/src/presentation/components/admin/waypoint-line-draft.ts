@@ -11,6 +11,8 @@ export interface DraftPoint {
   key: string;
   /** An existing map node this end sits on; the line joins it instead of adding a waypoint. */
   nodeId?: string;
+  /** An existing map edge this new waypoint sits on; that edge gets split here when created. */
+  edgeId?: string;
   x: number;
   y: number;
 }
@@ -89,6 +91,64 @@ export function splitAt(draft: LineDraft, segment: number, index: number, newKey
     1,
     { from: s.from, to: newKey, count: index - 1 },
     { from: newKey, to: s.to, count: s.count - index },
+  );
+  return { draft: { ...draft, points: [...draft.points, { key: newKey, ...position }], segments }, key: newKey };
+}
+
+/**
+ * The point on segment a-b nearest to `p`: its position, how far along (t, 0 at a to 1 at b),
+ * and its distance from `p` in map units.
+ */
+export function nearestOnSegment(a: Point, b: Point, p: Point, mapWidth: number, mapHeight: number) {
+  const ax = a.x * mapWidth;
+  const ay = a.y * mapHeight;
+  const dx = b.x * mapWidth - ax;
+  const dy = b.y * mapHeight - ay;
+  const lengthSq = dx * dx + dy * dy;
+  const t = lengthSq === 0 ? 0 : Math.max(0, Math.min(1, ((p.x * mapWidth - ax) * dx + (p.y * mapHeight - ay) * dy) / lengthSq));
+  const point = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+  const distance = Math.hypot((point.x - p.x) * mapWidth, (point.y - p.y) * mapHeight);
+  return { t, point, distance };
+}
+
+/** The drafted line passing within `tolerance` map units of `at` (strictly between its ends), if any. */
+export function hitDraftLine(
+  draft: LineDraft,
+  at: Point,
+  tolerance: number,
+  mapWidth: number,
+  mapHeight: number,
+): { segment: number; t: number } | null {
+  let best: { segment: number; t: number; distance: number } | null = null;
+  draft.segments.forEach((s, segment) => {
+    const a = pointByKey(draft, s.from);
+    const b = pointByKey(draft, s.to);
+    if (!a || !b) return;
+    const near = nearestOnSegment(a, b, at, mapWidth, mapHeight);
+    if (near.t <= 0 || near.t >= 1 || near.distance > tolerance) return;
+    if (!best || near.distance < best.distance) best = { segment, t: near.t, distance: near.distance };
+  });
+  return best ? { segment: (best as { segment: number }).segment, t: (best as { t: number }).t } : null;
+}
+
+/**
+ * Puts a new shared end at fraction `t` along a drafted line, splitting it in two there. The
+ * line's in-between points are shared out by where they fell: those before `t` go to the first
+ * part, the rest to the second.
+ */
+export function splitAtPosition(draft: LineDraft, segment: number, t: number, newKey: string): { draft: LineDraft; key: string } {
+  const s = draft.segments[segment];
+  const a = pointByKey(draft, s.from)!;
+  const b = pointByKey(draft, s.to)!;
+  const position = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+  let before = 0;
+  for (let i = 1; i <= s.count; i++) if (i / (s.count + 1) < t) before++;
+  const segments = [...draft.segments];
+  segments.splice(
+    segment,
+    1,
+    { from: s.from, to: newKey, count: before },
+    { from: newKey, to: s.to, count: s.count - before },
   );
   return { draft: { ...draft, points: [...draft.points, { key: newKey, ...position }], segments }, key: newKey };
 }

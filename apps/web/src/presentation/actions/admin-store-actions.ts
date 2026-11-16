@@ -534,8 +534,13 @@ export async function resetWaypoints(storeId: string): Promise<{ deleted: number
   return { deleted: toDelete.length, kept: waypoints.length - toDelete.length };
 }
 
-/** One end of a drafted waypoint line: an existing node (snapped to), or a spot on the map for a new waypoint. */
-export type WaypointLinePoint = { key: string; nodeId: string } | { key: string; x: number; y: number };
+/**
+ * One end of a drafted waypoint line: an existing node (snapped to), or a spot on the map for a
+ * new waypoint - optionally on an existing edge (`edgeId`), which is then split there.
+ */
+export type WaypointLinePoint =
+  | { key: string; nodeId: string }
+  | { key: string; x: number; y: number; edgeId?: string };
 
 /** A drafted straight line between two ends (by key), with `count` waypoints evenly between them. */
 export interface WaypointLineSegment {
@@ -553,7 +558,8 @@ const WAYPOINT_LINES_MAX_SEGMENTS = 200;
  * Creates the editor's drafted corridor lines in one go: every line gets its in-between
  * waypoints and is chained end to end with bidirectional edges. Lines sharing an end share the
  * node there. An end on an existing node reuses it (so the line joins the graph there); an end
- * on empty map gets a new waypoint.
+ * on empty map gets a new waypoint. A new waypoint placed on an existing edge splits that edge
+ * there, so the corridor it's on runs through it.
  */
 export async function createWaypointLines(
   storeId: string,
@@ -577,6 +583,7 @@ export async function createWaypointLines(
   const usedKeys = new Set(segments.flatMap((s) => [String(s.from), String(s.to)]));
   const newNodes: MapNode[] = [];
   const ends = new Map<string, { id: string; x: number; y: number }>();
+  const pointsOnEdges = new Map<string, Array<{ id: string; x: number; y: number }>>();
   for (const point of points) {
     const key = String(point?.key);
     if (!usedKeys.has(key) || ends.has(key)) continue;
@@ -588,10 +595,32 @@ export async function createWaypointLines(
       const end = { id: crypto.randomUUID(), x: clamp01(point.x), y: clamp01(point.y) };
       newNodes.push(waypointAt(end.id, end.x, end.y));
       ends.set(key, end);
+      if (point.edgeId) {
+        const edgeId = String(point.edgeId);
+        pointsOnEdges.set(edgeId, [...(pointsOnEdges.get(edgeId) ?? []), end]);
+      }
     }
   }
 
-  const edgePairs: Array<[string, string]> = [];
+  // Each edge a new waypoint was placed on is replaced by a chain through those waypoints, in
+  // order along it, keeping its direction setting.
+  const edgePairs: Array<[string, string, boolean]> = [];
+  const replacedEdgeIds: string[] = [];
+  if (pointsOnEdges.size > 0) {
+    const storeEdges = new Map((await edgeRepository.findByStore(storeId)).map((e) => [e.id, e]));
+    for (const [edgeId, onEdge] of pointsOnEdges) {
+      const edge = storeEdges.get(edgeId);
+      const a = edge && storeNodes.get(edge.fromNodeId);
+      const b = edge && storeNodes.get(edge.toNodeId);
+      if (!edge || !a || !b) throw new Error("Unauthorized");
+      const dx = b.position.x - a.position.x;
+      const dy = b.position.y - a.position.y;
+      const along = (p: { x: number; y: number }) => (p.x - a.position.x) * dx + (p.y - a.position.y) * dy;
+      const chain = [a.id, ...[...onEdge].sort((p, q) => along(p) - along(q)).map((p) => p.id), b.id];
+      for (let i = 1; i < chain.length; i++) edgePairs.push([chain[i - 1], chain[i], edge.bidirectional]);
+      replacedEdgeIds.push(edgeId);
+    }
+  }
   for (const segment of segments) {
     const from = ends.get(String(segment.from));
     const to = ends.get(String(segment.to));
@@ -606,16 +635,18 @@ export async function createWaypointLines(
       chain.push(id);
     }
     chain.push(to.id);
-    for (let i = 1; i < chain.length; i++) edgePairs.push([chain[i - 1], chain[i]]);
+    for (let i = 1; i < chain.length; i++) edgePairs.push([chain[i - 1], chain[i], true]);
   }
 
   // Nodes first, so no edge is ever written before the node it points at.
   await Promise.all(newNodes.map((n) => nodeRepository.create(n)));
   await Promise.all(
-    edgePairs.map(([fromNodeId, toNodeId]) =>
-      edgeRepository.create({ id: crypto.randomUUID(), storeId, fromNodeId, toNodeId, bidirectional: true }),
+    edgePairs.map(([fromNodeId, toNodeId, bidirectional]) =>
+      edgeRepository.create({ id: crypto.randomUUID(), storeId, fromNodeId, toNodeId, bidirectional }),
     ),
   );
+  // Only once the chains replacing them exist, so the corridor is never cut in between.
+  await Promise.all(replacedEdgeIds.map((id) => edgeRepository.delete(id)));
 
   revalidatePath(`/admin/stores/${storeId}`);
 }

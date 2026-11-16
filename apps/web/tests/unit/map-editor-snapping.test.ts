@@ -3,6 +3,7 @@ import {
   alignPositions,
   autoStraighten,
   snapToGuides,
+  straightOntoSegment,
 } from "@/src/presentation/components/admin/map-editor-snapping";
 
 const W = 1000;
@@ -50,5 +51,18 @@ describe("map editor snapping", () => {
     expect(out.map((p) => p.id)).toEqual(["a", "b", "c"]);
     expect(out.map((p) => p.x)).toEqual([0.1, 0.5, 0.9]);
     expect(out[1].y).toBe(0.51);
+  });
+
+  it("slides an end along the target line so a nearly straight line comes out straight", () => {
+    const start = { x: 0.1, y: 0.5 };
+    // Target: a vertical corridor at x = 0.6; the click landed on it a little below start's height.
+    const end = straightOntoSegment(start, { x: 0.6, y: 0.52 }, { x: 0.6, y: 0.1 }, { x: 0.6, y: 0.9 }, W, H, 7);
+    expect(end.x).toBeCloseTo(0.6);
+    expect(end.y).toBeCloseTo(0.5);
+    // Far off straight: left where it was clicked.
+    expect(straightOntoSegment(start, { x: 0.6, y: 0.85 }, { x: 0.6, y: 0.1 }, { x: 0.6, y: 0.9 }, W, H, 7)).toEqual({
+      x: 0.6,
+      y: 0.85,
+    });
   });
 });

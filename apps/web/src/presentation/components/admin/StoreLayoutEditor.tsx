@@ -16,13 +16,23 @@ import {
   connect,
   detachFromNode,
   hitDraft,
+  hitDraftLine,
   innerPoints,
+  nearestOnSegment,
   pointByKey,
   removeLastSegment,
   splitAt,
+  splitAtPosition,
   suggestedCount,
 } from "./waypoint-line-draft";
-import { type AlignMode, type Guides, alignPositions, autoStraighten, snapToGuides } from "./map-editor-snapping";
+import {
+  type AlignMode,
+  type Guides,
+  alignPositions,
+  autoStraighten,
+  snapToGuides,
+  straightOntoSegment,
+} from "./map-editor-snapping";
 import type { StoreMapVideo } from "@/src/infrastructure/repositories/interfaces/map-video-repository";
 import { ProductAutocomplete } from "./ProductAutocomplete";
 import { AliasPlacePanel } from "./AliasPlacePanel";
@@ -106,8 +116,11 @@ const AREA_STROKE = "#0284c7";
 const WAYPOINT_LINE_MAX_POINTS = 40;
 const WAYPOINT_LINE_DEFAULT_SPACING = 0.04;
 const LINE_COLOR = "#0891b2";
-// How close a click must land to a drawn line's point to start the next line from it (fraction of map width).
-const DRAFT_POINT_HIT = 0.012;
+// How close (screen pixels) a click must land to an existing point to use it - kept tight, so a
+// click on a line beside a point adds a new point there instead of jumping to that one.
+const POINT_HIT_PX = 7;
+// How close (screen pixels) a click must land to a line to put a new point on it.
+const LINE_HIT_PX = 8;
 
 // Smart alignment guides catch a point this many screen pixels from another point's x or y.
 const GUIDE_SNAP_PX = 8;
@@ -131,8 +144,19 @@ interface GridSettings {
 const clampGridCells = (n: unknown, fallback: number) =>
   Math.min(GRID_CELLS_MAX, Math.max(GRID_CELLS_MIN, Math.round(Number(n)) || fallback));
 
-/** One end of a waypoint line being drawn: snapped to an existing node, or a spot on the map. */
-type LineDraftEnd = { nodeId?: string; x: number; y: number };
+/**
+ * What a click of the waypoint-line tool lands on, in this order: a point of the draft (an end,
+ * or a point between that then splits its line), an existing node, a drafted line or an
+ * existing edge (a new point is added on it there), or else the empty spot.
+ */
+type LineTarget = { point: { x: number; y: number }; guides?: Guides } & (
+  | { kind: "draftEnd"; key: string }
+  | { kind: "draftInner"; segment: number; index: number }
+  | { kind: "node"; nodeId: string }
+  | { kind: "draftLine"; segment: number; t: number }
+  | { kind: "edge"; edgeId: string }
+  | { kind: "free" }
+);
 
 // Clicking this close to the first point of an area being drawn closes it (fraction of map width).
 const AREA_CLOSE_DISTANCE = 0.015;
@@ -285,7 +309,7 @@ export function StoreLayoutEditor({
   // the next one from there. All the lines are created together, chained along straight lines.
   const [lineMode, setLineMode] = useState(false);
   const [lineDraft, setLineDraft] = useState<LineDraft>(EMPTY_LINE_DRAFT);
-  const [lineCursor, setLineCursor] = useState<{ x: number; y: number } | null>(null);
+  const [lineCursor, setLineCursor] = useState<{ x: number; y: number; clientX: number; clientY: number } | null>(null);
   const [savingLine, setSavingLine] = useState(false);
   // "Edit walking points" opens the waypoint tools: the line tool and the reset.
   const [waypointToolsOpen, setWaypointToolsOpen] = useState(false);
@@ -809,23 +833,75 @@ export function StoreLayoutEditor({
     return undefined;
   }
 
-  /** The node under a click, if any, so a line end lands on it instead of beside it. */
-  function snapLineEnd(point: { x: number; y: number }, clientX: number, clientY: number): LineDraftEnd {
-    const under = nodeUnderCursor(clientX, clientY);
-    if (under) return { nodeId: under.id, ...under.position };
-    let best: { node: MapNode; distance: number } | null = null;
-    for (const node of nodes) {
-      const distance = Math.hypot((node.position.x - point.x) * mapWidth, (node.position.y - point.y) * mapHeight);
-      const drawnType = hideDepartments && node.type === "department" ? "waypoint" : node.type;
-      const reach = Math.max(14, nodeRadius(drawnType) + 6);
-      if (distance <= reach && (!best || distance < best.distance)) best = { node, distance };
+  /** What a click at this spot would land on (see LineTarget), and where exactly. */
+  function resolveLineTarget(
+    cursor: { x: number; y: number },
+    clientX: number,
+    clientY: number,
+    pendingPoint: { x: number; y: number } | undefined,
+    altKey: boolean,
+    shiftKey: boolean,
+  ): LineTarget {
+    const unitsPerPx = svgWidthPx > 0 ? mapWidth / svgWidthPx : 1;
+    const pointTolerance = POINT_HIT_PX * unitsPerPx;
+    const lineTolerance = LINE_HIT_PX * unitsPerPx;
+
+    const hit = hitDraft(lineDraft, cursor, pointTolerance, mapWidth, mapHeight);
+    if (hit?.kind === "end") return { kind: "draftEnd", key: hit.key, point: pointByKey(lineDraft, hit.key)! };
+    if (hit?.kind === "inner") {
+      const s = lineDraft.segments[hit.segment];
+      const at = innerPoints(pointByKey(lineDraft, s.from)!, pointByKey(lineDraft, s.to)!, s.count)[hit.index - 1];
+      return { kind: "draftInner", segment: hit.segment, index: hit.index, point: at };
     }
-    return best ? { nodeId: best.node.id, ...best.node.position } : point;
+
+    // A node drawn under the cursor (a department's whole label counts), or one right beside it.
+    let node = nodeUnderCursor(clientX, clientY);
+    if (!node) {
+      let best: { node: MapNode; d: number } | null = null;
+      for (const n of nodes) {
+        const d = Math.hypot((n.position.x - cursor.x) * mapWidth, (n.position.y - cursor.y) * mapHeight);
+        if (d <= pointTolerance && (!best || d < best.d)) best = { node: n, d };
+      }
+      node = best?.node;
+    }
+    if (node) return { kind: "node", nodeId: node.id, point: node.position };
+
+    // On a line: a new point exactly on it - slid along it to keep a nearly straight line straight.
+    const onLine = (a: { x: number; y: number }, b: { x: number; y: number }, at: { x: number; y: number }) => {
+      const point =
+        pendingPoint && !shiftKey
+          ? straightOntoSegment(pendingPoint, at, a, b, mapWidth, mapHeight, AUTO_STRAIGHTEN_DEGREES)
+          : at;
+      return { point, t: nearestOnSegment(a, b, point, mapWidth, mapHeight).t };
+    };
+    const draftLine = hitDraftLine(lineDraft, cursor, lineTolerance, mapWidth, mapHeight);
+    if (draftLine) {
+      const s = lineDraft.segments[draftLine.segment];
+      const a = pointByKey(lineDraft, s.from)!;
+      const b = pointByKey(lineDraft, s.to)!;
+      const { point, t } = onLine(a, b, nearestOnSegment(a, b, cursor, mapWidth, mapHeight).point);
+      if (t > 0 && t < 1) return { kind: "draftLine", segment: draftLine.segment, t, point };
+    }
+    let bestEdge: { edgeId: string; a: MapNode; b: MapNode; at: { x: number; y: number }; d: number } | null = null;
+    for (const edge of edges) {
+      const a = nodeById.get(edge.fromNodeId);
+      const b = nodeById.get(edge.toNodeId);
+      if (!a || !b) continue;
+      const near = nearestOnSegment(a.position, b.position, cursor, mapWidth, mapHeight);
+      if (near.t <= 0 || near.t >= 1 || near.distance > lineTolerance) continue;
+      if (!bestEdge || near.distance < bestEdge.d) bestEdge = { edgeId: edge.id, a, b, at: near.point, d: near.distance };
+    }
+    if (bestEdge) {
+      const { point, t } = onLine(bestEdge.a.position, bestEdge.b.position, bestEdge.at);
+      if (t > 0 && t < 1) return { kind: "edge", edgeId: bestEdge.edgeId, point };
+    }
+
+    const placed = placeLineEnd(cursor, pendingPoint, altKey, shiftKey);
+    return { kind: "free", point: placed.point, guides: placed.guides };
   }
 
-  // A click starts a line or ends the one being stretched. It lands, in order of preference, on
-  // a point of a line already drawn (its end, or a point between - which splits that line there),
-  // on a node of the map, or on the empty spot itself. Nothing is saved until "create".
+  // A click starts a line or ends the one being stretched - on whatever resolveLineTarget finds.
+  // Nothing is saved until "create".
   function handleLineClick(e: React.MouseEvent) {
     if (savingLine) return;
     // A second click on a department (or entrance/checkout) a line already joins unhooks it:
@@ -838,29 +914,38 @@ export function StoreLayoutEditor({
     const cursor = screenToNormalized(e.clientX, e.clientY);
     const pendingFrom = lineDraft.pendingFrom;
     const pendingPoint = pendingFrom ? pointByKey(lineDraft, pendingFrom) : undefined;
+    const target = resolveLineTarget(cursor, e.clientX, e.clientY, pendingPoint, e.altKey, e.shiftKey);
     const newKey = crypto.randomUUID();
     let draft = lineDraft;
     let key: string;
-    const hit = hitDraft(lineDraft, cursor, DRAFT_POINT_HIT * mapWidth, mapWidth, mapHeight);
-    if (hit?.kind === "end") {
-      key = hit.key;
-    } else if (hit?.kind === "inner") {
-      ({ draft, key } = splitAt(draft, hit.segment, hit.index, newKey));
-    } else {
-      // A straightened end still joins a node right where it lands (off the axis by at most the
-      // node's click area) - connecting the corridor matters more than a perfect line.
-      const { point } = placeLineEnd(cursor, pendingPoint, e.altKey, e.shiftKey);
-      ({ draft, key } = addPoint(draft, snapLineEnd(point, e.clientX, e.clientY), newKey));
+    switch (target.kind) {
+      case "draftEnd":
+        key = target.key;
+        break;
+      case "draftInner":
+        ({ draft, key } = splitAt(draft, target.segment, target.index, newKey));
+        break;
+      case "draftLine":
+        ({ draft, key } = splitAtPosition(draft, target.segment, target.t, newKey));
+        break;
+      case "node":
+        ({ draft, key } = addPoint(draft, { nodeId: target.nodeId, ...target.point }, newKey));
+        break;
+      case "edge":
+        ({ draft, key } = addPoint(draft, { edgeId: target.edgeId, ...target.point }, newKey));
+        break;
+      default:
+        ({ draft, key } = addPoint(draft, target.point, newKey));
     }
     if (!pendingFrom || !pendingPoint) {
       setLineDraft({ ...draft, pendingFrom: key });
       return;
     }
     if (key === pendingFrom) return;
-    const target = pointByKey(draft, key)!;
+    const end = pointByKey(draft, key)!;
     const count = suggestedCount(
       pendingPoint,
-      target,
+      end,
       mapWidth,
       mapHeight,
       WAYPOINT_LINE_DEFAULT_SPACING,
@@ -881,7 +966,7 @@ export function StoreLayoutEditor({
   async function saveLines() {
     if (lineDraft.segments.length === 0 || savingLine) return;
     const points: WaypointLinePoint[] = lineDraft.points.map((p) =>
-      p.nodeId ? { key: p.key, nodeId: p.nodeId } : { key: p.key, x: p.x, y: p.y },
+      p.nodeId ? { key: p.key, nodeId: p.nodeId } : { key: p.key, x: p.x, y: p.y, edgeId: p.edgeId },
     );
     setSavingLine(true);
     try {
@@ -973,9 +1058,12 @@ export function StoreLayoutEditor({
   const activeAreaDraft = areaDraft && singleSelectedNode?.id === areaDraft.nodeId ? areaDraft : null;
   // The line being stretched: from its start to where a click would put its end.
   const linePendingPoint = lineDraft.pendingFrom ? pointByKey(lineDraft, lineDraft.pendingFrom) : undefined;
-  const linePlacement = lineMode && lineCursor ? placeLineEnd(lineCursor, linePendingPoint, altHeld, shiftHeld) : null;
-  const lineEndPreview = linePendingPoint && linePlacement ? linePlacement.point : null;
-  const shownGuides = dragGuides ?? linePlacement?.guides ?? null;
+  const lineTarget =
+    lineMode && lineCursor
+      ? resolveLineTarget(lineCursor, lineCursor.clientX, lineCursor.clientY, linePendingPoint, altHeld, shiftHeld)
+      : null;
+  const lineEndPreview = linePendingPoint && lineTarget ? lineTarget.point : null;
+  const shownGuides = dragGuides ?? lineTarget?.guides ?? null;
   const lastLine = lineDraft.segments.at(-1);
   const lineNodeIds = new Set(lineDraft.points.flatMap((p) => (p.nodeId ? [p.nodeId] : [])));
   const toSvgPoints = (points: Array<{ x: number; y: number }>) =>
@@ -1618,6 +1706,19 @@ export function StoreLayoutEditor({
                         </g>
                       );
                     })}
+                    {/* On a line: a ring where the new point will be added on it. */}
+                    {lineTarget && (lineTarget.kind === "edge" || lineTarget.kind === "draftLine") && (
+                      <circle
+                        cx={lineTarget.point.x * mapWidth}
+                        cy={lineTarget.point.y * mapHeight}
+                        r={9}
+                        fill="#ffffff"
+                        fillOpacity={0.7}
+                        stroke={GUIDE_COLOR}
+                        strokeWidth={3}
+                        pointerEvents="none"
+                      />
+                    )}
                     {linePendingPoint && lineEndPreview && (
                       <line
                         x1={linePendingPoint.x * mapWidth}
@@ -1661,7 +1762,7 @@ export function StoreLayoutEditor({
                       }}
                       onPointerDown={(e) => e.stopPropagation()}
                       onPointerMove={(e) => {
-                        setLineCursor(screenToNormalized(e.clientX, e.clientY));
+                        setLineCursor({ ...screenToNormalized(e.clientX, e.clientY), clientX: e.clientX, clientY: e.clientY });
                         setAltHeld(e.altKey);
                         setShiftHeld(e.shiftKey);
                       }}
