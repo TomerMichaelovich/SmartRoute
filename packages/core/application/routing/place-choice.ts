@@ -1,9 +1,13 @@
+import type { MapEdge } from "@smartroute/core/domain/entities/map-edge";
+import type { MapNode } from "@smartroute/core/domain/entities/map-node";
 import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ProductListing } from "@smartroute/core/domain/entities/product-listing";
 import type { ShoppingListItem, ShoppingListItemPlaceChoice } from "@smartroute/core/domain/entities/shopping-list";
 import { effectiveVariant } from "../basket/effective-variant";
 import { listLineCores } from "../classification/list-line";
 import { normalizeHebrewText } from "../classification/normalize-hebrew-text";
+import { dijkstra } from "./dijkstra";
+import { buildGraph } from "./graph-builder";
 
 /**
  * A mapped store can carry several products that answer to one list item - the
@@ -177,11 +181,70 @@ export interface PlaceQuestion {
   options: PlaceOption[];
 }
 
+/** Places within this share of the map's longer side, on foot, are one spot to the shopper. */
+const NEARBY_PLACES_FRACTION = 0.12;
+
+/** How far apart the store's places are on foot, and what counts as next to each other. */
+export interface PlaceProximity {
+  /** Infinity when there's no way between them. */
+  distance: (a: string, b: string) => number;
+  near: number;
+}
+
+export function placeProximity(nodes: MapNode[], edges: MapEdge[], mapWidth: number, mapHeight: number): PlaceProximity {
+  const graph = buildGraph(nodes, edges, mapWidth, mapHeight);
+  const shelfOf = new Map(nodes.flatMap((n) => (n.shelfId ? [[n.id, n.shelfId] as const] : [])));
+  const fromNode = new Map<string, Map<string, number>>();
+  const oneWay = (a: string, b: string) => {
+    let distances = fromNode.get(a);
+    if (!distances) fromNode.set(a, (distances = dijkstra(graph, a).distances));
+    return distances.get(b) ?? Infinity;
+  };
+  return {
+    // Marked by the admin as one shelf: the same spot, however the map's points lie.
+    // Otherwise edges can be one-way: the shorter direction is how close they are.
+    distance: (a, b) => (shelfOf.has(a) && shelfOf.get(a) === shelfOf.get(b) ? 0 : Math.min(oneWay(a, b), oneWay(b, a))),
+    near: NEARBY_PLACES_FRACTION * Math.max(mapWidth, mapHeight),
+  };
+}
+
+/**
+ * Whether the shopper can settle it on the floor, with no question: the places are next
+ * to each other or marked as one shelf (MapNode.shelfId), or they hold one kind of
+ * product (bottles here, six-packs there) and the map marks them all.
+ */
+function settledOnTheFloor(options: PlaceOption[], proximity: PlaceProximity, groupOf: (id: string) => string | undefined): boolean {
+  const allNear = options.every((a, i) => options.slice(i + 1).every((b) => proximity.distance(a.nodeId, b.nodeId) <= proximity.near));
+  if (allNear) return true;
+  const groups = new Set(options.flatMap((o) => o.productIds.map(groupOf)).filter(Boolean));
+  return groups.size === 1;
+}
+
+/** What's left to ask is which kind of product: places holding the same kind are one answer. */
+function onePerKind(options: PlaceOption[], groupOf: (id: string) => string | undefined): PlaceOption[] {
+  const byKind = new Map<string, PlaceOption>();
+  for (const option of options) {
+    const groups = new Set(option.productIds.map(groupOf));
+    const only = groups.size === 1 ? [...groups][0] : undefined;
+    const key = only ?? `node:${option.nodeId}`;
+    const kept = byKind.get(key);
+    if (!kept) {
+      byKind.set(key, option);
+      continue;
+    }
+    const [larger, smaller] = option.productIds.length > kept.productIds.length ? [option, kept] : [kept, option];
+    byKind.set(key, { ...larger, productIds: [...larger.productIds, ...smaller.productIds] });
+  }
+  return [...byKind.values()];
+}
+
 /**
  * Items to ask about before routing at this store: candidates standing in more than
  * one place, and no saved choice that applies here ("לא משנה לי" applies everywhere;
  * a product applies where it's one of the candidates) nor a cheapest-basket pick
- * that settles it. `skuKeys`: each candidate product's linked barcodes.
+ * that settles it. `skuKeys`: each candidate product's linked barcodes. With
+ * `proximity`, only really different products in places apart are asked about,
+ * one option per kind (see settledOnTheFloor).
  */
 export function placeQuestions(
   items: ShoppingListItem[],
@@ -190,7 +253,10 @@ export function placeQuestions(
   products: Product[],
   skuKeys?: Map<string, Set<string>>,
   genericSkuKeys?: GenericSkuKeys,
+  proximity?: PlaceProximity,
 ): PlaceQuestion[] {
+  const { productById } = storePlaces(storeId, listings, products);
+  const groupOf = (id: string) => productById.get(id)?.shelfGroup ?? undefined;
   const questions: PlaceQuestion[] = [];
   for (const item of items) {
     if (item.checked) continue;
@@ -200,7 +266,10 @@ export function placeQuestions(
     const choice = effectivePlaceChoice(item);
     if (choice && (choice.productId === null || productIds.includes(choice.productId))) continue;
     if (pickedInBasket(item, productIds, skuKeys)) continue;
-    const options = placeOptions(item, productIds, storeId, listings, products);
+    const places = placeOptions(item, productIds, storeId, listings, products);
+    if (places.length < 2) continue;
+    if (proximity && settledOnTheFloor(places, proximity, groupOf)) continue;
+    const options = proximity ? onePerKind(places, groupOf) : places;
     if (options.length < 2) continue;
     questions.push({ itemId: item.id, rawText: item.rawText, productIds: options.map((o) => o.productId), options });
   }

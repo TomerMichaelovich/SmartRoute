@@ -429,6 +429,11 @@ function cleanArea(area: GeoPoint[]): GeoPoint[] {
   return area.slice(0, MAX_AREA_POINTS).map(cleanPoint);
 }
 
+function cleanShelfId(shelfId: unknown): string {
+  if (!UUID_PATTERN.test(String(shelfId))) throw new Error("Invalid map changes");
+  return String(shelfId);
+}
+
 /**
  * The map editor's "save changes": everything drafted since the last save, in one transaction.
  * The draft comes from the browser, so each id is checked against this store. What's already
@@ -467,6 +472,7 @@ export async function saveMapChanges(storeId: string, changes: MapChanges): Prom
       zone: String(raw.zone ?? "").trim() || undefined,
       iconKey: String(raw.iconKey ?? "").trim() || undefined,
       area: raw.type === "department" && raw.area ? cleanArea(raw.area) : undefined,
+      shelfId: raw.type === "department" && raw.shelfId ? cleanShelfId(raw.shelfId) : undefined,
     });
   }
 
@@ -483,6 +489,10 @@ export async function saveMapChanges(storeId: string, changes: MapChanges): Prom
     if (raw.area !== undefined) {
       if (node.type !== "department") throw new Error("Only departments have an area");
       patch.area = raw.area === null ? null : cleanArea(raw.area);
+    }
+    if (raw.shelfId !== undefined) {
+      if (node.type !== "department") throw new Error("Only departments share a shelf");
+      patch.shelfId = raw.shelfId === null ? null : cleanShelfId(raw.shelfId);
     }
     if (Object.keys(patch).length > 1) patches.push(patch);
   }

@@ -61,6 +61,7 @@ export function diffMap(base: MapState, draft: MapState): MapChanges {
     if (node.label !== saved.label) patch.label = node.label;
     if (!samePoint(node.position, saved.position)) patch.position = node.position;
     if (!sameArea(node.area, saved.area)) patch.area = node.area ?? null;
+    if ((node.shelfId ?? null) !== (saved.shelfId ?? null)) patch.shelfId = node.shelfId ?? null;
     if (Object.keys(patch).length > 1) updatedNodes.push(patch);
   }
 
@@ -104,8 +105,13 @@ export function applyMapChanges(saved: MapState, changes: MapChanges): MapState 
       .map((n) => {
         const patch = patches.get(n.id);
         if (!patch) return n;
-        const { area, ...fields } = patch;
-        return { ...n, ...fields, ...(area !== undefined ? { area: area ?? undefined } : {}) };
+        const { area, shelfId, ...fields } = patch;
+        return {
+          ...n,
+          ...fields,
+          ...(area !== undefined ? { area: area ?? undefined } : {}),
+          ...(shelfId !== undefined ? { shelfId: shelfId ?? undefined } : {}),
+        };
       }),
     ...changes.createdNodes.filter((n) => !savedNodeIds.has(n.id)),
   ];
@@ -144,11 +150,46 @@ export function rebaseHistory(history: MapHistory, saved: MapState): MapHistory 
   return { base: saved, past: history.past.map(move), present: move(history.present) };
 }
 
+/** A shared shelf joins at least two departments: the last one left on it is on its own again. */
+function withoutLoneShelves(nodes: MapNode[]): MapNode[] {
+  const members = new Map<string, number>();
+  for (const n of nodes) if (n.shelfId) members.set(n.shelfId, (members.get(n.shelfId) ?? 0) + 1);
+  return nodes.map((n) => (n.shelfId && members.get(n.shelfId) === 1 ? { ...n, shelfId: undefined } : n));
+}
+
+/**
+ * Marks these departments as one physical shelf. One that's already on a shared shelf brings
+ * that whole shelf along, so marking never quietly splits a shelf marked earlier.
+ */
+export function markSameShelf(
+  map: MapState,
+  nodeIds: ReadonlySet<string>,
+  newId: () => string = () => crypto.randomUUID(),
+): MapState {
+  const chosen = map.nodes.filter((n) => nodeIds.has(n.id) && n.type === "department");
+  if (chosen.length < 2) return map;
+  const existing = new Set(chosen.flatMap((n) => (n.shelfId ? [n.shelfId] : [])));
+  if (existing.size === 1 && chosen.every((n) => n.shelfId)) return map;
+  const shelfId = [...existing][0] ?? newId();
+  const chosenIds = new Set(chosen.map((n) => n.id));
+  return {
+    ...map,
+    nodes: map.nodes.map((n) => (chosenIds.has(n.id) || (n.shelfId && existing.has(n.shelfId)) ? { ...n, shelfId } : n)),
+  };
+}
+
+/** Takes these departments off their shared shelf. */
+export function leaveShelf(map: MapState, nodeIds: ReadonlySet<string>): MapState {
+  if (!map.nodes.some((n) => nodeIds.has(n.id) && n.shelfId)) return map;
+  const nodes = map.nodes.map((n) => (nodeIds.has(n.id) && n.shelfId ? { ...n, shelfId: undefined } : n));
+  return { ...map, nodes: withoutLoneShelves(nodes) };
+}
+
 /** Takes these nodes (with every edge touching them) and edges off the map. */
 export function removeFromMap(map: MapState, nodeIds: ReadonlySet<string>, edgeIds: ReadonlySet<string>): MapState {
   return {
     ...map,
-    nodes: map.nodes.filter((n) => !nodeIds.has(n.id)),
+    nodes: withoutLoneShelves(map.nodes.filter((n) => !nodeIds.has(n.id))),
     edges: map.edges.filter((e) => !edgeIds.has(e.id) && !nodeIds.has(e.fromNodeId) && !nodeIds.has(e.toNodeId)),
   };
 }

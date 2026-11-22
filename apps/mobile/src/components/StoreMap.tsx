@@ -145,6 +145,8 @@ interface StoreMapProps {
   pathNodeIds: string[];
   stops: RouteStop[];
   checkedStopOrders: Set<number>;
+  /** Other areas carrying what the shopper is heading to, marked more quietly than the stop. */
+  otherPlaces?: { nodeId: string; label: string }[];
   /** The store's footprint size multiplier (admin setting); 1 when the API predates it. */
   footstepScale?: number;
   /** Full-screen mode: the map fills its parent (flex: 1), zoomed in to cover it and centered
@@ -166,6 +168,7 @@ export function StoreMap({
   pathNodeIds,
   stops,
   checkedStopOrders,
+  otherPlaces = [],
   footstepScale,
   expanded,
 }: StoreMapProps) {
@@ -208,6 +211,10 @@ export function StoreMap({
   const trail = footstepTrailMetrics(mapWidth, footstepScale);
   const footstepSize = trail.size;
   const footsteps = computeFootstepPlacements(routePathPoints, trail.stepDistance, trail.footOffset);
+  const otherPlaceNodes = otherPlaces.flatMap((place) => {
+    const node = nodeById.get(place.nodeId);
+    return node ? [{ ...place, node }] : [];
+  });
 
   return (
     <View style={[styles.frame, expanded ? styles.frameExpanded : { aspectRatio: mapWidth / mapHeight }]}>
@@ -215,6 +222,34 @@ export function StoreMap({
         <Svg width="100%" height="100%" viewBox={`0 0 ${mapWidth} ${mapHeight}`}>
           {mapImageUrl && (
             <SvgImage href={mapImageUrl} x={0} y={0} width={mapWidth} height={mapHeight} preserveAspectRatio="xMidYMid slice" />
+          )}
+
+          {/* Other areas with the same product: dashed and paler than the stop itself. */}
+          {otherPlaceNodes.map(({ node }) =>
+            node.area && node.area.length >= 3 ? (
+              <Polygon
+                key={`other-area-${node.id}`}
+                points={node.area.map((p) => `${p.x * mapWidth},${p.y * mapHeight}`).join(" ")}
+                fill="#38bdf8"
+                fillOpacity={0.14}
+                stroke="#0ea5e9"
+                strokeWidth={2.5 * scale}
+                strokeDasharray={`${10 * scale} ${7 * scale}`}
+                strokeLinejoin="round"
+              />
+            ) : (
+              <Circle
+                key={`other-area-${node.id}`}
+                cx={node.position.x * mapWidth}
+                cy={node.position.y * mapHeight}
+                r={markerRadius * 0.7}
+                fill="#38bdf8"
+                fillOpacity={0.25}
+                stroke="#0ea5e9"
+                strokeWidth={2.5 * scale}
+                strokeDasharray={`${6 * scale} ${4 * scale}`}
+              />
+            ),
           )}
 
           {/* The department the shopper is heading to, lit up in light blue where the admin outlined it. */}
@@ -231,6 +266,20 @@ export function StoreMap({
 
           {footsteps.map((step, i) => (
             <Footprint key={i} {...step} size={footstepSize} />
+          ))}
+
+          {/* Under the current stop's marker and name, which matter more if they overlap. */}
+          {otherPlaceNodes.map(({ node, label }) => (
+            <LabelPill
+              key={`other-label-${node.id}`}
+              text={label}
+              x={node.position.x * mapWidth}
+              y={node.position.y * mapHeight}
+              fontSize={minorLabelFontSize}
+              color="#0369a1"
+              mapWidth={mapWidth}
+              scale={scale}
+            />
           ))}
 
           {nodes.map((node) => {

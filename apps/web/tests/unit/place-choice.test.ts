@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { normalizeHebrewText } from "@smartroute/core/application/classification/normalize-hebrew-text";
-import { placeCandidates, placeDecisions, placeQuestions } from "@smartroute/core/application/routing/place-choice";
-import { choosePlaces } from "@smartroute/core/application/routing/route-service";
+import { type PlaceProximity, placeCandidates, placeDecisions, placeProximity, placeQuestions } from "@smartroute/core/application/routing/place-choice";
+import { buildRoute, choosePlaces } from "@smartroute/core/application/routing/route-service";
 import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ProductListing } from "@smartroute/core/domain/entities/product-listing";
 import type { ShoppingListItem } from "@smartroute/core/domain/entities/shopping-list";
@@ -185,6 +185,67 @@ describe("place choice with products imported from a price file", () => {
     };
     expect(placeCandidates(line, STORE_ID, listings, products)).toEqual([gin.id]);
     expect(placeDecisions([line], STORE_ID, listings, products).chosen.get("1")).toBe(gin.id);
+  });
+
+  describe("with the store's walking distances", () => {
+    const spread = { ...imported("sku-spread", "חומוס אחלה 400 גרם", ["חומוס"], "729-spread"), shelfGroup: "chilled-salads-dips" };
+    const spread2 = { ...imported("sku-spread2", "חומוס צבר 400 גרם", ["חומוס"], "729-spread2"), shelfGroup: "chilled-salads-dips" };
+    const canned = { ...imported("sku-canned", "גרגירי חומוס 800 גרם", ["חומוס"], "729-canned"), shelfGroup: "canned-legumes" };
+    const line: ShoppingListItem = { id: "1", rawText: "חומוס", classification: { rawText: "חומוס", matchedAlias: "חומוס", confidence: 1, source: "alias" } };
+    const apart: PlaceProximity = { distance: (a, b) => (a === b ? 0 : 500), near: 100 };
+    const adjacent: PlaceProximity = { distance: (a, b) => (a === b ? 0 : 50), near: 100 };
+    const ask = (placed: ProductListing[], proximity: PlaceProximity) =>
+      placeQuestions([line], STORE_ID, [...demoProductListings, ...placed], [...demoProducts, spread, spread2, canned], undefined, undefined, proximity);
+
+    it("doesn't ask about different products standing next to each other", () => {
+      expect(ask([at(spread, "n-dairy"), at(canned, "n-produce")], adjacent)).toEqual([]);
+    });
+
+    it("doesn't ask about one kind of product in places apart", () => {
+      expect(ask([at(spread, "n-dairy"), at(spread2, "n-produce")], apart)).toEqual([]);
+    });
+
+    it("asks about different products apart, one option per kind", () => {
+      const [question] = ask([at(spread, "n-dairy"), at(spread2, "n-beverages"), at(canned, "n-produce")], apart);
+      expect(question.options).toHaveLength(2);
+      expect(question.options.map((o) => o.productIds.length).sort()).toEqual([1, 2]);
+    });
+
+    it("measures on foot, the shorter way round", () => {
+      const proximity = placeProximity(demoNodes, demoEdges, demoStore.mapWidth, demoStore.mapHeight);
+      expect(proximity.distance("n-produce", "n-bakery")).toBe(proximity.distance("n-bakery", "n-produce"));
+      expect(proximity.distance("n-produce", "n-produce")).toBe(0);
+    });
+
+    it("treats departments marked as one shelf as the same spot, however far their points are", () => {
+      const plain = placeProximity(demoNodes, demoEdges, demoStore.mapWidth, demoStore.mapHeight);
+      expect(plain.distance("n-produce", "n-meat-fish")).toBeGreaterThan(plain.near);
+      const marked = demoNodes.map((n) => (n.id === "n-produce" || n.id === "n-meat-fish" ? { ...n, shelfId: "shelf-1" } : n));
+      const proximity = placeProximity(marked, demoEdges, demoStore.mapWidth, demoStore.mapHeight);
+      expect(proximity.distance("n-produce", "n-meat-fish")).toBe(0);
+      expect(proximity.distance("n-produce", "n-dairy")).toBe(plain.distance("n-produce", "n-dairy"));
+      expect(ask([at(spread, "n-produce"), at(canned, "n-meat-fish")], proximity)).toEqual([]);
+    });
+
+    it("marks the other places on the stop the route takes", () => {
+      const products = [...demoProducts, spread, canned];
+      const listings = [...demoProductListings, at(spread, "n-dairy"), at(canned, "n-produce")];
+      const pinned = { ...line, classification: { ...line.classification!, matchedProductId: spread.id } };
+      const route = buildRoute({
+        routeId: "r",
+        storeId: STORE_ID,
+        shoppingListId: "l",
+        items: [pinned],
+        listings,
+        nodes: demoNodes,
+        edges: demoEdges,
+        mapWidth: demoStore.mapWidth,
+        mapHeight: demoStore.mapHeight,
+        alternativeProducts: new Map([["1", [spread.id, canned.id]]]),
+      });
+      expect(route.stops[0].nodeId).toBe("n-dairy");
+      expect(route.stops[0].alsoAt).toEqual([{ itemId: "1", nodeIds: ["n-produce"] }]);
+    });
   });
 
   it("goes straight to the product of a barcode picked in the cheapest basket", () => {

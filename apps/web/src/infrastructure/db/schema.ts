@@ -213,6 +213,8 @@ export const mapNodes = pgTable(
     zone: text("zone"),
     iconKey: text("icon_key"),
     area: jsonb("area").$type<Array<{ x: number; y: number }>>(),
+    // Departments sharing this id are one physical shelf (marked in the map editor).
+    shelfId: text("shelf_id"),
   },
   (table) => [index("map_nodes_store_id_idx").on(table.storeId)],
 );

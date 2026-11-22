@@ -14,6 +14,7 @@ function toDomain(row: typeof mapNodes.$inferSelect): MapNode {
     zone: row.zone ?? undefined,
     iconKey: row.iconKey ?? undefined,
     area: row.area && row.area.length >= 3 ? row.area : undefined,
+    shelfId: row.shelfId ?? undefined,
   });
 }
 

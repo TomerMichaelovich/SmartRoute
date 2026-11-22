@@ -534,6 +534,10 @@ export const he = {
     },
     showUnresolved: "אילו?",
     hideUnresolved: "הסתרה",
+    // On the map: another area that carries what the shopper is heading to.
+    alsoHere(name: string, more: number): string {
+      return more > 0 ? `גם כאן: ${name} +${more}` : `גם כאן: ${name}`;
+    },
     finishShopping: "סיימתי לקנות",
     // Mobile's finish alert. finishedSavedBody only when /api/trips actually
     // wrote a history entry (logged-in owner) - guests get the plain body.

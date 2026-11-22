@@ -69,6 +69,7 @@ export const mapNodeSchema = z.object({
   zone: z.string().optional(),
   iconKey: z.string().optional(),
   area: z.array(geoPointSchema).min(3).optional(),
+  shelfId: z.string().optional(),
 });
 
 export const mapEdgeSchema = z.object({
@@ -218,6 +219,7 @@ export const routeStopSchema = z.object({
   type: mapNodeTypeSchema,
   pathFromPrevious: z.array(z.string()),
   pathToCheckout: z.array(z.string()),
+  alsoAt: z.array(z.object({ itemId: z.string(), nodeIds: z.array(z.string()) })).optional(),
 });
 
 export const routeSchema = z.object({

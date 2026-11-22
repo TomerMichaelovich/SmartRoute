@@ -135,6 +135,19 @@ export default function RouteScreen() {
       return firstNeeded ? { ...stop, label: firstNeeded.displayName } : stop;
     });
   }, [state, stopViews, checkedItemIds]);
+  // Where else what's still needed at the next stop can be found, by area.
+  const otherPlaces = useMemo(() => {
+    if (!nextStop?.alsoAt) return [];
+    const items = stopViews.find(({ stop }) => stop.order === nextStop.order)?.items ?? [];
+    const nameOf = new Map(items.map((item) => [item.id, item.displayName]));
+    const namesByNode = new Map<string, string[]>();
+    for (const { itemId, nodeIds } of nextStop.alsoAt) {
+      const name = nameOf.get(itemId);
+      if (!name || checkedItemIds.has(itemId)) continue;
+      for (const nodeId of nodeIds) namesByNode.set(nodeId, [...(namesByNode.get(nodeId) ?? []), name]);
+    }
+    return [...namesByNode].map(([nodeId, names]) => ({ nodeId, label: he.route.alsoHere(names[0], names.length - 1) }));
+  }, [nextStop, stopViews, checkedItemIds]);
   const displayPathNodeIds =
     state.status === "ready"
       ? (nextStop?.pathFromPrevious ?? lastCheckedStop?.pathToCheckout ?? state.data.route.checkoutPathNodeIds)
@@ -252,6 +265,7 @@ export default function RouteScreen() {
           pathNodeIds={displayPathNodeIds}
           stops={mapStops}
           checkedStopOrders={checkedStopOrders}
+          otherPlaces={otherPlaces}
           footstepScale={store.footstepScale}
           expanded={mapExpanded}
         />

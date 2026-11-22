@@ -71,6 +71,8 @@ export async function POST(request: Request) {
   const genericSkuKeys = await genericSkuKeysFor(available, storeId, listings, products);
   const skuKeys = await placeSkuKeys(available, storeId, listings, products, genericSkuKeys);
   const { chosen, flexible } = placeDecisions(available, storeId, listings, products, skuKeys, genericSkuKeys);
+  // Every place an unpinned item could be taken from, for the map to mark (kept when re-planning too).
+  const alternativeProducts = new Map(flexible);
   if (replanning) {
     for (const item of available) {
       const current = item.classification?.matchedProductId;
@@ -129,6 +131,7 @@ export async function POST(request: Request) {
       completedItemIds: parsed.data.completedItemIds,
       skippedItemIds: parsed.data.skippedItemIds,
       nextStopNodeId: parsed.data.nextStopNodeId,
+      alternativeProducts,
     });
   } catch (err) {
     // buildRoute() throws when the store's node graph has no entrance and/or checkout - a data

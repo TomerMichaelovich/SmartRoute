@@ -20,4 +20,9 @@ export interface MapNode {
    * map points drawn in the admin editor. The shopper's map lights it up while it's the next stop.
    */
   area?: GeoPoint[];
+  /**
+   * Departments only: departments with the same id are one physical shelf the map splits into
+   * parts, marked by the admin. The shopper is sent there and decides in front of it.
+   */
+  shelfId?: string;
 }

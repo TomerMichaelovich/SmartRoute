@@ -10,6 +10,11 @@ export interface RouteStop {
   pathFromPrevious: string[];
   /** Walked path node ids from this stop directly to checkout. */
   pathToCheckout: string[];
+  /**
+   * Other places in the store carrying what an item here names ("קולה": the six-packs
+   * stand elsewhere), for the map to mark. Only items the shopper hasn't pinned to one product.
+   */
+  alsoAt?: { itemId: string; nodeIds: string[] }[];
 }
 
 export interface Route {

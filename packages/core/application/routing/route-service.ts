@@ -34,6 +34,8 @@ export interface BuildRouteParams {
    * department already passed is fitted in after it, never as a sudden U-turn.
    */
   nextStopNodeId?: string;
+  /** Items left to the route between several places: one product per place (placeDecisions' `flexible`). */
+  alternativeProducts?: Map<string, string[]>;
 }
 
 /**
@@ -137,6 +139,7 @@ export function buildRoute(params: BuildRouteParams): Route {
     completedItemIds = [],
     skippedItemIds = [],
     nextStopNodeId,
+    alternativeProducts,
   } = params;
   const skipped = new Set(skippedItemIds);
   const graph = buildGraph(nodes, edges, mapWidth, mapHeight);
@@ -232,8 +235,22 @@ export function buildRoute(params: BuildRouteParams): Route {
   }
   const checkoutPathNodeIds = segments[segments.length - 1];
 
+  const placeOf = new Map<string, string>();
+  for (const l of listings) if (l.storeId === storeId && !placeOf.has(l.productId)) placeOf.set(l.productId, l.nodeId);
+  const otherPlaces = (itemId: string, nodeId: string) => [
+    ...new Set(
+      (alternativeProducts?.get(itemId) ?? [])
+        .map((productId) => placeOf.get(productId))
+        .filter((id): id is string => !!id && id !== nodeId && graph.nodes.has(id)),
+    ),
+  ];
+
   const stops: RouteStop[] = optimizedOrder.map((nodeId, index) => {
     const mapNode = graph.nodes.get(nodeId)!;
+    const alsoAt = (itemsByNode.get(nodeId) ?? []).flatMap((itemId) => {
+      const nodeIds = otherPlaces(itemId, nodeId);
+      return nodeIds.length > 0 ? [{ itemId, nodeIds }] : [];
+    });
     return {
       order: index + 1,
       nodeId,
@@ -244,6 +261,7 @@ export function buildRoute(params: BuildRouteParams): Route {
       // Lets the UI route to checkout from whichever stop the shopper actually
       // finishes at last, rather than only from the stop that's last in TSP order.
       pathToCheckout: reconstructPath(dijkstraByNode.get(nodeId)!.previous, checkout.id),
+      ...(alsoAt.length > 0 ? { alsoAt } : {}),
     };
   });
 

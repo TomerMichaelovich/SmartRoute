@@ -2,12 +2,13 @@ import type { MapEdge } from "@smartroute/core/domain/entities/map-edge";
 import type { MapNode } from "@smartroute/core/domain/entities/map-node";
 import type { GeoPoint } from "@smartroute/core/domain/value-objects/geo-point";
 
-/** The fields of a saved node the map editor can change; `area: null` clears the area. */
+/** The fields of a saved node the map editor can change; null clears `area` or `shelfId`. */
 export interface MapNodePatch {
   id: string;
   label?: string;
   position?: GeoPoint;
   area?: GeoPoint[] | null;
+  shelfId?: string | null;
 }
 
 /** Everything one "save changes" press of the map editor writes. */

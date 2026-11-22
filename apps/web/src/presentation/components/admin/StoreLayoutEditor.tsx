@@ -31,7 +31,15 @@ import {
   uniformCount,
   withUniformSpacing,
 } from "./waypoint-line-draft";
-import { type MapState, type WaypointLinePoint, addWaypointLines, removeFromMap, removeWaypoints } from "./map-draft";
+import {
+  type MapState,
+  type WaypointLinePoint,
+  addWaypointLines,
+  leaveShelf,
+  markSameShelf,
+  removeFromMap,
+  removeWaypoints,
+} from "./map-draft";
 import { useMapDraft } from "./use-map-draft";
 import {
   type AlignMode,
@@ -111,6 +119,8 @@ const DISCONNECTED_COLOR = "#dc2626";
 // A department's area: light blue (the shopper's map lights it up the same way).
 const AREA_FILL = "#38bdf8";
 const AREA_STROKE = "#0284c7";
+// The dashed line joining departments marked as one shelf.
+const SHARED_SHELF_COLOR = "#7c3aed";
 // The waypoint-line tool's one spacing between points on every line (fraction of map width).
 const WAYPOINT_LINE_SPACING = 0.04;
 const LINE_COLOR = "#0891b2";
@@ -656,6 +666,17 @@ export function StoreLayoutEditor({
     const label = String(formData.get("label") ?? "").replace(/\r\n/g, "\n").trim();
     if (!label) return;
     change((m) => ({ ...m, nodes: m.nodes.map((n) => (n.id === nodeId && n.label !== label ? { ...n, label } : n)) }));
+  }
+
+  function markSelectedAsOneShelf() {
+    const chosen = new Set(selectedNodeIds);
+    const shelfId = crypto.randomUUID();
+    change((m) => markSameShelf(m, chosen, () => shelfId));
+  }
+
+  function takeOffShelf(nodeIds: Iterable<string>) {
+    const leaving = new Set(nodeIds);
+    change((m) => leaveShelf(m, leaving));
   }
 
   function deleteFromMap(nodeIds: Iterable<string>, edgeIds: Iterable<string>) {
@@ -1250,6 +1271,22 @@ export function StoreLayoutEditor({
       ? (edges.find((e) => e.id === Array.from(selectedEdgeIds)[0]) ?? null)
       : null;
 
+  // Departments marked as one physical shelf, by shelf.
+  const sharedShelves = new Map<string, MapNode[]>();
+  for (const node of nodes) {
+    if (node.type === "department" && node.shelfId) {
+      sharedShelves.set(node.shelfId, [...(sharedShelves.get(node.shelfId) ?? []), node]);
+    }
+  }
+  const selectedDepartments = nodes.filter((n) => n.type === "department" && selectedNodeIds.has(n.id));
+  const selectedAreOneShelf =
+    selectedDepartments.length >= 2 &&
+    !!selectedDepartments[0].shelfId &&
+    selectedDepartments.every((n) => n.shelfId === selectedDepartments[0].shelfId);
+  const shelfMates = singleSelectedNode?.shelfId
+    ? (sharedShelves.get(singleSelectedNode.shelfId) ?? []).filter((n) => n.id !== singleSelectedNode.id)
+    : [];
+
   const showsProductPanel = singleSelectedNode?.type === "department";
   // The drawing only lives while its department is the one selected.
   const activeAreaDraft = areaDraft && singleSelectedNode?.id === areaDraft.nodeId ? areaDraft : null;
@@ -1731,6 +1768,23 @@ export function StoreLayoutEditor({
                     />
                   ) : null,
                 )}
+
+                {[...sharedShelves].map(([shelfId, members]) => (
+                  <polyline
+                    key={`shelf-${shelfId}`}
+                    points={[...members]
+                      .map((n) => (dragState?.nodeId === n.id ? { x: dragState.x, y: dragState.y } : n.position))
+                      .sort((a, b) => a.x - b.x || a.y - b.y)
+                      .map((p) => `${p.x * mapWidth},${p.y * mapHeight}`)
+                      .join(" ")}
+                    fill="none"
+                    stroke={SHARED_SHELF_COLOR}
+                    strokeWidth={3}
+                    strokeDasharray="7 5"
+                    vectorEffect="non-scaling-stroke"
+                    pointerEvents="none"
+                  />
+                ))}
 
                 {edges.map((edge) => {
                   const from = nodeById.get(edge.fromNodeId);
@@ -2260,6 +2314,27 @@ export function StoreLayoutEditor({
                 )}
               </div>
 
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 p-2 text-sm">
+                <span className="font-semibold text-violet-900">אותו מדף:</span>
+                {shelfMates.length > 0 ? (
+                  <>
+                    <span className="text-violet-800">
+                      {shelfMates.map((n) => n.label.replace(/\s*\n\s*/g, " ")).join(" · ")}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => takeOffShelf([singleSelectedNode.id])}
+                      className="text-red-600 hover:underline disabled:opacity-40"
+                    >
+                      הוצאה מהמדף המשותף
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-violet-800">לא מסומן. כדי לחבר מחלקות: Ctrl+לחיצה על כל אחת מהן</span>
+                )}
+              </div>
+
               {splitHere.length > 0 && (
                 <div className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
                   <p className="font-semibold">⚠ כינויים בנקודה זו שממוקמים גם בנקודות אחרות ({splitHere.length})</p>
@@ -2426,6 +2501,30 @@ export function StoreLayoutEditor({
                   ))}
                 </div>
               )}
+              {selectedDepartments.length >= 2 &&
+                (selectedAreOneShelf ? (
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="font-semibold text-violet-800">מסומנות כאותו מדף</span>
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => takeOffShelf(selectedDepartments.map((n) => n.id))}
+                      className="text-red-600 hover:underline disabled:opacity-40"
+                    >
+                      ביטול הסימון
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={markSelectedAsOneShelf}
+                    title="הלקוח יישלח לשם ויחליט מול המדף, בלי שאלה מראש"
+                    className="rounded-lg bg-violet-600 px-3 py-1 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-40"
+                  >
+                    סימון {selectedDepartments.length} מחלקות כאותו מדף
+                  </button>
+                ))}
               <button
                 type="button"
                 onClick={handleDeleteSelected}
