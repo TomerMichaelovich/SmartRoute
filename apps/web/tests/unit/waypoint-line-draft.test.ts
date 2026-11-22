@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import type { MapEdge } from "@smartroute/core/domain/entities/map-edge";
+import type { MapNode, MapNodeType } from "@smartroute/core/domain/entities/map-node";
 import {
   EMPTY_LINE_DRAFT,
   addPoint,
@@ -9,6 +11,7 @@ import {
   hitDraftLine,
   nearestOnSegment,
   innerPoints,
+  joinTouching,
   moveSegment,
   removeLastSegment,
   splitAt,
@@ -129,5 +132,97 @@ describe("waypoint line draft", () => {
       { from: "a", to: "m", count: 2 },
       { from: "m", to: "b", count: 1 },
     ]);
+  });
+});
+
+describe("joining drawn lines to what they touch", () => {
+  const node = (id: string, x: number, y: number, type: MapNodeType = "waypoint"): MapNode => ({
+    id,
+    storeId: "s",
+    type,
+    label: id,
+    position: { x, y },
+  });
+  const edge = (id: string, fromNodeId: string, toNodeId: string, bidirectional = true): MapEdge => ({
+    id,
+    storeId: "s",
+    fromNodeId,
+    toNodeId,
+    bidirectional,
+  });
+  // A corridor along y = 0.5.
+  const nodes = [node("w1", 0.1, 0.5), node("w2", 0.9, 0.5)];
+  const edges = [edge("c", "w1", "w2")];
+  const line = (a: { x: number; y: number }, b: { x: number; y: number }) => {
+    let d = addPoint(EMPTY_LINE_DRAFT, a, "a").draft;
+    d = addPoint(d, b, "b").draft;
+    return connect(d, "a", "b", 0);
+  };
+  const keys = () => {
+    let i = 0;
+    return () => `k${++i}`;
+  };
+  const join = (d: ReturnType<typeof line>, n = nodes, e = edges) => joinTouching(d, n, e, W, H, 4, keys());
+
+  it("attaches an end that was moved onto a corridor", () => {
+    const joined = join(moveSegment(line({ x: 0.5, y: 0.2 }, { x: 0.5, y: 0.4 }), 0, 0, 0.1));
+    expect(joined.points.find((p) => p.key === "b")).toEqual({ key: "b", edgeId: "c", x: 0.5, y: 0.5 });
+    expect(joined.segments).toEqual([{ from: "a", to: "b", count: 0 }]);
+  });
+
+  it("attaches an end that only looks like it touches", () => {
+    const joined = join(line({ x: 0.5, y: 0.2 }, { x: 0.5, y: 0.498 }));
+    expect(joined.points.find((p) => p.key === "b")?.edgeId).toBe("c");
+  });
+
+  it("attaches an end to a waypoint rather than the corridor beside it", () => {
+    const joined = join(line({ x: 0.1, y: 0.2 }, { x: 0.101, y: 0.499 }));
+    expect(joined.points.find((p) => p.key === "b")).toEqual({ key: "b", nodeId: "w1", x: 0.1, y: 0.5 });
+  });
+
+  it("splits a line that runs over a waypoint", () => {
+    const joined = join(line({ x: 0.1, y: 0.2 }, { x: 0.1, y: 0.8 }));
+    expect(joined.points.find((p) => p.key === "k1")).toEqual({ key: "k1", nodeId: "w1", x: 0.1, y: 0.5 });
+    expect(joined.segments.map((s) => [s.from, s.to])).toEqual([
+      ["a", "k1"],
+      ["k1", "b"],
+    ]);
+  });
+
+  it("splits a line where it crosses a corridor", () => {
+    const joined = join(line({ x: 0.5, y: 0.2 }, { x: 0.5, y: 0.8 }));
+    expect(joined.points.find((p) => p.key === "k1")).toEqual({ key: "k1", edgeId: "c", x: 0.5, y: 0.5 });
+    expect(joined.segments).toHaveLength(2);
+  });
+
+  it("two lines crossing a corridor at one spot share the join", () => {
+    let d = line({ x: 0.5, y: 0.2 }, { x: 0.5, y: 0.8 });
+    d = addPoint(d, { x: 0.3, y: 0.3 }, "c").draft;
+    d = addPoint(d, { x: 0.7, y: 0.7 }, "d").draft;
+    d = connect(d, "c", "d", 0);
+    const joined = join(d);
+    expect(joined.points.filter((p) => p.edgeId === "c")).toHaveLength(1);
+    expect(joined.segments).toHaveLength(4);
+  });
+
+  it("doesn't lay a second line over an existing two-way edge", () => {
+    const joined = join(line({ x: 0.1, y: 0.5 }, { x: 0.9, y: 0.5 }));
+    expect(joined.segments).toEqual([]);
+  });
+
+  it("keeps a line over a one-way edge, which only walks one way", () => {
+    const joined = join(line({ x: 0.1, y: 0.5 }, { x: 0.9, y: 0.5 }), nodes, [edge("c", "w1", "w2", false)]);
+    expect(joined.segments).toHaveLength(1);
+  });
+
+  it("never joins a department it wasn't clicked on", () => {
+    const withDepartment = [...nodes, node("dept", 0.5, 0.2, "department")];
+    const joined = join(line({ x: 0.5, y: 0.2 }, { x: 0.5, y: 0.4 }), withDepartment);
+    expect(joined.points.find((p) => p.key === "a")).toEqual({ key: "a", x: 0.5, y: 0.2 });
+  });
+
+  it("leaves a line that doesn't touch anything alone", () => {
+    const d = line({ x: 0.5, y: 0.1 }, { x: 0.5, y: 0.4 });
+    expect(join(d)).toEqual(d);
   });
 });

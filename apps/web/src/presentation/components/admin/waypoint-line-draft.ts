@@ -1,3 +1,6 @@
+import type { MapEdge } from "@smartroute/core/domain/entities/map-edge";
+import type { MapNode } from "@smartroute/core/domain/entities/map-node";
+
 /**
  * The map editor's waypoint-line draft: several straight lines drawn one after another and
  * created together with one "create" press. Positions are normalized 0-1 map coordinates.
@@ -231,4 +234,118 @@ export function removeLastSegment(draft: LineDraft): LineDraft {
   const segments = draft.segments.slice(0, -1);
   const used = new Set(segments.flatMap((s) => [s.from, s.to]));
   return { points: draft.points.filter((p) => used.has(p.key)), segments, pendingFrom: null };
+}
+
+/** How far along a-b it crosses c-d (0 to 1), when they cross strictly inside both. */
+function crossingAlong(a: Point, b: Point, c: Point, d: Point, mapWidth: number, mapHeight: number): number | null {
+  const rx = (b.x - a.x) * mapWidth;
+  const ry = (b.y - a.y) * mapHeight;
+  const sx = (d.x - c.x) * mapWidth;
+  const sy = (d.y - c.y) * mapHeight;
+  const denominator = rx * sy - ry * sx;
+  if (Math.abs(denominator) < 1e-9) return null;
+  const qx = (c.x - a.x) * mapWidth;
+  const qy = (c.y - a.y) * mapHeight;
+  const t = (qx * sy - qy * sx) / denominator;
+  const u = (qx * ry - qy * rx) / denominator;
+  return t > 0 && t < 1 && u > 0 && u < 1 ? t : null;
+}
+
+/**
+ * Joins the drafted lines to the walking graph wherever they touch it, however they got there
+ * (arrow keys let go of what an end was attached to). An end within `tolerance` map units of a
+ * waypoint or corridor attaches to it, and a line running over a waypoint or across a corridor is
+ * split there. Departments, entrances and checkouts are only ever joined by clicking them.
+ * Point counts are left for withUniformSpacing to set from the new lengths.
+ */
+export function joinTouching(
+  draft: LineDraft,
+  nodes: readonly MapNode[],
+  edges: readonly MapEdge[],
+  mapWidth: number,
+  mapHeight: number,
+  tolerance: number,
+  newKey: () => string = () => crypto.randomUUID(),
+): LineDraft {
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+  const waypoints = nodes.filter((n) => n.type === "waypoint");
+  const corridors = edges.flatMap((e) => {
+    const a = nodeById.get(e.fromNodeId);
+    const b = nodeById.get(e.toNodeId);
+    return a?.type === "waypoint" && b?.type === "waypoint" ? [{ id: e.id, a: a.position, b: b.position }] : [];
+  });
+  const walkedBothWays = new Set(
+    edges.filter((e) => e.bidirectional).flatMap((e) => [`${e.fromNodeId}|${e.toNodeId}`, `${e.toNodeId}|${e.fromNodeId}`]),
+  );
+  const gap = (p: Point, q: Point) => Math.hypot((p.x - q.x) * mapWidth, (p.y - q.y) * mapHeight);
+
+  function attach(p: DraftPoint): DraftPoint {
+    if (p.nodeId || p.edgeId) return p;
+    let waypoint: { node: MapNode; d: number } | null = null;
+    for (const node of waypoints) {
+      const d = gap(node.position, p);
+      if (d <= tolerance && (!waypoint || d < waypoint.d)) waypoint = { node, d };
+    }
+    if (waypoint) return { key: p.key, nodeId: waypoint.node.id, ...waypoint.node.position };
+    let corridor: { edgeId: string; point: Point; d: number } | null = null;
+    for (const c of corridors) {
+      const near = nearestOnSegment(c.a, c.b, p, mapWidth, mapHeight);
+      if (near.t <= 0 || near.t >= 1 || near.distance > tolerance) continue;
+      if (!corridor || near.distance < corridor.d) corridor = { edgeId: c.id, point: near.point, d: near.distance };
+    }
+    return corridor ? { key: p.key, edgeId: corridor.edgeId, ...corridor.point } : p;
+  }
+
+  const points = draft.points.map(attach);
+  const find = (key: string) => points.find((p) => p.key === key);
+  /** The draft's point for this join, shared when another line already joins there. */
+  function keyFor(stop: Omit<DraftPoint, "key">) {
+    const existing = points.find((p) =>
+      stop.nodeId ? p.nodeId === stop.nodeId : p.edgeId === stop.edgeId && gap(p, stop) <= tolerance,
+    );
+    if (existing) return existing.key;
+    const key = newKey();
+    points.push({ key, ...stop });
+    return key;
+  }
+
+  const segments: DraftSegment[] = [];
+  for (const segment of draft.segments) {
+    const a = find(segment.from);
+    const b = find(segment.to);
+    if (!a || !b) continue;
+    const stops: Array<{ t: number; stop: Omit<DraftPoint, "key"> }> = [];
+    for (const node of waypoints) {
+      if (node.id === a.nodeId || node.id === b.nodeId) continue;
+      if (gap(node.position, a) <= tolerance || gap(node.position, b) <= tolerance) continue;
+      const near = nearestOnSegment(a, b, node.position, mapWidth, mapHeight);
+      if (near.distance <= tolerance) stops.push({ t: near.t, stop: { nodeId: node.id, ...node.position } });
+    }
+    for (const c of corridors) {
+      const t = crossingAlong(a, b, c.a, c.b, mapWidth, mapHeight);
+      if (t === null) continue;
+      const at = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+      // By a corridor's end, the waypoint there is the join; by the line's own end, that end is.
+      if ([a, b, c.a, c.b].some((p) => gap(at, p) <= tolerance)) continue;
+      stops.push({ t, stop: { edgeId: c.id, ...at } });
+    }
+    stops.sort((p, q) => p.t - q.t);
+    const kept: typeof stops = [];
+    for (const entry of stops) {
+      const last = kept.at(-1);
+      if (!last || gap(last.stop, entry.stop) > tolerance) kept.push(entry);
+      else if (entry.stop.nodeId && !last.stop.nodeId) kept[kept.length - 1] = entry;
+    }
+
+    const chain = [segment.from, ...kept.map((k) => keyFor(k.stop)), segment.to];
+    for (let i = 1; i < chain.length; i++) {
+      const from = find(chain[i - 1])!;
+      const to = find(chain[i])!;
+      if (from.key === to.key) continue;
+      // Laid right over an existing edge: that stretch is already walkable.
+      if (from.nodeId && to.nodeId && walkedBothWays.has(`${from.nodeId}|${to.nodeId}`)) continue;
+      segments.push({ from: from.key, to: to.key, count: segment.count });
+    }
+  }
+  return { ...draft, points, segments };
 }

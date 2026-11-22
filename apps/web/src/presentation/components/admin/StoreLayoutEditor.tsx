@@ -20,6 +20,7 @@ import {
   hitDraft,
   hitDraftLine,
   innerPoints,
+  joinTouching,
   moveSegment,
   nearestOnSegment,
   pointByKey,
@@ -118,6 +119,8 @@ const LINE_COLOR = "#0891b2";
 const POINT_HIT_PX = 7;
 // How close (screen pixels) a click must land to a line to put a new point on it.
 const LINE_HIT_PX = 8;
+// A drawn line this close (screen pixels) to the walking graph looks like it touches it, and joins it.
+const LINE_TOUCH_PX = 4;
 
 // Smart alignment guides catch a point this many screen pixels from another point's x or y.
 const GUIDE_SNAP_PX = 8;
@@ -1047,10 +1050,17 @@ export function StoreLayoutEditor({
   /** The map with the lines still in the line tool's draft drawn on it. */
   function withDrawnLines(onto: MapState) {
     if (lineDraft.segments.length === 0) return onto;
-    const points: WaypointLinePoint[] = lineDraft.points.map((p) =>
+    const unitsPerPx = svgWidthPx > 0 ? mapWidth / svgWidthPx : 1;
+    const joined = withUniformSpacing(
+      joinTouching(lineDraft, onto.nodes, onto.edges, mapWidth, mapHeight, LINE_TOUCH_PX * unitsPerPx),
+      mapWidth,
+      mapHeight,
+      WAYPOINT_LINE_SPACING,
+    );
+    const points: WaypointLinePoint[] = joined.points.map((p) =>
       p.nodeId ? { key: p.key, nodeId: p.nodeId } : { key: p.key, x: p.x, y: p.y, edgeId: p.edgeId },
     );
-    return addWaypointLines(onto, storeId, points, lineDraft.segments);
+    return addWaypointLines(onto, storeId, points, joined.segments);
   }
 
   function saveLines() {
@@ -1635,7 +1645,8 @@ export function StoreLayoutEditor({
                   נקודה של קו (קצה או נקודת ביניים) מתחילה ממנה רצף חדש. כל הקווים נוצרים יחד בלחיצה על צור. לחיצה
                   נוספת על מחלקה שהקו מחובר אליה מבטלת את החיבור ומשאירה שם נקודת ציון. קליק ימני בלי רצף פעיל מבטל
                   את הקו האחרון, Esc מנקה הכל, Esc נוסף יוצא מהמצב. החצים במקלדת מזיזים את הקו האחרון במקביל לעצמו
-                  (Shift: צעד גדול); קצה שלו שמחובר למחלקה או לקו קיים מתנתק וזז איתו.
+                  (Shift: צעד גדול); קצה שלו שמחובר למחלקה או לקו קיים מתנתק וזז איתו. בלחיצה על צור, קו שנוגע בקו
+                  הליכה קיים מתחבר אליו אוטומטית.
                 </span>
               </div>
             )}
