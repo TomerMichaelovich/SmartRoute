@@ -61,10 +61,12 @@ export interface PriceFileRef {
   fetch(): Promise<Buffer>;
 }
 
+export type BranchFileKind = "PriceFull" | "PromoFull";
+
 export interface PortalAdapter {
   fetchStoresFile(): Promise<Buffer>;
-  /** The newest PriceFull file of each requested branch (by the time in its name). */
-  listPriceFullFiles(storeCodes: string[]): Promise<PriceFileRef[]>;
+  /** The newest file of that kind of each requested branch (by the time in its name). */
+  listBranchFiles(kind: BranchFileKind, storeCodes: string[]): Promise<PriceFileRef[]>;
 }
 
 function newestPerStore(refs: PriceFileRef[], storeCodes: string[]): PriceFileRef[] {
@@ -78,15 +80,17 @@ function newestPerStore(refs: PriceFileRef[], storeCodes: string[]): PriceFileRe
   return [...newest.values()];
 }
 
-function priceFullRef(name: string, fetchFile: () => Promise<Buffer>): PriceFileRef | null {
+function branchFileRef(kind: BranchFileKind, name: string, fetchFile: () => Promise<Buffer>): PriceFileRef | null {
   const parsed = parsePriceFileName(name);
-  if (!parsed || parsed.kind !== "PriceFull" || !parsed.storeCode) return null;
+  if (!parsed || parsed.kind !== kind || !parsed.storeCode) return null;
   return { name, storeCode: parsed.storeCode, timestamp: parsed.timestamp, fetch: fetchFile };
 }
 
 // --- Shufersal: prices.shufersal.co.il -------------------------------------
 // An HTML table per category/branch whose links are signed Azure blob URLs that
 // expire within the hour, so each file is downloaded right after it's listed.
+
+const SHUFERSAL_CATEGORY: Record<BranchFileKind, number> = { PriceFull: 2, PromoFull: 4 };
 
 function shufersal(): PortalAdapter {
   const base = "https://prices.shufersal.co.il/FileObject/UpdateCategory";
@@ -101,11 +105,11 @@ function shufersal(): PortalAdapter {
       if (!url) throw new Error("shufersal: no Stores file listed");
       return download(url);
     },
-    async listPriceFullFiles(storeCodes) {
+    async listBranchFiles(kind, storeCodes) {
       const refs: PriceFileRef[] = [];
       for (const code of storeCodes) {
-        for (const url of await links(2, code)) {
-          const ref = priceFullRef(nameOf(url), () => download(url));
+        for (const url of await links(SHUFERSAL_CATEGORY[kind], code)) {
+          const ref = branchFileRef(kind, nameOf(url), () => download(url));
           if (ref) refs.push(ref);
         }
       }
@@ -172,9 +176,9 @@ function cerberus(config: Record<string, string>): PortalAdapter {
       if (!stores[0]) throw new Error(`cerberus ${username}: no Stores file listed`);
       return fetchFile(stores[0].name)();
     },
-    async listPriceFullFiles(storeCodes) {
+    async listBranchFiles(kind, storeCodes) {
       const refs = (await list())
-        .map((name) => priceFullRef(name, fetchFile(name)))
+        .map((name) => branchFileRef(kind, name, fetchFile(name)))
         .filter((r): r is PriceFileRef => r !== null);
       return newestPerStore(refs, storeCodes);
     },
@@ -221,9 +225,9 @@ function carrefour(): PortalAdapter {
       }
       throw new Error("carrefour: no Stores file listed today or yesterday");
     },
-    async listPriceFullFiles(storeCodes) {
+    async listBranchFiles(kind, storeCodes) {
       const refs = (await loadRecent()).flatMap(({ path, names }) =>
-        names.map((name) => priceFullRef(name, fetchFile(path, name))).filter((r): r is PriceFileRef => r !== null),
+        names.map((name) => branchFileRef(kind, name, fetchFile(path, name))).filter((r): r is PriceFileRef => r !== null),
       );
       return newestPerStore(refs, storeCodes);
     },

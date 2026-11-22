@@ -467,6 +467,8 @@ export const retailBranches = pgTable(
     // Timestamp parsed from the PriceFull file name last ingested.
     priceFileAt: timestamp("price_file_at", { mode: "string" }),
     pricesUpdatedAt: timestamp("prices_updated_at", { mode: "string" }),
+    // Timestamp parsed from the PromoFull file name last ingested.
+    promoFileAt: timestamp("promo_file_at", { mode: "string" }),
     isActive: boolean("is_active").notNull().default(true),
     updatedAt: timestamp("updated_at", { mode: "string" }).notNull(),
   },
@@ -518,6 +520,30 @@ export const branchPrices = pgTable(
   (table) => [primaryKey({ columns: [table.branchId, table.retailItemId] })],
 );
 
+/**
+ * A chain promotion (PromoFull) on one item at one branch, as a deal: min_qty
+ * units for price_agorot. Only promotions any shopper gets are kept — no club
+ * members, coupons or minimum basket (see prices/promotions.ts). Weighted items
+ * are stored per kg (min_qty 1).
+ */
+export const branchPromotions = pgTable(
+  "branch_promotions",
+  {
+    branchId: integer("branch_id").notNull(),
+    retailItemId: integer("retail_item_id").notNull(),
+    promotionId: text("promotion_id").notNull(),
+    description: text("description").notNull(),
+    minQty: integer("min_qty").notNull(),
+    priceAgorot: integer("price_agorot").notNull(),
+    // Most units sold at the promotion price per purchase; null = no limit.
+    maxQty: integer("max_qty"),
+    // Israel-local, as published.
+    startsAt: timestamp("starts_at", { mode: "string" }).notNull(),
+    endsAt: timestamp("ends_at", { mode: "string" }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.branchId, table.retailItemId, table.promotionId] })],
+);
+
 /** Which concrete SKUs a generic product ("חלב") can mean. Built offline by scripts/prices/link-skus. */
 export const productSkuLinks = pgTable(
   "product_sku_links",
@@ -544,7 +570,7 @@ export const priceIngestRuns = pgTable(
   "price_ingest_runs",
   {
     id: text("id").primaryKey(),
-    // "stores" | "prices"
+    // "stores" | "prices" | "promos"
     mode: text("mode").notNull(),
     chainId: text("chain_id").notNull(),
     // "running" | "ok" | "failed"

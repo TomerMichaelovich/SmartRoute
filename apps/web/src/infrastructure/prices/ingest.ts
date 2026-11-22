@@ -1,9 +1,17 @@
 import { randomUUID } from "crypto";
 import type { NeonQueryFunction } from "@neondatabase/serverless";
 import { normalizeHebrewText } from "@smartroute/core/application/classification/normalize-hebrew-text";
-import { decodePriceFile, itemKeyFor, parsePriceFullXml, parseStoresXml, type ParsedPriceItem } from "./parse";
+import {
+  decodePriceFile,
+  itemKeyFor,
+  parsePriceFullXml,
+  parsePromoFullXml,
+  parseStoresXml,
+  type ParsedPriceItem,
+} from "./parse";
 import { type ChainConfig, isRetailBranch, MAX_PRICE_FILE_AGE_HOURS, PRICE_CITY_CODES } from "./pilot-config";
 import { portalAdapter } from "./portals";
+import { promotionDeals } from "./promotions";
 import { cityCodeFromBranchName, cityCodeFromStoresValue } from "./settlements";
 
 type Sql = NeonQueryFunction<false, false>;
@@ -144,6 +152,8 @@ export async function ingestStores(sql: Sql, chain: ChainConfig, options: Ingest
     const removed = await sql`DELETE FROM branch_prices WHERE branch_id IN
                                 (SELECT id FROM retail_branches WHERE chain_id = ${chain.id} AND NOT prices_enabled)
                               RETURNING branch_id`;
+    await sql`DELETE FROM branch_promotions WHERE branch_id IN
+                (SELECT id FROM retail_branches WHERE chain_id = ${chain.id} AND NOT prices_enabled)`;
     await finishRun(sql, runId, { status: "ok", files: 1, rowsUpserted: rows.length, rowsDeleted: removed.length });
   } catch (e) {
     await finishRun(sql, runId, { status: "failed", files: 0, rowsUpserted: 0, rowsDeleted: 0, error: String(e) });
@@ -239,7 +249,8 @@ export async function ingestPrices(sql: Sql, chain: ChainConfig, options: Ingest
       return;
     }
 
-    const refs = await portalAdapter(chain.portal, chain.portalConfig).listPriceFullFiles(
+    const refs = await portalAdapter(chain.portal, chain.portalConfig).listBranchFiles(
+      "PriceFull",
       branches.map((b) => b.store_code),
     );
     const now = israelNow();
@@ -334,6 +345,168 @@ export async function ingestPrices(sql: Sql, chain: ChainConfig, options: Ingest
       rowsUpserted += changed.length;
       rowsDeleted += removed.length;
       log(`  ${label}: ${ref.name} -> ${next.size} items, ${changed.length} changed, ${removed.length} removed`);
+    }
+    await finishRun(sql, runId, { status: "ok", files, rowsUpserted, rowsDeleted });
+  } catch (e) {
+    await finishRun(sql, runId, { status: "failed", files, rowsUpserted, rowsDeleted, error: String(e) });
+    throw e;
+  }
+}
+
+/**
+ * Newest PromoFull of each price-enabled branch -> branch_promotions, for items
+ * the branch's prices list (so it runs after ingestPrices). Diff-only, like prices.
+ */
+export async function ingestPromotions(sql: Sql, chain: ChainConfig, options: IngestOptions = {}) {
+  const log = options.log ?? console.log;
+  const runId = await startRun(sql, "promos", chain.id, !!options.dryRun);
+  let files = 0;
+  let rowsUpserted = 0;
+  let rowsDeleted = 0;
+  try {
+    let branches = (await sql`SELECT id, store_code, name,
+                                     to_char(promo_file_at, 'YYYY-MM-DD HH24:MI:SS') AS promo_file_at
+                              FROM retail_branches
+                              WHERE chain_id = ${chain.id} AND prices_enabled AND is_active
+                                AND price_file_at IS NOT NULL`) as {
+      id: number;
+      store_code: string;
+      name: string;
+      promo_file_at: string | null;
+    }[];
+    if (options.storeCodes) branches = branches.filter((b) => options.storeCodes!.includes(b.store_code));
+    if (branches.length === 0) {
+      log(`  ${chain.id}: no branches with prices to attach promotions to`);
+      await finishRun(sql, runId, { status: "ok", files: 0, rowsUpserted: 0, rowsDeleted: 0 });
+      return;
+    }
+
+    const refs = await portalAdapter(chain.portal, chain.portalConfig).listBranchFiles(
+      "PromoFull",
+      branches.map((b) => b.store_code),
+    );
+    const now = israelNow();
+    for (const branch of branches) {
+      const ref = refs.find((r) => r.storeCode === branch.store_code);
+      const label = `${chain.id}/${branch.store_code} ${branch.name}`;
+      if (!ref) {
+        log(`  ${label}: no PromoFull file listed`);
+        continue;
+      }
+      if (hoursBetween(ref.timestamp, now) > MAX_PRICE_FILE_AGE_HOURS) {
+        log(`  ${label}: newest file ${ref.name} is stale, skipped`);
+        continue;
+      }
+      if (!options.force && branch.promo_file_at && ref.timestamp <= branch.promo_file_at) {
+        log(`  ${label}: ${ref.name} already loaded`);
+        continue;
+      }
+
+      const parsed = parsePromoFullXml(decodePriceFile(await ref.fetch()));
+      files++;
+      if (parsed.govChainId !== chain.govChainId) {
+        throw new Error(`${ref.name} is for chain ${parsed.govChainId}`);
+      }
+      // Deals are judged against this branch's shelf prices, and kept only for items it sells.
+      const shelf = (await sql`SELECT ri.item_code, bp.retail_item_id, bp.price_agorot
+                               FROM branch_prices bp JOIN retail_items ri ON ri.id = bp.retail_item_id
+                               WHERE bp.branch_id = ${branch.id}`) as {
+        item_code: string;
+        retail_item_id: number;
+        price_agorot: number;
+      }[];
+      const byCode = new Map(shelf.map((r) => [r.item_code, r]));
+      const deals = promotionDeals(parsed.promotions, (code) => byCode.get(code)?.price_agorot, now);
+      if (options.dryRun) {
+        log(`  ${label}: ${ref.name} -> ${parsed.promotions.length} promotions, ${deals.length} deals (dry run)`);
+        continue;
+      }
+
+      const keyOf = (itemId: number, promotionId: string) => `${itemId}|${promotionId}`;
+      const next = new Map(
+        deals.map((d) => {
+          const itemId = byCode.get(d.itemCode)!.retail_item_id;
+          return [keyOf(itemId, d.promotionId), { ...d, itemId }];
+        }),
+      );
+      const current = (await sql`SELECT retail_item_id, promotion_id, description, min_qty, price_agorot, max_qty,
+                                        to_char(starts_at, 'YYYY-MM-DD HH24:MI:SS') AS starts_at,
+                                        to_char(ends_at, 'YYYY-MM-DD HH24:MI:SS') AS ends_at
+                                 FROM branch_promotions WHERE branch_id = ${branch.id}`) as {
+        retail_item_id: number;
+        promotion_id: string;
+        description: string;
+        min_qty: number;
+        price_agorot: number;
+        max_qty: number | null;
+        starts_at: string;
+        ends_at: string;
+      }[];
+      const currentByKey = new Map(current.map((r) => [keyOf(r.retail_item_id, r.promotion_id), r]));
+      const changed = [...next.values()].filter((d) => {
+        const c = currentByKey.get(keyOf(d.itemId, d.promotionId));
+        return (
+          !c ||
+          c.description !== d.description ||
+          c.min_qty !== d.minQty ||
+          c.price_agorot !== d.priceAgorot ||
+          c.max_qty !== d.maxQty ||
+          c.starts_at !== d.startsAt ||
+          c.ends_at !== d.endsAt
+        );
+      });
+      const removed = current.filter((r) => !next.has(keyOf(r.retail_item_id, r.promotion_id)));
+
+      const queries = [];
+      for (let i = 0; i < changed.length; i += BATCH) {
+        const batch = changed.slice(i, i + BATCH);
+        queries.push(
+          sql.query(
+            `INSERT INTO branch_promotions
+               (branch_id, retail_item_id, promotion_id, description, min_qty, price_agorot, max_qty, starts_at, ends_at)
+             SELECT $1, t.item_id, t.promotion_id, t.description, t.min_qty, t.price, t.max_qty, t.starts_at, t.ends_at
+             FROM unnest($2::int[], $3::text[], $4::text[], $5::int[], $6::int[], $7::int[], $8::timestamp[], $9::timestamp[])
+               AS t(item_id, promotion_id, description, min_qty, price, max_qty, starts_at, ends_at)
+             ON CONFLICT (branch_id, retail_item_id, promotion_id) DO UPDATE SET
+               description = excluded.description, min_qty = excluded.min_qty, price_agorot = excluded.price_agorot,
+               max_qty = excluded.max_qty, starts_at = excluded.starts_at, ends_at = excluded.ends_at`,
+            [
+              branch.id,
+              batch.map((d) => d.itemId),
+              batch.map((d) => d.promotionId),
+              batch.map((d) => d.description),
+              batch.map((d) => d.minQty),
+              batch.map((d) => d.priceAgorot),
+              batch.map((d) => d.maxQty),
+              batch.map((d) => d.startsAt),
+              batch.map((d) => d.endsAt),
+            ],
+          ),
+        );
+      }
+      if (removed.length) {
+        queries.push(
+          sql.query(
+            `DELETE FROM branch_promotions p USING unnest($2::int[], $3::text[]) AS t(item_id, promotion_id)
+             WHERE p.branch_id = $1 AND p.retail_item_id = t.item_id AND p.promotion_id = t.promotion_id`,
+            [branch.id, removed.map((r) => r.retail_item_id), removed.map((r) => r.promotion_id)],
+          ),
+        );
+      }
+      queries.push(
+        sql.query(`UPDATE retail_branches SET promo_file_at = $1, updated_at = $2 WHERE id = $3`, [
+          ref.timestamp,
+          nowIso(),
+          branch.id,
+        ]),
+      );
+      // One atomic batch per branch, like prices.
+      await sql.transaction(queries);
+      rowsUpserted += changed.length;
+      rowsDeleted += removed.length;
+      log(
+        `  ${label}: ${ref.name} -> ${parsed.promotions.length} promotions, ${next.size} deals, ${changed.length} changed, ${removed.length} removed`,
+      );
     }
     await finishRun(sql, runId, { status: "ok", files, rowsUpserted, rowsDeleted });
   } catch (e) {

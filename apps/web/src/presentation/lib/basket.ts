@@ -209,7 +209,8 @@ export async function quoteBasket(
 
   const rows = await priceRepository.findCheapestPrices(
     branches.map((b) => b.id),
-    requirements.map((r) => ({ id: r.itemId, keys: r.keys })),
+    requirements.map((r) => ({ id: r.itemId, quantity: r.quantity, keys: r.keys })),
+    MAX_PRICE_FILE_AGE_HOURS,
   );
   const prices = new Map<number, Map<string, PricedLine>>();
   for (const row of rows) {
@@ -220,6 +221,7 @@ export async function quoteBasket(
       priceAgorot: row.priceAgorot,
       packPriceAgorot: row.packPriceAgorot,
       scaled: row.scaled,
+      ...(row.promotion && { lineTotalAgorot: row.lineTotalAgorot, promotion: row.promotion }),
     });
     prices.set(row.branchId, byItem);
   }

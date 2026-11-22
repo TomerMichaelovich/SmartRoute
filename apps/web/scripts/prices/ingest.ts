@@ -1,15 +1,23 @@
-import { ingestPrices, ingestStores, refreshBranchCounts, upsertChains } from "@/src/infrastructure/prices/ingest";
+import {
+  ingestPrices,
+  ingestPromotions,
+  ingestStores,
+  refreshBranchCounts,
+  upsertChains,
+} from "@/src/infrastructure/prices/ingest";
 import { PRICE_CHAINS } from "@/src/infrastructure/prices/pilot-config";
 import { connect } from "./db";
 
 /**
  * Price-transparency ingestion for the pilot chains/cities (pilot-config.ts).
  *
- * Usage: tsx scripts/prices/ingest.ts [--mode=full|stores|prices] [--chain=<id>[,<id>]]
+ * Usage: tsx scripts/prices/ingest.ts [--mode=full|stores|prices|promos] [--chain=<id>[,<id>]]
  *                                     [--stores=<code>[,<code>]] [--force] [--dry-run] [--prod]
  *   --mode=stores  Stores files -> retail_branches (city, price-enabled flag)
- *   --mode=prices  newest PriceFull per price-enabled branch -> branch_prices (diff only)
- *   --mode=full    both (default)
+ *   --mode=prices  newest PriceFull per price-enabled branch -> branch_prices (diff only),
+ *                  then its newest PromoFull -> branch_promotions (diff only)
+ *   --mode=promos  PromoFull only
+ *   --mode=full    stores + prices + promotions (default)
  *   default target is the dev branch; --prod = production; CI uses $DATABASE_URL.
  *
  * Each chain runs in isolation: one portal failing doesn't stop the others, but
@@ -22,7 +30,7 @@ function arg(name: string): string | undefined {
 
 async function main() {
   const mode = arg("mode") ?? "full";
-  if (!["full", "stores", "prices"].includes(mode)) throw new Error(`unknown --mode=${mode}`);
+  if (!["full", "stores", "prices", "promos"].includes(mode)) throw new Error(`unknown --mode=${mode}`);
   const chainIds = arg("chain")?.split(",");
   const storeCodes = arg("stores")?.split(",");
   const dryRun = process.argv.includes("--dry-run");
@@ -54,13 +62,17 @@ async function main() {
   for (const chain of chains) {
     const started = Date.now();
     // Independent steps: a slow Stores listing mustn't keep that chain's prices from updating.
-    if (mode !== "prices") await attempt(chain, "stores", () => ingestStores(sql, chain, { dryRun }));
-    if (mode !== "stores") await attempt(chain, "prices", () => ingestPrices(sql, chain, { dryRun, force, storeCodes }));
+    if (mode === "full" || mode === "stores") await attempt(chain, "stores", () => ingestStores(sql, chain, { dryRun }));
+    if (mode === "full" || mode === "prices") {
+      await attempt(chain, "prices", () => ingestPrices(sql, chain, { dryRun, force, storeCodes }));
+    }
+    // After prices: deals are judged against (and attached to) the branch's shelf prices.
+    if (mode !== "stores") await attempt(chain, "promos", () => ingestPromotions(sql, chain, { dryRun, force, storeCodes }));
     console.log(`${chain.id}: done in ${Math.round((Date.now() - started) / 1000)}s`);
   }
-  if (!dryRun && mode !== "stores") await refreshBranchCounts(sql);
+  if (!dryRun && (mode === "full" || mode === "prices")) await refreshBranchCounts(sql);
   if (failures.length) console.error(`failures:\n  ${failures.join("\n  ")}`);
-  if (dryRun) return;
+  if (dryRun || mode === "promos") return;
 
   // Fail the run only for a lasting problem: a chain whose newest prices are
   // older than STALE_AFTER_HOURS (quotes drop branches at MAX_PRICE_FILE_AGE_HOURS).

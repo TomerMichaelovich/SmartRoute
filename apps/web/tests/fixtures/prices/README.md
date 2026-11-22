@@ -9,6 +9,11 @@ and encoding byte-for-byte in style. Use them for parser tests.
 | `shufersal-pricefull.xml.gz` | store 374 | gzip, UTF-8 + BOM, `<Root>` |
 | `ramilevy-stores.xml` | url.publishedprices.co.il (Cerberus) | **plain, UTF-16LE + BOM**, `<Root>` |
 | `ramilevy-pricefull.xml.gz` | store 001 | gzip, UTF-8 + BOM |
+| `ramilevy-promofull.xml.gz` | store 027 (downloaded 2026-10-24) | gzip, UTF-8, no BOM |
+| `shufersal-promofull.xml.gz` | store 110, catID=4 (2026-10-24) | gzip, UTF-8 + BOM |
+
+PromoFull samples hold one promotion of each kind (unit price, "2 ב-X", "השני בחצי",
+1+1, club-only, coupon, weighted per kg, minimum basket, two groups).
 
 PriceFull samples include the first items plus all "חלב…" items,
 "שוקולד חלב…" items and weighted produce (עגבניה/מלפפון/בננה).
@@ -32,3 +37,16 @@ PriceFull samples include the first items plus all "חלב…" items,
   from the file name, never by lexical sort.
 - Shufersal file links are signed Azure blob URLs that expire (~40 min) — download right after listing.
 - `*.publishedprices.co.il` chains to "SSL.com TLS RSA Root CA 2022": Node 22+ accepts it, older curl CA bundles don't.
+
+## PromoFull quirks (2026-10-24, all five pilot chains)
+
+- **Same layout everywhere**: `Promotion > Groups > Group > PromotionItems > PromotionItem`.
+- **`DiscountedPrice` depends on `RewardType`**: 1 / 10 = the price of `MinQty` units; 3 = the unit price;
+  2 = the price of the *last* of `MinQty` units ("השני בחצי" 8.95, 1+1 0.00). Checked against shelf prices.
+- **Weighted items**: `MinQty` 0.01 means any amount (price per kg); a weight like 0.3 means "300 גרם ב-22".
+- **`ClubID`** is `0` or `0 - כלל הלקוחות` for every shopper; clubs look like `1 - מועדון עובדים` or
+  `(1=מועדון שיווק|1=מועדון לקוחות אשראי)`. Coupons: `AdditionalIsCoupon=1`.
+- **Minimum basket**: usually `MinPurchaseAmount`, but Yohananof writes it only in the description ("מעל99").
+- **Start/end hours mostly repeat the dates' times** (Shufersal 00:00–02:59); a start after 06:00 is a real
+  evening deal (Carrefour 18:00). `PromotionDays` limits some deals to weekdays ("1,2,3,4,5,7").
+- Some promotions are **no cheaper than the shelf price** (already in PriceFull, or stale) — compare before using.

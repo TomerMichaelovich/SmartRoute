@@ -69,6 +69,10 @@ export interface CheapestPriceRow {
   packPriceAgorot: number;
   /** Found only as another pack size, priced per unit (factor != 1). */
   scaled: boolean;
+  /** What the requirement's quantity costs there, with the best running deal (else priceAgorot × quantity). */
+  lineTotalAgorot: number;
+  /** The chain promotion lineTotalAgorot uses, if any: minQty units for priceAgorot. */
+  promotion: { description: string; minQty: number; priceAgorot: number } | null;
 }
 
 /** An acceptable product for a requirement. Tier 0 keys win over tier 1 wherever a branch has one. */
@@ -100,7 +104,13 @@ export interface IPriceRepository {
   findBranchesInCity(cityCode: number, maxPriceAgeHours: number): Promise<PriceBranch[]>;
   /**
    * For each branch and requirement, the best acceptable SKU it sells: the
-   * lowest tier available there, then the lowest price after the key's factor.
+   * lowest tier available there, then the lowest cost of the requirement's
+   * quantity after the key's factor — with chain promotions from PromoFull
+   * files at most maxPromoFileAgeHours old.
    */
-  findCheapestPrices(branchIds: number[], requirements: { id: string; keys: RequirementKey[] }[]): Promise<CheapestPriceRow[]>;
+  findCheapestPrices(
+    branchIds: number[],
+    requirements: { id: string; quantity: number; keys: RequirementKey[] }[],
+    maxPromoFileAgeHours: number,
+  ): Promise<CheapestPriceRow[]>;
 }

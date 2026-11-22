@@ -102,26 +102,52 @@ export class PgPriceRepository implements IPriceRepository {
     }
   }
 
-  async findCheapestPrices(branchIds: number[], requirements: { id: string; keys: RequirementKey[] }[]): Promise<CheapestPriceRow[]> {
-    const rowsIn = requirements.flatMap((r) => r.keys.map((k) => ({ reqId: r.id, ...k })));
+  async findCheapestPrices(
+    branchIds: number[],
+    requirements: { id: string; quantity: number; keys: RequirementKey[] }[],
+    maxPromoFileAgeHours: number,
+  ): Promise<CheapestPriceRow[]> {
+    const rowsIn = requirements.flatMap((r) => r.keys.map((k) => ({ reqId: r.id, quantity: r.quantity, ...k })));
     if (branchIds.length === 0 || rowsIn.length === 0) return [];
+    // A deal covers whole bundles of min_qty (up to max_qty units); the rest is
+    // at the shelf price. Another pack size (factor != 1) only takes unit deals.
+    // Starts/ends and promo_file_at are Israel-local, like price_file_at.
     const rows = (await rawSql.query(
       `WITH req AS (
-         SELECT * FROM unnest($1::text[], $2::text[], $3::float8[], $4::int[]) AS r(req_id, item_key, factor, tier)
-       )
+         SELECT * FROM unnest($1::text[], $2::text[], $3::float8[], $4::int[], $5::float8[]) AS r(req_id, item_key, factor, tier, qty)
+       ), il AS (SELECT now() AT TIME ZONE 'Asia/Jerusalem' AS now)
        SELECT DISTINCT ON (bp.branch_id, req.req_id)
               bp.branch_id, req.req_id, ri.item_key, ri.name, bp.price_agorot, req.tier,
-              round(bp.price_agorot * req.factor)::int AS effective
+              round(bp.price_agorot * req.factor)::int AS effective,
+              round(coalesce(d.total, bp.price_agorot * req.qty) * req.factor)::int AS line_total,
+              d.description AS promo_description, d.min_qty AS promo_min_qty, d.price_agorot AS promo_price
        FROM req
+       CROSS JOIN il
        JOIN retail_items ri ON ri.item_key = req.item_key
-       JOIN branch_prices bp ON bp.retail_item_id = ri.id AND bp.branch_id = ANY($5::int[])
-       ORDER BY bp.branch_id, req.req_id, req.tier, bp.price_agorot * req.factor, ri.item_key`,
+       JOIN branch_prices bp ON bp.retail_item_id = ri.id AND bp.branch_id = ANY($6::int[])
+       LEFT JOIN LATERAL (
+         SELECT p.description, p.min_qty, p.price_agorot,
+                n.bundles * p.price_agorot + (req.qty - n.bundles * p.min_qty) * bp.price_agorot AS total
+         FROM branch_promotions p
+         JOIN retail_branches b ON b.id = p.branch_id
+         CROSS JOIN LATERAL (SELECT floor(least(req.qty, coalesce(p.max_qty, req.qty)) / p.min_qty) AS bundles) n
+         WHERE p.branch_id = bp.branch_id AND p.retail_item_id = bp.retail_item_id
+           AND p.starts_at <= il.now AND p.ends_at > il.now
+           AND b.promo_file_at > il.now - make_interval(hours => $7)
+           AND n.bundles >= 1 AND p.price_agorot < p.min_qty * bp.price_agorot
+           AND (req.factor = 1 OR p.min_qty = 1)
+         ORDER BY total, p.promotion_id
+         LIMIT 1
+       ) d ON true
+       ORDER BY bp.branch_id, req.req_id, req.tier, coalesce(d.total, bp.price_agorot * req.qty) * req.factor, ri.item_key`,
       [
         rowsIn.map((r) => r.reqId),
         rowsIn.map((r) => r.itemKey),
         rowsIn.map((r) => r.factor),
         rowsIn.map((r) => r.tier),
+        rowsIn.map((r) => r.quantity),
         branchIds,
+        maxPromoFileAgeHours,
       ],
     )) as Record<string, unknown>[];
     return rows.map((r) => ({
@@ -132,6 +158,15 @@ export class PgPriceRepository implements IPriceRepository {
       priceAgorot: Number(r.effective),
       packPriceAgorot: Number(r.price_agorot),
       scaled: Number(r.tier) === 1,
+      lineTotalAgorot: Number(r.line_total),
+      promotion:
+        r.promo_description === null
+          ? null
+          : {
+              description: String(r.promo_description),
+              minQty: Number(r.promo_min_qty),
+              priceAgorot: Number(r.promo_price),
+            },
     }));
   }
 

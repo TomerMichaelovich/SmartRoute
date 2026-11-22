@@ -32,6 +32,8 @@ export interface BranchQuote {
     /** Found only in another pack size: priced per unit; packPriceAgorot is its shelf price. */
     scaled?: boolean;
     packPriceAgorot?: number;
+    /** The chain promotion the line total uses: minQty units for priceAgorot. Absent from older servers. */
+    promotion?: { description: string; minQty: number; priceAgorot: number };
   }[];
 }
 
@@ -117,6 +119,9 @@ export function BranchQuoteCard({ quote, unpriced = [], rank, busy, disabled, on
                 ) : line.substitute ? (
                   <Text style={styles.meta}> ({t.similar})</Text>
                 ) : null}
+                {line.promotion && (
+                  <Text style={styles.deal}> · {t.deal(line.promotion.minQty, shekels(line.promotion.priceAgorot))}</Text>
+                )}
               </Text>
               {line.quantity !== 1 && <Text style={styles.lineQty}>×{line.quantity}</Text>}
               <Text style={styles.linePrice}>{shekels(line.lineTotalAgorot)}</Text>
@@ -274,6 +279,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: FONTS.medium,
     color: COLORS.neutral900,
+  },
+  deal: {
+    fontSize: 12,
+    fontFamily: FONTS.medium,
+    color: COLORS.green600,
   },
   missingName: {
     color: "#b45309",

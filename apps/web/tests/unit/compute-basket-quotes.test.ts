@@ -81,6 +81,22 @@ describe("computeBasketQuotes", () => {
     expect(quotes).toHaveLength(3);
     expect(quotes[0]).toMatchObject({ branch: { id: 4 }, estimated: true });
   });
+
+  it("uses a deal's line total over unit price × quantity", () => {
+    const promotion = { description: "2 ב-10", minQty: 2, priceAgorot: 1000 };
+    const { quotes } = computeBasketQuotes({
+      requirements: [req("snack", 2)],
+      branches: [branch(1), branch(2)],
+      prices: new Map([
+        [1, new Map([["snack", line(550)]])],
+        [2, new Map([["snack", { ...line(700), lineTotalAgorot: 1000, promotion }]])],
+      ]),
+      limit: 3,
+    });
+    expect(quotes[0].branch.id).toBe(2);
+    expect(quotes[0].lines[0]).toMatchObject({ priceAgorot: 700, lineTotalAgorot: 1000, promotion });
+    expect(quotes[1].totalAgorot).toBe(1100);
+  });
 });
 
 describe("needsVariantChoice", () => {

@@ -90,6 +90,22 @@ CREATE TABLE IF NOT EXISTS "price_ingest_runs" (
 	"finished_at" timestamp
 );
 
+-- Chain promotions (PromoFull), added 2026-10-24.
+ALTER TABLE "retail_branches" ADD COLUMN IF NOT EXISTS "promo_file_at" timestamp;
+
+CREATE TABLE IF NOT EXISTS "branch_promotions" (
+	"branch_id" integer NOT NULL,
+	"retail_item_id" integer NOT NULL,
+	"promotion_id" text NOT NULL,
+	"description" text NOT NULL,
+	"min_qty" integer NOT NULL,
+	"price_agorot" integer NOT NULL,
+	"max_qty" integer,
+	"starts_at" timestamp NOT NULL,
+	"ends_at" timestamp NOT NULL,
+	CONSTRAINT "branch_promotions_branch_id_retail_item_id_promotion_id_pk" PRIMARY KEY("branch_id","retail_item_id","promotion_id")
+);
+
 CREATE INDEX IF NOT EXISTS "price_ingest_runs_started_at_idx" ON "price_ingest_runs" USING btree ("started_at");
 CREATE INDEX IF NOT EXISTS "product_sku_links_item_key_idx" ON "product_sku_links" USING btree ("item_key");
 CREATE UNIQUE INDEX IF NOT EXISTS "retail_branches_chain_store_idx" ON "retail_branches" USING btree ("chain_id","store_code");
@@ -101,6 +117,6 @@ CREATE INDEX IF NOT EXISTS "retail_items_normalized_name_trgm_idx" ON "retail_it
 
 COMMIT;
 
--- Check: should list the 6 tables.
+-- Check: should list the 7 tables.
 SELECT table_name FROM information_schema.tables
-WHERE table_schema = 'public' AND table_name IN ('retail_chains', 'retail_branches', 'retail_items', 'branch_prices', 'product_sku_links', 'price_ingest_runs');
+WHERE table_schema = 'public' AND table_name IN ('retail_chains', 'retail_branches', 'retail_items', 'branch_prices', 'product_sku_links', 'price_ingest_runs', 'branch_promotions');

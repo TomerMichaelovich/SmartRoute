@@ -228,3 +228,76 @@ export function parsePriceFileName(name: string): PriceFileName | null {
     timestamp: `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)} ${t.slice(0, 2)}:${t.slice(2, 4)}:${t.slice(4, 6)}`,
   };
 }
+
+export interface ParsedPromotionItem {
+  itemCode: string;
+  /** 1 / 10: a price for MinQty units. 3: a unit price. 2: a discount on the last of MinQty units. */
+  rewardType: string | null;
+  minQty: number | null;
+  maxQty: number | null;
+  discountedPriceAgorot: number | null;
+  isWeighted: boolean;
+}
+
+export interface ParsedPromotion {
+  promotionId: string;
+  description: string;
+  startsAt: string | null;
+  endsAt: string | null;
+  startHour: string | null;
+  /** Weekdays it's limited to ("1,2,3" — 1 = Sunday), or null for every day. */
+  days: string | null;
+  /** "0" / "0 - כלל הלקוחות" = every shopper; anything else names loyalty clubs. */
+  clubId: string | null;
+  isCoupon: boolean;
+  redemptionLimit: number | null;
+  groups: { minPurchaseAgorot: number | null; items: ParsedPromotionItem[] }[];
+}
+
+/** The fields before the first nested `tag` block: `fields()` would otherwise also collect the children's. */
+function ownFields(block: string, nestedTag: string): Record<string, string> {
+  const i = block.search(new RegExp(`<${nestedTag}>`, "i"));
+  return fields(i < 0 ? block : block.slice(0, i));
+}
+
+/** PromoFull: the same layout at every pilot chain (Promotion > Groups > Group > PromotionItems). */
+export function parsePromoFullXml(xml: string): { govChainId: string; storeCode: string; promotions: ParsedPromotion[] } {
+  const govChainId = firstValue(xml, "ChainID");
+  const storeId = firstValue(xml, "StoreID");
+  if (!govChainId || !storeId) throw new Error("PromoFull file has no ChainID/StoreID");
+  const promotions: ParsedPromotion[] = [];
+  for (const block of blocks(xml, "Promotion")) {
+    const f = ownFields(block, "Groups");
+    if (!f.promotionid) continue;
+    promotions.push({
+      promotionId: f.promotionid,
+      description: meaningful(f.promotiondescription) ?? "",
+      startsAt: toTimestamp(f.promotionstartdatetime ?? f.promotionstartdate),
+      endsAt: toTimestamp(f.promotionenddatetime ?? f.promotionenddate),
+      startHour: meaningful(f.promotionstarthour),
+      days: meaningful(f.promotiondays),
+      clubId: meaningful(f.clubid),
+      isCoupon: f.additionaliscoupon === "1",
+      redemptionLimit: toNumber(f.redemptionlimit),
+      groups: blocks(block, "Group").map((group) => ({
+        minPurchaseAgorot: toAgorot(ownFields(group, "PromotionItems").minpurchaseamount),
+        items: blocks(group, "PromotionItem").flatMap((item) => {
+          const i = fields(item);
+          const code = i.itemcode?.trim();
+          if (!code) return [];
+          return [
+            {
+              itemCode: code,
+              rewardType: i.rewardtype || null,
+              minQty: toNumber(i.minqty),
+              maxQty: toNumber(i.maxqty),
+              discountedPriceAgorot: toAgorot(i.discountedprice),
+              isWeighted: i.bisweighted === "1",
+            },
+          ];
+        }),
+      })),
+    });
+  }
+  return { govChainId, storeCode: normalizeStoreCode(storeId), promotions };
+}

@@ -23,6 +23,10 @@ export interface PricedLine {
   /** Set when found only in another pack size: priceAgorot is then its per-unit share, this the shelf price. */
   packPriceAgorot?: number;
   scaled?: boolean;
+  /** The requirement's quantity there, when a deal makes it cost less than priceAgorot × quantity. */
+  lineTotalAgorot?: number;
+  /** The chain promotion that line total uses: minQty units for priceAgorot ("2 ב-20"). */
+  promotion?: { description: string; minQty: number; priceAgorot: number };
 }
 
 export interface QuoteLine extends PricedLine {
@@ -63,7 +67,8 @@ export function computeBasketQuotes<B extends { id: number; distanceKm: number |
 }): BasketQuoteResult<B> {
   const { requirements, branches, prices, limit } = input;
 
-  const lineTotal = (req: BasketRequirement, line: PricedLine) => Math.round(line.priceAgorot * req.quantity);
+  const lineTotal = (req: BasketRequirement, line: PricedLine) =>
+    line.lineTotalAgorot ?? Math.round(line.priceAgorot * req.quantity);
   const medianByItem = new Map<string, number>();
   const unavailableEverywhere: { itemId: string; rawText: string }[] = [];
   const comparable: BasketRequirement[] = [];

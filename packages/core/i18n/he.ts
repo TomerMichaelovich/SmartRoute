@@ -412,6 +412,10 @@ export const he = {
     perUnit(packPrice: string): string {
       return `אריזה אחרת ב־${packPrice}, מחושב לפי יחידה`;
     },
+    /** A chain promotion the line is priced with: "מבצע 2 ב־₪20.00" / "מבצע ₪11.90". */
+    deal(minQty: number, price: string): string {
+      return minQty > 1 ? `מבצע ${minQty} ב־${price}` : `מבצע ${price}`;
+    },
     showMore(n: number): string {
       return n === 1 ? "הצגת סניף נוסף" : `הצגת עוד ${n} סניפים`;
     },
