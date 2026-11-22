@@ -61,7 +61,7 @@ export function MapVideoUploadPopup({
       onClose();
     } catch (e) {
       console.error(e);
-      setError("ההעלאה נכשלה - נסו שוב");
+      setError(`ההעלאה נכשלה: ${e instanceof Error ? e.message : String(e)}`);
       setProgress(null);
     }
   }

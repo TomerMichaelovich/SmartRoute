@@ -30,6 +30,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ sto
     });
     return Response.json(result);
   } catch (error) {
+    console.error("Map video upload token failed:", error);
     return Response.json({ error: (error as Error).message }, { status: 400 });
   }
 }
