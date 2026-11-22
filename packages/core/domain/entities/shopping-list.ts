@@ -21,6 +21,24 @@ export interface ShoppingListItem {
   // answer to the item's text in different places ("טחינה" -> the generic one or
   // the chain's own). Asked before routing; shared like the rest of the item.
   placeChoice?: ShoppingListItemPlaceChoice;
+  // Which kind of product the line means, tapped while typing it ("קולה" -> a six-pack,
+  // "חומוס" -> canned). Holds for every branch; shared like the rest of the item.
+  kindChoice?: ShoppingListItemKindChoice;
+}
+
+/** How a product is packed: a single unit, a can, a six-pack, or another multipack. */
+export type PackForm = "single" | "can" | "sixpack" | "pack";
+
+export interface ShoppingListItemKindChoice {
+  // The shelf groups (shelf-group.ts) this kind of product stands in.
+  groups: string[];
+  // Only when the line's products differ by packaging rather than by what they are.
+  form?: PackForm;
+  // As shown on the button and under the line ("שישייה", "שימורים").
+  label: string;
+  // normalizeHebrewText(rawText) when chosen: editing the item drops the choice.
+  text: string;
+  chosenAt: string;
 }
 
 export interface ShoppingListItemPlaceChoice {

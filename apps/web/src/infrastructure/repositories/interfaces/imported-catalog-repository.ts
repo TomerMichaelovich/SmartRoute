@@ -9,4 +9,6 @@ export interface IImportedCatalogRepository extends IImportedAliasRepository {
    * cheapest basket prices those instead of leaving the line out.
    */
   skuOptionsByAlias(normalizedTexts: string[]): Promise<Map<string, SkuOption[]>>;
+  /** The name and shelf group of each imported product answering to this normalized alias. */
+  productsByAlias(normalizedAlias: string): Promise<{ canonicalName: string; shelfGroup: string | null }[]>;
 }

@@ -1,7 +1,7 @@
 import type { MapEdge } from "@smartroute/core/domain/entities/map-edge";
 import type { MapNode } from "@smartroute/core/domain/entities/map-node";
 import type { ProductListing } from "@smartroute/core/domain/entities/product-listing";
-import type { Route, RouteStop } from "@smartroute/core/domain/entities/route";
+import type { Route, RouteStop, RouteStopPlace } from "@smartroute/core/domain/entities/route";
 import type { ShoppingListItem } from "@smartroute/core/domain/entities/shopping-list";
 import { buildGraph } from "./graph-builder";
 import { dijkstra, reconstructPath, type DijkstraResult } from "./dijkstra";
@@ -34,8 +34,8 @@ export interface BuildRouteParams {
    * department already passed is fitted in after it, never as a sudden U-turn.
    */
   nextStopNodeId?: string;
-  /** Items left to the route between several places: one product per place (placeDecisions' `flexible`). */
-  alternativeProducts?: Map<string, string[]>;
+  /** The places each item could be taken from (placeDecisions' `alternatives`), for the map to mark. */
+  alternativePlaces?: Map<string, RouteStopPlace[]>;
 }
 
 /**
@@ -139,7 +139,7 @@ export function buildRoute(params: BuildRouteParams): Route {
     completedItemIds = [],
     skippedItemIds = [],
     nextStopNodeId,
-    alternativeProducts,
+    alternativePlaces,
   } = params;
   const skipped = new Set(skippedItemIds);
   const graph = buildGraph(nodes, edges, mapWidth, mapHeight);
@@ -235,21 +235,11 @@ export function buildRoute(params: BuildRouteParams): Route {
   }
   const checkoutPathNodeIds = segments[segments.length - 1];
 
-  const placeOf = new Map<string, string>();
-  for (const l of listings) if (l.storeId === storeId && !placeOf.has(l.productId)) placeOf.set(l.productId, l.nodeId);
-  const otherPlaces = (itemId: string, nodeId: string) => [
-    ...new Set(
-      (alternativeProducts?.get(itemId) ?? [])
-        .map((productId) => placeOf.get(productId))
-        .filter((id): id is string => !!id && id !== nodeId && graph.nodes.has(id)),
-    ),
-  ];
-
   const stops: RouteStop[] = optimizedOrder.map((nodeId, index) => {
     const mapNode = graph.nodes.get(nodeId)!;
     const alsoAt = (itemsByNode.get(nodeId) ?? []).flatMap((itemId) => {
-      const nodeIds = otherPlaces(itemId, nodeId);
-      return nodeIds.length > 0 ? [{ itemId, nodeIds }] : [];
+      const places = (alternativePlaces?.get(itemId) ?? []).filter((p) => p.nodeId !== nodeId && graph.nodes.has(p.nodeId));
+      return places.length > 0 ? [{ itemId, nodeIds: places.map((p) => p.nodeId), places }] : [];
     });
     return {
       order: index + 1,

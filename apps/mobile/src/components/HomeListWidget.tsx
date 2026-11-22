@@ -3,8 +3,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Path } from "react-native-svg";
 import { itemDisplay } from "@smartroute/core/application/shopping-list/item-display";
+import { normalizeHebrewText } from "@smartroute/core/application/classification/normalize-hebrew-text";
 import { resolveBeforeBranch } from "@smartroute/core/application/classification/resolve-before-branch";
 import { suggestBeforeAdding } from "@smartroute/core/application/classification/suggest-before-adding";
+import type { LineKind } from "@smartroute/core/application/routing/product-kind";
 import { normalizeShareCode } from "@smartroute/core/application/shopping-list/generate-share-code";
 import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ShoppingList } from "@smartroute/core/domain/entities/shopping-list";
@@ -20,6 +22,7 @@ import { FONTS } from "@/constants/fonts";
 import { CATEGORY_ICON, COLLAPSED_ITEM_COUNT } from "@/lib/list-widget-shared";
 import { ListPhotoError, pickListPhoto, recognizeListPhoto } from "@/lib/list-photo";
 import { clearMyListCode, getMyListCode, setMyListCode } from "@/lib/my-list-storage";
+import { useLineKinds } from "@/lib/use-line-kinds";
 import { refreshMyListWidget } from "@/widgets/refresh-my-list-widget";
 
 function MoreIcon() {
@@ -141,6 +144,7 @@ export function HomeListWidget({
   const [sharing, setSharing] = useState<Record<string, ListSharingSummary>>({});
   const [awaitingApproval, setAwaitingApproval] = useState(0);
   const [addText, setAddText] = useState("");
+  const addTextKinds = useLineKinds(addText);
   const [didYouMean, setDidYouMean] = useState<{ typed: string; suggestions: Product[] } | null>(null);
   const addInputRef = useRef<TextInput>(null);
   const [photoStage, setPhotoStage] = useState<PhotoListStage | null>(null);
@@ -341,19 +345,27 @@ export function HomeListWidget({
   // Adds straight from the home card. The item shows at once (unclassified,
   // so by its typed text) and is swapped for the server's classified copy;
   // the keyboard stays up for the next one.
-  async function addItem(rawText: string) {
+  async function addItem(rawText: string, kind?: LineKind) {
     const shareCode = selected?.shareCode;
     if (!shareCode) return;
     setAddText("");
     setExpanded(true);
     const tempId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const isOtherPending = (id: string) => id.startsWith("pending-") && id !== tempId;
-    patchList(shareCode, (l) => ({ ...l, items: [...l.items, { id: tempId, rawText }] }));
+    const chosenKind = kind ? { groups: kind.groups, form: kind.form, label: kind.label } : undefined;
+    const pendingItem = {
+      id: tempId,
+      rawText,
+      ...(chosenKind
+        ? { kindChoice: { ...chosenKind, text: normalizeHebrewText(rawText), chosenAt: new Date().toISOString() } }
+        : {}),
+    };
+    patchList(shareCode, (l) => ({ ...l, items: [...l.items, pendingItem] }));
     try {
       const res = await apiFetch(`/api/lists/${shareCode}/items`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lines: [{ rawText }] }),
+        body: JSON.stringify({ lines: [{ rawText, ...(chosenKind ? { kind: chosenKind } : {}) }] }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const { list }: { list: ShoppingList } = await res.json();
@@ -776,6 +788,24 @@ export function HomeListWidget({
           )}
         </View>
 
+        {/* One tap says which kind and adds the line. Ignoring them adds it as typed. */}
+        {addTextKinds.length > 0 && (
+          <View style={styles.kindsRow}>
+            <Text style={styles.kindsHint}>{he.myList.widget.kindsHint}</Text>
+            {addTextKinds.map((kind) => (
+              <Pressable
+                key={kind.label}
+                style={styles.kindChip}
+                onPress={() => void addItem(addText.trim(), kind)}
+                accessibilityRole="button"
+                accessibilityLabel={`${addText.trim()} ${kind.label}`}
+              >
+                <Text style={styles.kindChipText}>{kind.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+
         {items.length === 0 ? (
           <Text style={styles.emptyText}>{he.myList.widget.emptyListHint}</Text>
         ) : (
@@ -1054,6 +1084,31 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+  },
+  kindsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 8,
+  },
+  kindsHint: {
+    fontSize: 13,
+    fontFamily: FONTS.medium,
+    color: COLORS.neutral500,
+  },
+  kindChip: {
+    minHeight: 36,
+    justifyContent: "center",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: COLORS.cyan500,
+    backgroundColor: COLORS.cyan50,
+    paddingHorizontal: 14,
+  },
+  kindChipText: {
+    fontSize: 14,
+    fontFamily: FONTS.semiBold,
+    color: COLORS.cyan700,
   },
   addField: {
     flex: 1,

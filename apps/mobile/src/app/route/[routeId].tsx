@@ -15,6 +15,7 @@ import { COLORS } from "@/constants/colors";
 import { FONTS } from "@/constants/fonts";
 import { clearMyListCode, getMyListCode } from "@/lib/my-list-storage";
 import { loadCheckedItemIds, saveCheckedItemIds } from "@/lib/route-storage";
+import { routeToOtherPlace } from "@/lib/route-to-other-place";
 import { useSharedListUpdates } from "@/lib/use-shared-list-updates";
 import { refreshMyListWidget } from "@/widgets/refresh-my-list-widget";
 
@@ -27,6 +28,9 @@ interface RoutePayload {
   /** The items left out of the route, by name. Absent from older servers. */
   unresolvedItems?: { id: string; displayName: string }[];
 }
+
+// Enough to choose from without pushing the checklist off the screen.
+const MAX_OTHER_PLACE_ROWS = 3;
 
 type LoadState =
   | { status: "loading" }
@@ -54,6 +58,8 @@ export default function RouteScreen() {
   const [finished, setFinished] = useState(false);
   const [mapExpanded, setMapExpanded] = useState(false);
   const [showUnresolved, setShowUnresolved] = useState(false);
+  // The "take me there" being re-planned ("itemId:nodeId").
+  const [movingTo, setMovingTo] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -135,19 +141,28 @@ export default function RouteScreen() {
       return firstNeeded ? { ...stop, label: firstNeeded.displayName } : stop;
     });
   }, [state, stopViews, checkedItemIds]);
-  // Where else what's still needed at the next stop can be found, by area.
-  const otherPlaces = useMemo(() => {
-    if (!nextStop?.alsoAt) return [];
+  // Where else what's still needed at the next stop can be found: one row per item and place.
+  const otherPlaceRows = useMemo(() => {
+    if (!nextStop?.alsoAt || state.status !== "ready") return [];
     const items = stopViews.find(({ stop }) => stop.order === nextStop.order)?.items ?? [];
     const nameOf = new Map(items.map((item) => [item.id, item.displayName]));
-    const namesByNode = new Map<string, string[]>();
-    for (const { itemId, nodeIds } of nextStop.alsoAt) {
+    const locationOf = new Map(state.data.nodes.map((n) => [n.id, n.label.replace(/\s*\n\s*/g, " ")]));
+    return nextStop.alsoAt.flatMap(({ itemId, nodeIds, places }) => {
       const name = nameOf.get(itemId);
-      if (!name || checkedItemIds.has(itemId)) continue;
-      for (const nodeId of nodeIds) namesByNode.set(nodeId, [...(namesByNode.get(nodeId) ?? []), name]);
-    }
-    return [...namesByNode].map(([nodeId, names]) => ({ nodeId, label: he.route.alsoHere(names[0], names.length - 1) }));
-  }, [nextStop, stopViews, checkedItemIds]);
+      if (!name || checkedItemIds.has(itemId)) return [];
+      const known: { nodeId: string; productId?: string; label?: string }[] = places ?? nodeIds.map((nodeId) => ({ nodeId }));
+      return known.map((place) => ({ ...place, itemId, name, location: locationOf.get(place.nodeId) ?? "" }));
+    });
+  }, [state, nextStop, stopViews, checkedItemIds]);
+  // On the map, by area: named by what sets it apart when it's for one item ("שישיות כאן").
+  const otherPlaces = useMemo(() => {
+    const byNode = new Map<string, typeof otherPlaceRows>();
+    for (const row of otherPlaceRows) byNode.set(row.nodeId, [...(byNode.get(row.nodeId) ?? []), row]);
+    return [...byNode].map(([nodeId, rows]) => ({
+      nodeId,
+      label: rows.length === 1 && rows[0].label ? he.route.placeHere(rows[0].label) : he.route.alsoHere(rows[0].name, rows.length - 1),
+    }));
+  }, [otherPlaceRows]);
   const displayPathNodeIds =
     state.status === "ready"
       ? (nextStop?.pathFromPrevious ?? lastCheckedStop?.pathToCheckout ?? state.data.route.checkoutPathNodeIds)
@@ -160,6 +175,26 @@ export default function RouteScreen() {
       else next.add(itemId);
       return next;
     });
+  }
+
+  async function goToOtherPlace(row: (typeof otherPlaceRows)[number]) {
+    if (state.status !== "ready" || !row.productId || movingTo) return;
+    setMovingTo(`${row.itemId}:${row.nodeId}`);
+    try {
+      const newRouteId = await routeToOtherPlace({
+        route: state.data.route,
+        storeId: state.data.store.id,
+        checkedItemIds,
+        itemId: row.itemId,
+        productId: row.productId,
+        nodeId: row.nodeId,
+      });
+      router.replace(`/route/${newRouteId}`);
+    } catch {
+      Alert.alert(he.common.error);
+    } finally {
+      setMovingTo(null);
+    }
   }
 
   function toggleNotFound(itemId: string) {
@@ -269,6 +304,29 @@ export default function RouteScreen() {
           footstepScale={store.footstepScale}
           expanded={mapExpanded}
         />
+
+        {/* Under the map, so it's there in full-screen too. */}
+        {otherPlaceRows.slice(0, MAX_OTHER_PLACE_ROWS).map((row) => {
+          const moving = movingTo === `${row.itemId}:${row.nodeId}`;
+          return (
+            <View key={`${row.itemId}:${row.nodeId}`} style={styles.otherPlace}>
+              <Text style={styles.otherPlaceText} numberOfLines={2}>
+                {he.route.otherPlace(row.name, row.label, row.location)}
+              </Text>
+              {row.productId && (
+                <Pressable
+                  onPress={() => void goToOtherPlace(row)}
+                  disabled={movingTo !== null}
+                  style={[styles.otherPlaceButton, movingTo !== null && styles.otherPlaceButtonBusy]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${he.route.takeMeThere}: ${he.route.otherPlace(row.name, row.label, row.location)}`}
+                >
+                  <Text style={styles.otherPlaceButtonText}>{moving ? he.common.loading : he.route.takeMeThere}</Text>
+                </Pressable>
+              )}
+            </View>
+          );
+        })}
       </View>
 
       <ScrollView contentContainerStyle={styles.bottom} style={mapExpanded && styles.hidden}>
@@ -370,6 +428,39 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: FONTS.regular,
     color: COLORS.neutral500,
+  },
+  otherPlace: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: COLORS.cyan500,
+    backgroundColor: COLORS.cyan50,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  otherPlaceText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: FONTS.medium,
+    color: COLORS.neutral700,
+  },
+  otherPlaceButton: {
+    minHeight: 36,
+    justifyContent: "center",
+    borderRadius: 999,
+    backgroundColor: COLORS.cyan600,
+    paddingHorizontal: 12,
+  },
+  otherPlaceButtonBusy: {
+    opacity: 0.6,
+  },
+  otherPlaceButtonText: {
+    fontSize: 13,
+    fontFamily: FONTS.semiBold,
+    color: COLORS.white,
   },
   bottom: {
     gap: 16,

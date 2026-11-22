@@ -27,4 +27,10 @@ describe("itemDisplay", () => {
     const same: ShoppingListItem = { id: "3", rawText: "טחינה גולמית", placeChoice: { productId: tahini.id, text: "טחינה גולמית", chosenAt: "x" } };
     expect(itemDisplay(same, demoProducts).chosen).toBeNull();
   });
+
+  it("else the kind tapped while typing, until the line is edited", () => {
+    const kindChoice = { groups: ["soft-drinks"], form: "sixpack" as const, label: "שישייה", text: "קולה", chosenAt: "x" };
+    expect(itemDisplay({ id: "4", rawText: "קולה", kindChoice }, demoProducts)).toEqual({ name: "קולה", chosen: "שישייה" });
+    expect(itemDisplay({ id: "4", rawText: "קולה זירו", kindChoice }, demoProducts).chosen).toBeNull();
+  });
 });

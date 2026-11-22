@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
+import { effectivePlaceChoice } from "@smartroute/core/application/routing/place-choice";
+import { effectiveKindChoice } from "@smartroute/core/application/routing/product-kind";
 import {
   nodeRepository,
+  productListingRepository,
   routeRepository,
   shoppingListRepository,
   storeRepository,
@@ -38,20 +41,30 @@ export async function GET(_request: Request, { params }: { params: Promise<{ rou
   const products = await productsFor({ items: shoppingList.items });
   const productById = new Map(products.map((p) => [p.id, p]));
   const itemById = new Map(shoppingList.items.map((i) => [i.id, i]));
+  // Where the products picked for items stand here: a pick made at another branch says nothing.
+  const hasPicks = shoppingList.items.some((i) => effectivePlaceChoice(i)?.productId);
+  const placeOfProduct = new Map<string, string>();
+  for (const listing of hasPicks ? await productListingRepository.findByStore(route.storeId) : []) {
+    if (!placeOfProduct.has(listing.productId)) placeOfProduct.set(listing.productId, listing.nodeId);
+  }
 
-  const itemView = (itemId: string) => {
+  const itemView = (itemId: string, stopNodeId?: string) => {
     const item = itemById.get(itemId);
     const product = item?.classification?.matchedProductId
       ? productById.get(item.classification.matchedProductId)
       : undefined;
+    const pickedId = item ? effectivePlaceChoice(item)?.productId : undefined;
+    const picked = pickedId && placeOfProduct.get(pickedId) === stopNodeId ? productById.get(pickedId) : undefined;
+    const kind = item ? effectiveKindChoice(item) : null;
     return {
       id: itemId,
-      displayName: product?.canonicalName ?? item?.rawText ?? itemId,
-      imageUrl: product?.imageUrl,
+      // What the shopper is really after here, not the generic product the line was classified as.
+      displayName: picked?.canonicalName ?? (kind ? `${item!.rawText} · ${kind.label}` : (product?.canonicalName ?? item?.rawText ?? itemId)),
+      imageUrl: (picked ?? product)?.imageUrl,
     };
   };
 
-  const stopViews = route.stops.map((stop) => ({ stop, items: stop.itemIds.map(itemView) }));
+  const stopViews = route.stops.map((stop) => ({ stop, items: stop.itemIds.map((id) => itemView(id, stop.nodeId)) }));
   // The list items left out of the route (not identified, or not carried by this store), so
   // the shopper can see which ones - route.unresolvedItemIds alone only gives their count.
   // Items removed from the list since the route was planned are dropped.

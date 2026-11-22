@@ -153,6 +153,14 @@ export const shoppingListItemPlaceChoiceSchema = z.object({
   chosenAt: z.string(),
 });
 
+export const shoppingListItemKindChoiceSchema = z.object({
+  groups: z.array(z.string().max(60)).min(1).max(12),
+  form: z.enum(["single", "can", "sixpack", "pack"]).optional(),
+  label: z.string().min(1).max(40),
+  text: z.string().max(200),
+  chosenAt: z.string(),
+});
+
 export const shoppingListItemSchema = z.object({
   id: z.string(),
   rawText: z.string(),
@@ -169,6 +177,8 @@ export const shoppingListItemSchema = z.object({
   variant: shoppingListItemVariantSchema.optional(),
   // Same: which of a store's same-name products the shopper meant (see place-choice.ts).
   placeChoice: shoppingListItemPlaceChoiceSchema.optional(),
+  // Same: the kind of product tapped while typing the line (see product-kind.ts).
+  kindChoice: shoppingListItemKindChoiceSchema.optional(),
 });
 
 export const shoppingListSchema = z.object({
@@ -219,7 +229,15 @@ export const routeStopSchema = z.object({
   type: mapNodeTypeSchema,
   pathFromPrevious: z.array(z.string()),
   pathToCheckout: z.array(z.string()),
-  alsoAt: z.array(z.object({ itemId: z.string(), nodeIds: z.array(z.string()) })).optional(),
+  alsoAt: z
+    .array(
+      z.object({
+        itemId: z.string(),
+        nodeIds: z.array(z.string()),
+        places: z.array(z.object({ nodeId: z.string(), productId: z.string(), label: z.string().optional() })).optional(),
+      }),
+    )
+    .optional(),
 });
 
 export const routeSchema = z.object({

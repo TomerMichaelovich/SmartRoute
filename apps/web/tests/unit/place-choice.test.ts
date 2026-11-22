@@ -241,10 +241,70 @@ describe("place choice with products imported from a price file", () => {
         edges: demoEdges,
         mapWidth: demoStore.mapWidth,
         mapHeight: demoStore.mapHeight,
-        alternativeProducts: new Map([["1", [spread.id, canned.id]]]),
+        alternativePlaces: new Map([
+          [
+            "1",
+            [
+              { nodeId: "n-dairy", productId: spread.id },
+              { nodeId: "n-produce", productId: canned.id, label: "שימורים" },
+            ],
+          ],
+        ]),
       });
       expect(route.stops[0].nodeId).toBe("n-dairy");
-      expect(route.stops[0].alsoAt).toEqual([{ itemId: "1", nodeIds: ["n-produce"] }]);
+      expect(route.stops[0].alsoAt).toEqual([
+        { itemId: "1", nodeIds: ["n-produce"], places: [{ nodeId: "n-produce", productId: canned.id, label: "שימורים" }] },
+      ]);
+    });
+  });
+
+  describe("a kind tapped while typing the line", () => {
+    const drink = (id: string, name: string): Product => ({
+      ...imported(id, name, ["קולה"], `729-${id}`),
+      shelfGroup: "soft-drinks",
+    });
+    const bottle = drink("bottle", "קוקה קולה בקבוק 1.5 ליטר");
+    const can = drink("can", "קוקה קולה בפחית 330 מ\"ל");
+    const six = drink("six", "קוקה קולה שישייה 1.5 ליטר");
+    const products = [...demoProducts, bottle, can, six];
+    const listings = [...demoProductListings, at(bottle, "n-beverages"), at(can, "n-beverages"), at(six, "n-produce")];
+    const line = (kindChoice?: ShoppingListItem["kindChoice"], rawText = "קולה"): ShoppingListItem => ({
+      id: "1",
+      rawText,
+      classification: { rawText, matchedAlias: "קולה", confidence: 1, source: "alias" },
+      ...(kindChoice ? { kindChoice } : {}),
+    });
+    const sixPack = { groups: ["soft-drinks"], form: "sixpack" as const, label: "שישייה", text: "קולה", chosenAt: "x" };
+
+    it("takes the route straight to that kind", () => {
+      expect(placeCandidates(line(sixPack), STORE_ID, listings, products)).toEqual([six.id]);
+      const { chosen, flexible } = placeDecisions([line(sixPack)], STORE_ID, listings, products);
+      expect(chosen.get("1")).toBe(six.id);
+      expect(flexible.size).toBe(0);
+    });
+
+    it("no longer applies once the line is edited", () => {
+      expect(placeCandidates(line(sixPack, "קולה זירו"), STORE_ID, listings, products)).not.toEqual([six.id]);
+    });
+
+    it("falls back to what the store has when it doesn't carry that kind", () => {
+      const noSix = listings.filter((l) => l.productId !== six.id);
+      const candidates = placeCandidates(line(sixPack), STORE_ID, noSix, products);
+      expect(candidates).toEqual(expect.arrayContaining([bottle.id, can.id]));
+      expect(candidates).not.toContain(six.id);
+    });
+
+    it("names the other places by what sets them apart", () => {
+      const { alternatives } = placeDecisions([line()], STORE_ID, listings, products);
+      expect(alternatives.get("1")?.find((p) => p.nodeId === "n-produce")?.label).toBe("שישיות");
+    });
+
+    it("keeps a way back after going to one of the places, within the same kind of product", () => {
+      const picked = line();
+      picked.placeChoice = { productId: six.id, text: "קולה", chosenAt: "x" };
+      const { chosen, alternatives } = placeDecisions([picked], STORE_ID, listings, products);
+      expect(chosen.get("1")).toBe(six.id);
+      expect(alternatives.get("1")?.map((p) => p.nodeId).sort()).toEqual(["n-beverages", "n-produce"]);
     });
   });
 

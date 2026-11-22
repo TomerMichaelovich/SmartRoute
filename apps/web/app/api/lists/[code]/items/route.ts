@@ -1,14 +1,22 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { normalizeHebrewText } from "@smartroute/core/application/classification/normalize-hebrew-text";
 import { normalizeShareCode } from "@smartroute/core/application/shopping-list/generate-share-code";
+import { findShelfGroup } from "@smartroute/core/domain/value-objects/shelf-group";
 import { shoppingListRepository } from "@/src/infrastructure/container";
+import { shoppingListItemKindChoiceSchema } from "@/src/infrastructure/repositories/schemas";
 import { classifyLines } from "@/src/presentation/lib/create-list";
 import { resolveListAccess } from "@/src/presentation/auth/list-access";
 import { notifyListChanged } from "@/src/presentation/lib/list-push";
 
+// The button tapped while typing the line (from /api/classify/kinds).
+const kindSchema = shoppingListItemKindChoiceSchema
+  .pick({ groups: true, form: true, label: true })
+  .refine((kind) => kind.groups.every((group) => findShelfGroup(group)));
+
 const bodySchema = z.object({
   lines: z
-    .array(z.object({ rawText: z.string().min(1), quantity: z.number().positive().optional() }))
+    .array(z.object({ rawText: z.string().min(1), quantity: z.number().positive().optional(), kind: kindSchema.optional() }))
     .min(1),
 });
 
@@ -34,10 +42,15 @@ export async function POST(
     parsed.data.lines.map((l) => l.rawText),
     access.user?.id,
   );
-  const items = classified.map((item, i) => ({
-    ...item,
-    quantity: parsed.data.lines[i].quantity ?? item.quantity,
-  }));
+  const chosenAt = new Date().toISOString();
+  const items = classified.map((item, i) => {
+    const kind = parsed.data.lines[i].kind;
+    return {
+      ...item,
+      quantity: parsed.data.lines[i].quantity ?? item.quantity,
+      ...(kind ? { kindChoice: { ...kind, text: normalizeHebrewText(item.rawText), chosenAt } } : {}),
+    };
+  });
 
   await shoppingListRepository.appendItems(list.id, items);
   notifyListChanged(list, access.user?.id);

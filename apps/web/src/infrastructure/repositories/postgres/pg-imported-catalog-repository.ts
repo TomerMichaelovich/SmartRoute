@@ -67,4 +67,15 @@ export class PgImportedCatalogRepository implements IImportedCatalogRepository {
     }
     return out;
   }
+
+  async productsByAlias(normalizedAlias: string): Promise<{ canonicalName: string; shelfGroup: string | null }[]> {
+    const rows = (await rawSql.query(
+      `SELECT canonical_name, shelf_group
+       FROM products
+       WHERE is_active AND source_item_key IS NOT NULL AND shelf_group IS DISTINCT FROM $1
+         AND jsonb_exists(normalized_aliases, $2)`,
+      [NOT_A_PRODUCT_GROUP, normalizedAlias],
+    )) as Record<string, unknown>[];
+    return rows.map((r) => ({ canonicalName: String(r.canonical_name), shelfGroup: (r.shelf_group as string | null) ?? null }));
+  }
 }

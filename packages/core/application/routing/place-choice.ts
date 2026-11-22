@@ -2,12 +2,14 @@ import type { MapEdge } from "@smartroute/core/domain/entities/map-edge";
 import type { MapNode } from "@smartroute/core/domain/entities/map-node";
 import type { Product } from "@smartroute/core/domain/entities/product";
 import type { ProductListing } from "@smartroute/core/domain/entities/product-listing";
+import type { RouteStopPlace } from "@smartroute/core/domain/entities/route";
 import type { ShoppingListItem, ShoppingListItemPlaceChoice } from "@smartroute/core/domain/entities/shopping-list";
 import { effectiveVariant } from "../basket/effective-variant";
 import { listLineCores } from "../classification/list-line";
 import { normalizeHebrewText } from "../classification/normalize-hebrew-text";
 import { dijkstra } from "./dijkstra";
 import { buildGraph } from "./graph-builder";
+import { effectiveKindChoice, matchesKind, placeKindLabel } from "./product-kind";
 
 /**
  * A mapped store can carry several products that answer to one list item - the
@@ -77,6 +79,7 @@ function storePlaces(storeId: string, listings: ProductListing[], products: Prod
  * products' alias classification corrected a typo to. Only when nothing matches
  * the line as typed does its cleaner form count ("2 טחינה" -> "טחינה"), along with
  * the imported products linked to the classified generic product (`genericSkuKeys`).
+ * A kind tapped while typing narrows them to that kind, unless this store has none of it.
  */
 export function placeCandidates(
   item: ShoppingListItem,
@@ -86,6 +89,16 @@ export function placeCandidates(
   genericSkuKeys?: GenericSkuKeys,
 ): string[] {
   const places = storePlaces(storeId, listings, products);
+  const named = namedCandidates(item, places, genericSkuKeys);
+  const kind = effectiveKindChoice(item);
+  if (!kind) return named;
+  const ofKind = [...new Set([...named, ...looseCandidates(item, places, genericSkuKeys)])].filter((id) =>
+    matchesKind(places.productById.get(id), kind),
+  );
+  return ofKind.length > 0 ? ofKind : named;
+}
+
+function namedCandidates(item: ShoppingListItem, places: StorePlaces, genericSkuKeys?: GenericSkuKeys): string[] {
   const normalized = normalizeHebrewText(item.rawText);
   const matched = item.classification?.matchedProductId;
   const exact = places.byAlias.get(normalized) ?? [];
@@ -94,10 +107,15 @@ export function placeCandidates(
   const alias = item.classification?.matchedAlias;
   const byAlias = alias ? (places.byAlias.get(normalizeHebrewText(alias)) ?? []) : [];
   if (byAlias.length > 0) return [...byAlias];
+  return looseCandidates(item, places, genericSkuKeys);
+}
 
+/** The classified product, what the line's cleaner forms name, and the generic product's linked barcodes. */
+function looseCandidates(item: ShoppingListItem, places: StorePlaces, genericSkuKeys?: GenericSkuKeys): string[] {
+  const matched = item.classification?.matchedProductId;
   const candidates = new Set<string>();
   if (matched && places.carried.has(matched)) candidates.add(matched);
-  for (const core of listLineCores(normalized)) {
+  for (const core of listLineCores(normalizeHebrewText(item.rawText))) {
     for (const id of places.byAlias.get(core) ?? []) candidates.add(id);
   }
   for (const itemKey of (matched && genericSkuKeys?.get(matched)) || []) {
@@ -282,6 +300,9 @@ export function placeQuestions(
  * a saved pick, a basket pick linked to a candidate, or the one place all candidates
  * stand at. `flexible`: one product per place, left to the route (routing never
  * blocks on a question: mid-shop re-plans and the review screen don't ask).
+ * `alternatives`: every place the item could be taken from, named for the map. For
+ * a saved pick, only places with the same kind of product: going for the six-packs
+ * can be undone from the bottles' place, but a canned-hummus pick isn't offered spread.
  */
 export function placeDecisions(
   items: ShoppingListItem[],
@@ -290,9 +311,17 @@ export function placeDecisions(
   products: Product[],
   skuKeys?: Map<string, Set<string>>,
   genericSkuKeys?: GenericSkuKeys,
-): { chosen: Map<string, string>; flexible: Map<string, string[]> } {
+): { chosen: Map<string, string>; flexible: Map<string, string[]>; alternatives: Map<string, RouteStopPlace[]> } {
   const chosen = new Map<string, string>();
   const flexible = new Map<string, string[]>();
+  const alternatives = new Map<string, RouteStopPlace[]>();
+  const { productById } = storePlaces(storeId, listings, products);
+  const productsOf = (option: PlaceOption) => option.productIds.flatMap((id) => productById.get(id) ?? []);
+  const named = (options: PlaceOption[]): RouteStopPlace[] =>
+    options.map((option) => {
+      const label = placeKindLabel(productsOf(option), options.filter((o) => o !== option).flatMap(productsOf));
+      return { nodeId: option.nodeId, productId: option.productId, ...(label ? { label } : {}) };
+    });
   for (const item of items) {
     const barcode = pickedBarcode(item, storeId, listings, products);
     if (barcode) {
@@ -314,11 +343,23 @@ export function placeDecisions(
           : pickedInBasket(item, productIds, skuKeys);
     if (picked) {
       chosen.set(item.id, picked);
+      const group = productById.get(picked)?.shelfGroup;
+      if (group) {
+        const sameKind = placeOptions(item, productIds, storeId, listings, products).flatMap((option) => {
+          const ids = option.productIds.filter((id) => productById.get(id)?.shelfGroup === group);
+          if (ids.length === 0) return [];
+          return [{ ...option, productIds: ids, productId: ids.includes(option.productId) ? option.productId : ids[0] }];
+        });
+        if (sameKind.length > 1) alternatives.set(item.id, named(sameKind));
+      }
       continue;
     }
     const options = placeOptions(item, productIds, storeId, listings, products);
     if (options.length === 1) chosen.set(item.id, options[0].productId);
-    else if (options.length > 1) flexible.set(item.id, options.map((o) => o.productId));
+    else if (options.length > 1) {
+      flexible.set(item.id, options.map((o) => o.productId));
+      alternatives.set(item.id, named(options));
+    }
   }
-  return { chosen, flexible };
+  return { chosen, flexible, alternatives };
 }

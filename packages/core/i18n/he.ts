@@ -222,6 +222,8 @@ export const he = {
       cameraAccessibilityLabel: "הוספת מוצרים מתמונה של רשימה",
       showLess: "הצג פחות",
       addProductPlaceholder: "הוסיפו מוצר…",
+      // Buttons under the field while typing ("קולה": בקבוק, פחית, שישייה). Optional.
+      kindsHint: "איזה?",
       didYouMean: {
         title: "האם התכוונתם ל...?",
         typed(text: string): string {
@@ -538,6 +540,15 @@ export const he = {
     alsoHere(name: string, more: number): string {
       return more > 0 ? `גם כאן: ${name} +${more}` : `גם כאן: ${name}`;
     },
+    // The same area, named by what sets it apart from the stop ("שישיות כאן").
+    placeHere(label: string): string {
+      return `${label} כאן`;
+    },
+    // Under the map: where else the item can be taken from.
+    otherPlace(name: string, label: string | undefined, location: string): string {
+      return label ? `${name}: ${label} ב${location}` : `${name} גם ב${location}`;
+    },
+    takeMeThere: "קח אותי לכאן",
     finishShopping: "סיימתי לקנות",
     // Mobile's finish alert. finishedSavedBody only when /api/trips actually
     // wrote a history entry (logged-in owner) - guests get the plain body.

@@ -12,9 +12,16 @@ export interface RouteStop {
   pathToCheckout: string[];
   /**
    * Other places in the store carrying what an item here names ("קולה": the six-packs
-   * stand elsewhere), for the map to mark. Only items the shopper hasn't pinned to one product.
+   * stand elsewhere), for the map to mark. `nodeIds` stays for app versions without `places`.
    */
-  alsoAt?: { itemId: string; nodeIds: string[] }[];
+  alsoAt?: { itemId: string; nodeIds: string[]; places?: RouteStopPlace[] }[];
+}
+
+/** Another place to take an item from: what stands for it there, and what sets it apart ("שישיות"). */
+export interface RouteStopPlace {
+  nodeId: string;
+  productId: string;
+  label?: string;
 }
 
 export interface Route {
