@@ -1,9 +1,10 @@
 import { and, eq, inArray, or } from "drizzle-orm";
+import type { BatchItem } from "drizzle-orm/batch";
 import type { MapNode } from "@smartroute/core/domain/entities/map-node";
 import type { GeoPoint } from "@smartroute/core/domain/value-objects/geo-point";
 import { db } from "../../db/client";
-import { mapEdges, mapNodes } from "../../db/schema";
-import type { INodeRepository } from "../interfaces/node-repository";
+import { mapEdges, mapNodes, productListings, storeMapVideos } from "../../db/schema";
+import type { INodeRepository, MapChanges } from "../interfaces/node-repository";
 import { mapNodeSchema } from "../schemas";
 import { cleanPatch } from "./patch-utils";
 
@@ -59,5 +60,47 @@ export class PgNodeRepository implements INodeRepository {
         .where(and(eq(mapEdges.storeId, storeId), or(inArray(mapEdges.fromNodeId, ids), inArray(mapEdges.toNodeId, ids)))),
       db.delete(mapNodes).where(and(eq(mapNodes.storeId, storeId), inArray(mapNodes.id, ids))),
     ]);
+  }
+
+  async applyMapChanges(storeId: string, changes: MapChanges): Promise<void> {
+    const { createdNodes, updatedNodes, deletedNodeIds, createdEdges, deletedEdgeIds, movedVideos } = changes;
+    const queries: BatchItem<"pg">[] = [
+      ...(createdNodes.length > 0 ? [db.insert(mapNodes).values(createdNodes)] : []),
+      ...updatedNodes.map(({ id, ...fields }) =>
+        db
+          .update(mapNodes)
+          .set(fields)
+          .where(and(eq(mapNodes.storeId, storeId), eq(mapNodes.id, id))),
+      ),
+      ...(deletedEdgeIds.length > 0
+        ? [db.delete(mapEdges).where(and(eq(mapEdges.storeId, storeId), inArray(mapEdges.id, deletedEdgeIds)))]
+        : []),
+      ...(createdEdges.length > 0 ? [db.insert(mapEdges).values(createdEdges)] : []),
+      ...(deletedNodeIds.length > 0
+        ? [
+            db
+              .delete(mapEdges)
+              .where(
+                and(
+                  eq(mapEdges.storeId, storeId),
+                  or(inArray(mapEdges.fromNodeId, deletedNodeIds), inArray(mapEdges.toNodeId, deletedNodeIds)),
+                ),
+              ),
+            db
+              .delete(productListings)
+              .where(and(eq(productListings.storeId, storeId), inArray(productListings.nodeId, deletedNodeIds))),
+            db.delete(mapNodes).where(and(eq(mapNodes.storeId, storeId), inArray(mapNodes.id, deletedNodeIds))),
+          ]
+        : []),
+      ...movedVideos.map(({ id, position }) =>
+        db
+          .update(storeMapVideos)
+          .set({ position })
+          .where(and(eq(storeMapVideos.storeId, storeId), eq(storeMapVideos.id, id))),
+      ),
+    ];
+    if (queries.length === 0) return;
+    // neon-http has no interactive transactions; batch() runs these as one transaction.
+    await db.batch(queries as [BatchItem<"pg">, ...BatchItem<"pg">[]]);
   }
 }

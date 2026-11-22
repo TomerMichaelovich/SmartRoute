@@ -47,10 +47,22 @@ export function pointByKey(draft: LineDraft, key: string): DraftPoint | undefine
   return draft.points.find((p) => p.key === key);
 }
 
-/** Default number of in-between points for a line this long, about one per `spacing` of map width. */
-export function suggestedCount(a: Point, b: Point, mapWidth: number, mapHeight: number, spacing: number, max: number) {
+/** In-between points for a line this long: one per `spacing` (a fraction of map width), on every line alike. */
+export function uniformCount(a: Point, b: Point, mapWidth: number, mapHeight: number, spacing: number) {
   const length = Math.hypot((b.x - a.x) * mapWidth, (b.y - a.y) * mapHeight);
-  return Math.max(0, Math.min(max, Math.round(length / (spacing * mapWidth)) - 1));
+  return Math.max(0, Math.round(length / (spacing * mapWidth)) - 1);
+}
+
+/** The draft with every line's point count set by its current length, so moves and splits stay on the same scale. */
+export function withUniformSpacing(draft: LineDraft, mapWidth: number, mapHeight: number, spacing: number): LineDraft {
+  return {
+    ...draft,
+    segments: draft.segments.map((s) => {
+      const a = pointByKey(draft, s.from);
+      const b = pointByKey(draft, s.to);
+      return a && b ? { ...s, count: uniformCount(a, b, mapWidth, mapHeight, spacing) } : s;
+    }),
+  };
 }
 
 export type DraftHit = { kind: "end"; key: string } | { kind: "inner"; segment: number; index: number };
@@ -198,6 +210,20 @@ export function moveSegment(draft: LineDraft, segment: number, dx: number, dy: n
       p.key === s.from || p.key === s.to ? { key: p.key, x: clamp01(p.x + dx), y: clamp01(p.y + dy) } : p,
     ),
   };
+}
+
+/**
+ * Ctrl+Z while drawing: the line just drawn goes and stretching resumes from where it started; with
+ * no such line, the stretch is dropped, and with none of that either, the last line.
+ */
+export function undoLastLineStep(draft: LineDraft): LineDraft {
+  const last = draft.segments.at(-1);
+  if (draft.pendingFrom && last?.to === draft.pendingFrom) {
+    const segments = draft.segments.slice(0, -1);
+    const used = new Set([...segments.flatMap((s) => [s.from, s.to]), last.from]);
+    return { points: draft.points.filter((p) => used.has(p.key)), segments, pendingFrom: last.from };
+  }
+  return draft.pendingFrom ? cancelPending(draft) : removeLastSegment(draft);
 }
 
 /** Drops the last line, and any end no line uses any more. */

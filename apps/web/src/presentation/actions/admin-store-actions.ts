@@ -3,7 +3,9 @@
 import { del } from "@vercel/blob";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import type { MapEdge } from "@smartroute/core/domain/entities/map-edge";
 import type { MapNode, MapNodeType } from "@smartroute/core/domain/entities/map-node";
+import type { GeoPoint } from "@smartroute/core/domain/value-objects/geo-point";
 import { aliasKeys } from "@smartroute/core/application/classification/imported-aliases";
 import { clampFootstepScale } from "@smartroute/core/map/footstep-trail";
 import { findShelfGroup } from "@smartroute/core/domain/value-objects/shelf-group";
@@ -20,6 +22,7 @@ import {
   walkableMapRepository,
 } from "@/src/infrastructure/container";
 import { readImageDimensions } from "@/src/infrastructure/image-dimensions";
+import type { MapChanges, MapNodePatch } from "@/src/infrastructure/repositories/interfaces/node-repository";
 import { saveUploadedImage } from "@/src/infrastructure/image-upload";
 import { mapVideoPathPrefix } from "@/src/presentation/map-videos";
 import { NODE_TYPE_LABELS } from "@/src/presentation/node-type-labels";
@@ -216,35 +219,6 @@ export async function deleteNode(storeId: string, nodeId: string): Promise<void>
   revalidatePath(`/admin/stores/${storeId}`);
 }
 
-export async function updateNodePosition(
-  storeId: string,
-  nodeId: string,
-  x: number,
-  y: number,
-): Promise<void> {
-  await requireAdmin({ mapStore: storeId });
-  await assertNodeInStore(storeId, nodeId);
-  const clamp = (n: number) => Math.max(0, Math.min(1, n));
-  await nodeRepository.update(nodeId, { position: { x: clamp(x), y: clamp(y) } });
-  revalidatePath(`/admin/stores/${storeId}`);
-}
-
-/** Moves several of the store's nodes at once (the editor's align/distribute buttons). */
-export async function updateNodePositions(
-  storeId: string,
-  positions: Array<{ id: string; x: number; y: number }>,
-): Promise<void> {
-  await requireAdmin({ mapStore: storeId });
-  if (!Array.isArray(positions)) return;
-  const storeNodeIds = new Set((await nodeRepository.findByStore(storeId)).map((n) => n.id));
-  if (positions.some((p) => !storeNodeIds.has(String(p?.id)))) throw new Error("Unauthorized");
-  const clamp = (n: unknown) => Math.max(0, Math.min(1, Number(n) || 0));
-  await Promise.all(
-    positions.map((p) => nodeRepository.update(String(p.id), { position: { x: clamp(p.x), y: clamp(p.y) } })),
-  );
-  revalidatePath(`/admin/stores/${storeId}`);
-}
-
 /**
  * Pins a video the editor just uploaded to Blob (via the video-upload route) on the store's map.
  * The URL comes from the browser, so it must point into this store's video folder on our Blob store.
@@ -280,58 +254,11 @@ async function findMapVideoInStore(storeId: string, videoId: string) {
   return video;
 }
 
-export async function updateMapVideoPosition(storeId: string, videoId: string, x: number, y: number): Promise<void> {
-  await requireAdmin({ mapStore: storeId });
-  await findMapVideoInStore(storeId, videoId);
-  const clamp = (n: number) => Math.max(0, Math.min(1, n));
-  await mapVideoRepository.updatePosition(videoId, { x: clamp(x), y: clamp(y) });
-  revalidatePath(`/admin/stores/${storeId}`);
-}
-
 export async function deleteMapVideo(storeId: string, videoId: string): Promise<void> {
   await requireAdmin({ mapStore: storeId });
   const video = await findMapVideoInStore(storeId, videoId);
   await mapVideoRepository.delete(videoId);
   await del(video.videoUrl).catch(() => {});
-  revalidatePath(`/admin/stores/${storeId}`);
-}
-
-export async function updateNodeLabel(storeId: string, nodeId: string, formData: FormData): Promise<void> {
-  await requireAdmin({ mapStore: storeId });
-  await assertNodeInStore(storeId, nodeId);
-  // Textareas normalize line breaks to \r\n on submit in some browsers - collapse to a
-  // plain \n so the stored label and MultilineSvgText's split both only ever see one form.
-  const label = String(formData.get("label") ?? "")
-    .replace(/\r\n/g, "\n")
-    .trim();
-  if (!label) return;
-  await nodeRepository.update(nodeId, { label });
-  revalidatePath(`/admin/stores/${storeId}`);
-}
-
-const MAX_AREA_POINTS = 200;
-
-/**
- * Sets the floor area a department covers - a polygon the admin drew around it on the map -
- * or clears it with null. The shopper's map lights the area up while it's the next stop.
- */
-export async function updateNodeArea(
-  storeId: string,
-  nodeId: string,
-  area: Array<{ x: number; y: number }> | null,
-): Promise<void> {
-  await requireAdmin({ mapStore: storeId });
-  const node = await nodeRepository.findById(nodeId);
-  if (node?.storeId !== storeId) throw new Error("Unauthorized");
-  if (node.type !== "department") throw new Error("Only departments have an area");
-  if (area === null) {
-    await nodeRepository.setArea(nodeId, null);
-  } else {
-    const clamp = (n: unknown) => Math.max(0, Math.min(1, Number(n) || 0));
-    const points = area.slice(0, MAX_AREA_POINTS).map((p) => ({ x: clamp(p.x), y: clamp(p.y) }));
-    if (points.length < 3) throw new Error("An area needs at least 3 points");
-    await nodeRepository.setArea(nodeId, points);
-  }
   revalidatePath(`/admin/stores/${storeId}`);
 }
 
@@ -459,33 +386,6 @@ export async function unmarkProductsNotSold(storeId: string, productIds: string[
   revalidatePath(`/admin/stores/${storeId}`);
 }
 
-export async function createEdge(storeId: string, formData: FormData): Promise<void> {
-  await requireAdmin({ mapStore: storeId });
-  const fromNodeId = String(formData.get("fromNodeId") ?? "");
-  const toNodeId = String(formData.get("toNodeId") ?? "");
-  const bidirectional = formData.get("bidirectional") === "on";
-  if (!fromNodeId || !toNodeId || fromNodeId === toNodeId) return;
-  await Promise.all([assertNodeInStore(storeId, fromNodeId), assertNodeInStore(storeId, toNodeId)]);
-
-  await edgeRepository.create({
-    id: crypto.randomUUID(),
-    storeId,
-    fromNodeId,
-    toNodeId,
-    bidirectional,
-  });
-
-  revalidatePath(`/admin/stores/${storeId}`);
-}
-
-export async function deleteEdge(storeId: string, edgeId: string): Promise<void> {
-  await requireAdmin({ mapStore: storeId });
-  const edge = await edgeRepository.findById(edgeId);
-  if (edge?.storeId !== storeId) throw new Error("Unauthorized");
-  await edgeRepository.delete(edgeId);
-  revalidatePath(`/admin/stores/${storeId}`);
-}
-
 /**
  * The manager uploads a real photo/floorplan of the store instead of building one in-app; this
  * saves the file, points the store's mapImageUrl at it, and - this is the important part - resizes
@@ -514,139 +414,101 @@ export async function uploadStoreImage(storeId: string, formData: FormData): Pro
   revalidatePath(`/admin/stores/${storeId}`);
 }
 
+const MAP_NODE_TYPES: readonly MapNodeType[] = ["entrance", "checkout", "exit", "waypoint", "department"];
+const MAX_AREA_POINTS = 200;
+/** Most nodes, edges and video pins one save may touch. */
+const MAX_MAP_CHANGES = 5000;
+
+const clamp01 = (v: unknown) => Math.max(0, Math.min(1, Number(v) || 0));
+const cleanPoint = (p: GeoPoint): GeoPoint => ({ x: clamp01(p?.x), y: clamp01(p?.y) });
+// Textareas send line breaks as \r\n in some browsers; the stored label only ever has \n.
+const cleanLabel = (label: unknown) => String(label ?? "").replace(/\r\n/g, "\n").trim();
+
+function cleanArea(area: GeoPoint[]): GeoPoint[] {
+  if (!Array.isArray(area) || area.length < 3) throw new Error("An area needs at least 3 points");
+  return area.slice(0, MAX_AREA_POINTS).map(cleanPoint);
+}
+
 /**
- * Reset of the walking graph: deletes every waypoint of the store and every edge touching one.
- * Departments, entrances and checkouts stay. A waypoint that products or a promotion are placed
- * on is kept too - it's acting as a department, and deleting it would drop those placements.
+ * The map editor's "save changes": everything drafted since the last save, in one transaction.
+ * The draft comes from the browser, so each id is checked against this store. What's already
+ * gone (or, on a retried save, already written) is skipped.
  */
-export async function resetWaypoints(storeId: string): Promise<{ deleted: number; kept: number }> {
+export async function saveMapChanges(storeId: string, changes: MapChanges): Promise<void> {
   await requireAdmin({ mapStore: storeId });
-  const [nodes, listings, promotions] = await Promise.all([
+  const { createdNodes, updatedNodes, deletedNodeIds, createdEdges, deletedEdgeIds, movedVideos } = changes;
+  const lists = [createdNodes, updatedNodes, deletedNodeIds, createdEdges, deletedEdgeIds, movedVideos];
+  if (!lists.every(Array.isArray) || lists.reduce((sum, list) => sum + list.length, 0) > MAX_MAP_CHANGES) {
+    throw new Error("Invalid map changes");
+  }
+  const [storeNodes, storeEdges, storeVideos] = await Promise.all([
     nodeRepository.findByStore(storeId),
-    productListingRepository.findByStore(storeId),
-    promotionRepository.findAll(),
+    edgeRepository.findByStore(storeId),
+    mapVideoRepository.findByStore(storeId),
   ]);
-  const referencedIds = new Set([...listings.map((l) => l.nodeId), ...promotions.map((p) => p.attachedNodeId)]);
-  const waypoints = nodes.filter((n) => n.type === "waypoint");
-  const toDelete = waypoints.filter((n) => !referencedIds.has(n.id)).map((n) => n.id);
-  await nodeRepository.deleteManyWithEdges(storeId, toDelete);
-  revalidatePath(`/admin/stores/${storeId}`);
-  return { deleted: toDelete.length, kept: waypoints.length - toDelete.length };
-}
+  const nodeById = new Map(storeNodes.map((n) => [n.id, n]));
+  const edgeIds = new Set(storeEdges.map((e) => e.id));
+  const videoIds = new Set(storeVideos.map((v) => v.id));
+  const deletedNodes = new Set(deletedNodeIds.map(String).filter((id) => nodeById.has(id)));
 
-/**
- * One end of a drafted waypoint line: an existing node (snapped to), or a spot on the map for a
- * new waypoint - optionally on an existing edge (`edgeId`), which is then split there.
- */
-export type WaypointLinePoint =
-  | { key: string; nodeId: string }
-  | { key: string; x: number; y: number; edgeId?: string };
-
-/** A drafted straight line between two ends (by key), with `count` waypoints evenly between them. */
-export interface WaypointLineSegment {
-  from: string;
-  to: string;
-  count: number;
-}
-
-/** Most in-between points one line may get - matches the editor's slider (WAYPOINT_LINE_MAX_POINTS there). */
-const WAYPOINT_LINE_MAX_POINTS = 40;
-/** Most lines one create may hold. */
-const WAYPOINT_LINES_MAX_SEGMENTS = 200;
-
-/**
- * Creates the editor's drafted corridor lines in one go: every line gets its in-between
- * waypoints and is chained end to end with bidirectional edges. Lines sharing an end share the
- * node there. An end on an existing node reuses it (so the line joins the graph there); an end
- * on empty map gets a new waypoint. A new waypoint placed on an existing edge splits that edge
- * there, so the corridor it's on runs through it.
- */
-export async function createWaypointLines(
-  storeId: string,
-  points: WaypointLinePoint[],
-  segments: WaypointLineSegment[],
-): Promise<void> {
-  await requireAdmin({ mapStore: storeId });
-  if (!Array.isArray(points) || !Array.isArray(segments) || segments.length > WAYPOINT_LINES_MAX_SEGMENTS) {
-    throw new Error("Invalid waypoint lines");
-  }
-  const clamp01 = (v: unknown) => Math.max(0, Math.min(1, Number(v) || 0));
-  const waypointAt = (id: string, x: number, y: number): MapNode => ({
-    id,
-    storeId,
-    type: "waypoint",
-    label: NODE_TYPE_LABELS.waypoint,
-    position: { x, y },
-  });
-
-  const storeNodes = new Map((await nodeRepository.findByStore(storeId)).map((n) => [n.id, n]));
-  const usedKeys = new Set(segments.flatMap((s) => [String(s.from), String(s.to)]));
   const newNodes: MapNode[] = [];
-  const ends = new Map<string, { id: string; x: number; y: number }>();
-  const pointsOnEdges = new Map<string, Array<{ id: string; x: number; y: number }>>();
-  for (const point of points) {
-    const key = String(point?.key);
-    if (!usedKeys.has(key) || ends.has(key)) continue;
-    if ("nodeId" in point) {
-      const node = storeNodes.get(String(point.nodeId));
-      if (!node) throw new Error("Unauthorized");
-      ends.set(key, { id: node.id, ...node.position });
-    } else {
-      const end = { id: crypto.randomUUID(), x: clamp01(point.x), y: clamp01(point.y) };
-      newNodes.push(waypointAt(end.id, end.x, end.y));
-      ends.set(key, end);
-      if (point.edgeId) {
-        const edgeId = String(point.edgeId);
-        pointsOnEdges.set(edgeId, [...(pointsOnEdges.get(edgeId) ?? []), end]);
-      }
-    }
+  for (const raw of createdNodes) {
+    if (!UUID_PATTERN.test(String(raw?.id))) throw new Error("Invalid map changes");
+    if (nodeById.has(raw.id)) continue;
+    if (!MAP_NODE_TYPES.includes(raw.type)) throw new Error("Invalid map changes");
+    const label = cleanLabel(raw.label) || (raw.type === "department" ? "" : NODE_TYPE_LABELS[raw.type]);
+    if (!label) throw new Error("A department needs a name");
+    newNodes.push({
+      id: raw.id,
+      storeId,
+      type: raw.type,
+      label,
+      position: cleanPoint(raw.position),
+      zone: String(raw.zone ?? "").trim() || undefined,
+      iconKey: String(raw.iconKey ?? "").trim() || undefined,
+      area: raw.type === "department" && raw.area ? cleanArea(raw.area) : undefined,
+    });
   }
 
-  // Each edge a new waypoint was placed on is replaced by a chain through those waypoints, in
-  // order along it, keeping its direction setting.
-  const edgePairs: Array<[string, string, boolean]> = [];
-  const replacedEdgeIds: string[] = [];
-  if (pointsOnEdges.size > 0) {
-    const storeEdges = new Map((await edgeRepository.findByStore(storeId)).map((e) => [e.id, e]));
-    for (const [edgeId, onEdge] of pointsOnEdges) {
-      const edge = storeEdges.get(edgeId);
-      const a = edge && storeNodes.get(edge.fromNodeId);
-      const b = edge && storeNodes.get(edge.toNodeId);
-      if (!edge || !a || !b) throw new Error("Unauthorized");
-      const dx = b.position.x - a.position.x;
-      const dy = b.position.y - a.position.y;
-      const along = (p: { x: number; y: number }) => (p.x - a.position.x) * dx + (p.y - a.position.y) * dy;
-      const chain = [a.id, ...[...onEdge].sort((p, q) => along(p) - along(q)).map((p) => p.id), b.id];
-      for (let i = 1; i < chain.length; i++) edgePairs.push([chain[i - 1], chain[i], edge.bidirectional]);
-      replacedEdgeIds.push(edgeId);
+  const patches: MapNodePatch[] = [];
+  for (const raw of updatedNodes) {
+    const node = nodeById.get(String(raw?.id));
+    if (!node || deletedNodes.has(node.id)) continue;
+    const patch: MapNodePatch = { id: node.id };
+    if (raw.label !== undefined) {
+      patch.label = cleanLabel(raw.label);
+      if (!patch.label) throw new Error("A node needs a name");
     }
-  }
-  for (const segment of segments) {
-    const from = ends.get(String(segment.from));
-    const to = ends.get(String(segment.to));
-    if (!from || !to) throw new Error("Invalid waypoint lines");
-    if (from.id === to.id) continue;
-    const between = Math.max(0, Math.min(WAYPOINT_LINE_MAX_POINTS, Math.floor(Number(segment.count) || 0)));
-    const chain = [from.id];
-    for (let i = 1; i <= between; i++) {
-      const t = i / (between + 1);
-      const id = crypto.randomUUID();
-      newNodes.push(waypointAt(id, from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t));
-      chain.push(id);
+    if (raw.position !== undefined) patch.position = cleanPoint(raw.position);
+    if (raw.area !== undefined) {
+      if (node.type !== "department") throw new Error("Only departments have an area");
+      patch.area = raw.area === null ? null : cleanArea(raw.area);
     }
-    chain.push(to.id);
-    for (let i = 1; i < chain.length; i++) edgePairs.push([chain[i - 1], chain[i], true]);
+    if (Object.keys(patch).length > 1) patches.push(patch);
   }
 
-  // Nodes first, so no edge is ever written before the node it points at.
-  await Promise.all(newNodes.map((n) => nodeRepository.create(n)));
-  await Promise.all(
-    edgePairs.map(([fromNodeId, toNodeId, bidirectional]) =>
-      edgeRepository.create({ id: crypto.randomUUID(), storeId, fromNodeId, toNodeId, bidirectional }),
-    ),
-  );
-  // Only once the chains replacing them exist, so the corridor is never cut in between.
-  await Promise.all(replacedEdgeIds.map((id) => edgeRepository.delete(id)));
+  const finalNodeIds = new Set([...storeNodes.map((n) => n.id).filter((id) => !deletedNodes.has(id)), ...newNodes.map((n) => n.id)]);
+  const newEdges: MapEdge[] = [];
+  for (const raw of createdEdges) {
+    if (!UUID_PATTERN.test(String(raw?.id))) throw new Error("Invalid map changes");
+    if (edgeIds.has(raw.id)) continue;
+    const fromNodeId = String(raw.fromNodeId);
+    const toNodeId = String(raw.toNodeId);
+    if (fromNodeId === toNodeId || !finalNodeIds.has(fromNodeId) || !finalNodeIds.has(toNodeId)) {
+      throw new Error("Invalid map changes");
+    }
+    newEdges.push({ id: raw.id, storeId, fromNodeId, toNodeId, bidirectional: raw.bidirectional === true });
+  }
 
+  await nodeRepository.applyMapChanges(storeId, {
+    createdNodes: newNodes,
+    updatedNodes: patches,
+    deletedNodeIds: [...deletedNodes],
+    createdEdges: newEdges,
+    deletedEdgeIds: deletedEdgeIds.map(String).filter((id) => edgeIds.has(id)),
+    movedVideos: movedVideos
+      .filter((v) => videoIds.has(String(v?.id)))
+      .map((v) => ({ id: String(v.id), position: cleanPoint(v.position) })),
+  });
   revalidatePath(`/admin/stores/${storeId}`);
 }

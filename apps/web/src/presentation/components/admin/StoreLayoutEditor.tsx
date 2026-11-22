@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { MapEdge } from "@smartroute/core/domain/entities/map-edge";
 import type { MapNode, MapNodeType } from "@smartroute/core/domain/entities/map-node";
 import type { Product } from "@smartroute/core/domain/entities/product";
@@ -9,7 +9,7 @@ import { distanceBetweenNodes } from "@smartroute/core/domain/value-objects/geo-
 import { findUnroutableNodeIds } from "@smartroute/core/application/routing/reachability";
 import { MINOR_LABEL_FONT_FRACTION } from "@smartroute/core/map/map-labels";
 import { NODE_TYPE_LABELS } from "@/src/presentation/node-type-labels";
-import type { WaypointLinePoint, WaypointLineSegment } from "@/src/presentation/actions/admin-store-actions";
+import type { MapChanges } from "@/src/infrastructure/repositories/interfaces/node-repository";
 import {
   EMPTY_LINE_DRAFT,
   type LineDraft,
@@ -26,8 +26,12 @@ import {
   removeLastSegment,
   splitAt,
   splitAtPosition,
-  suggestedCount,
+  undoLastLineStep,
+  uniformCount,
+  withUniformSpacing,
 } from "./waypoint-line-draft";
+import { type MapState, type WaypointLinePoint, addWaypointLines, removeFromMap, removeWaypoints } from "./map-draft";
+import { useMapDraft } from "./use-map-draft";
 import {
   type AlignMode,
   type Guides,
@@ -60,16 +64,10 @@ interface StoreLayoutEditorProps {
   splitAliases: Array<{ alias: string; nodes: Array<{ nodeId: string; count: number }> }>;
   hasPriceBranch: boolean;
   canEditProducts: boolean;
-  createNode: (formData: FormData) => Promise<void>;
-  createEdge: (formData: FormData) => Promise<void>;
-  deleteNode: (storeId: string, nodeId: string) => Promise<void>;
-  deleteEdge: (storeId: string, edgeId: string) => Promise<void>;
-  updateNodePosition: (nodeId: string, x: number, y: number) => Promise<void>;
-  /** Moves several nodes at once (align / distribute). */
-  updateNodePositions: (positions: Array<{ id: string; x: number; y: number }>) => Promise<void>;
-  updateNodeLabel: (storeId: string, nodeId: string, formData: FormData) => Promise<void>;
-  /** Sets (null: clears) the polygon a department covers - lit up on the shopper's map. */
-  updateNodeArea: (nodeId: string, area: Array<{ x: number; y: number }> | null) => Promise<void>;
+  /** Writes everything drafted in the editor, in one transaction. */
+  saveMapChanges: (changes: MapChanges) => Promise<void>;
+  /** Nodes products or promotions are placed on: the waypoint reset leaves these. */
+  referencedNodeIds: string[];
   addProductToNode: (storeId: string, nodeId: string, formData: FormData) => Promise<void>;
   removeProductFromNode: (storeId: string, nodeId: string, productId: string) => Promise<void>;
   placeShelfGroupOnNode: (storeId: string, nodeId: string, groupId: string) => Promise<number>;
@@ -86,14 +84,9 @@ interface StoreLayoutEditorProps {
   markProductsNotSold: (storeId: string, productIds: string[]) => Promise<void>;
   setProductsShelfGroup: (productIds: string[], groupId: string) => Promise<void>;
   uploadStoreImage: (formData: FormData) => Promise<void>;
-  /** A straight corridor: `count` waypoints evenly between two ends, chained with edges. */
-  createWaypointLines: (points: WaypointLinePoint[], segments: WaypointLineSegment[]) => Promise<void>;
-  /** Deletes all the store's waypoints (and their edges); departments, entrance and checkouts stay. */
-  resetWaypoints: () => Promise<{ deleted: number; kept: number }>;
   /** Videos of store areas pinned on the map - admin reference only, never part of the route graph. */
   videos: StoreMapVideo[];
   addMapVideo: (video: { videoUrl: string; title: string; x: number; y: number }) => Promise<void>;
-  updateMapVideoPosition: (videoId: string, x: number, y: number) => Promise<void>;
   deleteMapVideo: (videoId: string) => Promise<void>;
 }
 
@@ -117,9 +110,8 @@ const DISCONNECTED_COLOR = "#dc2626";
 // A department's area: light blue (the shopper's map lights it up the same way).
 const AREA_FILL = "#38bdf8";
 const AREA_STROKE = "#0284c7";
-// The waypoint-line tool: its slider's top, and the default spacing (fraction of map width).
-const WAYPOINT_LINE_MAX_POINTS = 40;
-const WAYPOINT_LINE_DEFAULT_SPACING = 0.04;
+// The waypoint-line tool's one spacing between points on every line (fraction of map width).
+const WAYPOINT_LINE_SPACING = 0.04;
 const LINE_COLOR = "#0891b2";
 // How close (screen pixels) a click must land to an existing point to use it - kept tight, so a
 // click on a line beside a point adds a new point there instead of jumping to that one.
@@ -268,8 +260,8 @@ export function StoreLayoutEditor({
   mapWidth,
   mapHeight,
   mapImageUrl,
-  nodes,
-  edges,
+  nodes: savedNodes,
+  edges: savedEdges,
   nodeTypes,
   products,
   listings,
@@ -277,14 +269,8 @@ export function StoreLayoutEditor({
   splitAliases,
   hasPriceBranch,
   canEditProducts,
-  createNode,
-  createEdge,
-  deleteNode,
-  deleteEdge,
-  updateNodePosition,
-  updateNodePositions,
-  updateNodeLabel,
-  updateNodeArea,
+  saveMapChanges,
+  referencedNodeIds,
   addProductToNode,
   removeProductFromNode,
   placeShelfGroupOnNode,
@@ -296,23 +282,33 @@ export function StoreLayoutEditor({
   markProductsNotSold,
   setProductsShelfGroup,
   uploadStoreImage,
-  createWaypointLines,
-  resetWaypoints,
   videos,
   addMapVideo,
-  updateMapVideoPosition,
   deleteMapVideo,
 }: StoreLayoutEditorProps) {
+  // Every edit of the map is a draft in this browser until "save changes".
+  const savedMap = useMemo<MapState>(
+    () => ({
+      nodes: savedNodes,
+      edges: savedEdges,
+      videoPositions: Object.fromEntries(videos.map((v) => [v.id, v.position])),
+    }),
+    [savedNodes, savedEdges, videos],
+  );
+  const { map, isDirty, canUndo, saving, saveError, change, undo, save } = useMapDraft(savedMap);
+  const { nodes, edges, videoPositions } = map;
   // Waypoint-line tool: click a start and an end (on empty map or on a node, which the line then
-  // joins) and pick how many points go between them; a click on a point of a drawn line stretches
-  // the next one from there. All the lines are created together, chained along straight lines.
+  // joins); points go between them at one uniform spacing. A click on a point of a drawn line
+  // stretches the next one from there. All the lines are created together, along straight lines.
   const [lineMode, setLineMode] = useState(false);
-  const [lineDraft, setLineDraft] = useState<LineDraft>(EMPTY_LINE_DRAFT);
+  const [lineDraftState, setLineDraft] = useState<LineDraft>(EMPTY_LINE_DRAFT);
+  const lineDraft = useMemo(
+    () => withUniformSpacing(lineDraftState, mapWidth, mapHeight, WAYPOINT_LINE_SPACING),
+    [lineDraftState, mapWidth, mapHeight],
+  );
   const [lineCursor, setLineCursor] = useState<{ x: number; y: number; clientX: number; clientY: number } | null>(null);
-  const [savingLine, setSavingLine] = useState(false);
   // "Edit walking points" opens the waypoint tools: the line tool and the reset.
   const [waypointToolsOpen, setWaypointToolsOpen] = useState(false);
-  const [resetting, setResetting] = useState(false);
   const [resetMessage, setResetMessage] = useState<string | null>(null);
   // "Connect departments automatically": proposed links under review (a click drops one) until approved.
   const [autoConnect, setAutoConnect] = useState<{
@@ -320,7 +316,6 @@ export function StoreLayoutEditor({
     rejected: Set<string>;
     tooFar: string[];
   } | null>(null);
-  const [savingAutoConnect, setSavingAutoConnect] = useState(false);
   useEffect(() => {
     if (!autoConnect) return;
     function handleKeyDown(e: KeyboardEvent) {
@@ -373,7 +368,6 @@ export function StoreLayoutEditor({
   }, [grid, gridStorageKey]);
   // Alignment guides shown while dragging a node.
   const [dragGuides, setDragGuides] = useState<Guides | null>(null);
-  const [aligning, setAligning] = useState(false);
   // The map's on-screen width, so snapping distances can be set in screen pixels.
   const [svgWidthPx, setSvgWidthPx] = useState(0);
   useEffect(() => {
@@ -401,7 +395,7 @@ export function StoreLayoutEditor({
       // Enter ends the chain being drawn; the lines stay in the draft.
       if (e.key === "Enter" && lineDraft.pendingFrom) setLineDraft(cancelPending(lineDraft));
       // Arrow keys nudge the last drafted line, parallel to itself: 1 screen pixel, 10 with Shift.
-      // Not while a field (e.g. the points slider) has focus - the arrows are its own there.
+      // Not while a field has focus - the arrows are its own there.
       const nudge = ARROW_NUDGES[e.key];
       const typing = e.target instanceof HTMLElement && e.target.closest("input, textarea, select");
       if (nudge && !typing && lineDraft.segments.length > 0) {
@@ -443,7 +437,6 @@ export function StoreLayoutEditor({
   // A department's area being drawn: each click on the map adds a corner; the lines follow the cursor.
   const [areaDraft, setAreaDraft] = useState<{ nodeId: string; points: Array<{ x: number; y: number }> } | null>(null);
   const [areaCursor, setAreaCursor] = useState<{ x: number; y: number } | null>(null);
-  const [savingArea, setSavingArea] = useState(false);
   // Read by the Esc handler, which is registered once.
   useEffect(() => {
     if (!areaDraft) return;
@@ -474,7 +467,6 @@ export function StoreLayoutEditor({
     null,
   );
   const justDraggedRef = useRef(false);
-  const mutationQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [addPopup, setAddPopup] = useState<AddNodePopup | null>(null);
@@ -601,18 +593,19 @@ export function StoreLayoutEditor({
     return nodes.filter((n) => n.id !== nodeId).map((n) => n.position);
   }
 
-  async function handleAlign(mode: AlignMode) {
+  function handleAlign(mode: AlignMode) {
     const selected = nodes
       .filter((n) => selectedNodeIds.has(n.id))
       .map((n) => ({ id: n.id, x: n.position.x, y: n.position.y }));
-    const positions = alignPositions(selected, mode, mapWidth, mapHeight);
-    if (positions.length === 0 || aligning) return;
-    setAligning(true);
-    try {
-      await updateNodePositions(positions);
-    } finally {
-      setAligning(false);
-    }
+    const positions = new Map(alignPositions(selected, mode, mapWidth, mapHeight).map((p) => [p.id, p]));
+    if (positions.size === 0) return;
+    change((m) => ({
+      ...m,
+      nodes: m.nodes.map((n) => {
+        const p = positions.get(n.id);
+        return p ? { ...n, position: { x: p.x, y: p.y } } : n;
+      }),
+    }));
   }
 
   function containerOffset(clientX: number, clientY: number): { left: number; top: number } {
@@ -625,17 +618,49 @@ export function StoreLayoutEditor({
     setAddPopup(null);
   }
 
-  /** Runs map mutations one after another, so an edge is never written before its new waypoint. */
-  function enqueueMutation(mutation: () => Promise<void>) {
-    mutationQueueRef.current = mutationQueueRef.current.then(mutation).catch((error) => console.error(error));
+  function newEdge(fromNodeId: string, toNodeId: string): MapEdge {
+    return { id: crypto.randomUUID(), storeId, fromNodeId, toNodeId, bidirectional: true };
   }
 
   function connectNodes(fromNodeId: string, toNodeId: string) {
-    const formData = new FormData();
-    formData.set("fromNodeId", fromNodeId);
-    formData.set("toNodeId", toNodeId);
-    formData.set("bidirectional", "on");
-    enqueueMutation(() => createEdge(formData));
+    const edge = newEdge(fromNodeId, toNodeId);
+    change((m) => ({ ...m, edges: [...m.edges, edge] }));
+  }
+
+  function moveNode(nodeId: string, position: { x: number; y: number }) {
+    change((m) => ({ ...m, nodes: m.nodes.map((n) => (n.id === nodeId ? { ...n, position } : n)) }));
+  }
+
+  /** The add-node popup's form: a name is a must for a department only. */
+  function addNodeFromPopup(formData: FormData) {
+    const type = String(formData.get("type") ?? "waypoint") as MapNodeType;
+    const typed = String(formData.get("label") ?? "").trim();
+    const label = typed || (type === "department" ? "" : NODE_TYPE_LABELS[type]);
+    closePopups();
+    if (!label) return;
+    const node: MapNode = {
+      id: crypto.randomUUID(),
+      storeId,
+      type,
+      label,
+      position: { x: Number(formData.get("x") ?? 0), y: Number(formData.get("y") ?? 0) },
+      zone: String(formData.get("zone") ?? "").trim() || undefined,
+    };
+    change((m) => ({ ...m, nodes: [...m.nodes, node] }));
+  }
+
+  function renameNode(nodeId: string, formData: FormData) {
+    const label = String(formData.get("label") ?? "").replace(/\r\n/g, "\n").trim();
+    if (!label) return;
+    change((m) => ({ ...m, nodes: m.nodes.map((n) => (n.id === nodeId && n.label !== label ? { ...n, label } : n)) }));
+  }
+
+  function deleteFromMap(nodeIds: Iterable<string>, edgeIds: Iterable<string>) {
+    const nodesToGo = new Set(nodeIds);
+    const edgesToGo = new Set(edgeIds);
+    change((m) => removeFromMap(m, nodesToGo, edgesToGo));
+    setSelectedNodeIds(new Set());
+    setSelectedEdgeIds(new Set());
   }
 
   // A click on empty map space drops a waypoint right there - no popup. If exactly one node is
@@ -671,20 +696,18 @@ export function StoreLayoutEditor({
       setAddPopup({ screenLeft: left, screenTop: top, normX: placed.x, normY: placed.y, presetType: "department" });
       return;
     }
-    const newNodeId = crypto.randomUUID();
-    const formData = new FormData();
-    formData.set("id", newNodeId);
-    formData.set("type", "waypoint");
-    formData.set("x", String(placed.x));
-    formData.set("y", String(placed.y));
-    enqueueMutation(() => createNode(formData));
-
-    if (selectedNodeIds.size === 1 && selectedEdgeIds.size === 0) {
-      connectNodes(Array.from(selectedNodeIds)[0], newNodeId);
-      setSelectedNodeIds(new Set([newNodeId]));
-    } else {
-      setSelectedNodeIds(new Set());
-    }
+    const waypoint: MapNode = {
+      id: crypto.randomUUID(),
+      storeId,
+      type: "waypoint",
+      label: NODE_TYPE_LABELS.waypoint,
+      position: placed,
+    };
+    // The point and its link to the selected node are one step to undo.
+    const chained = selectedNodeIds.size === 1 && selectedEdgeIds.size === 0;
+    const link = chained ? [newEdge(Array.from(selectedNodeIds)[0], waypoint.id)] : [];
+    change((m) => ({ ...m, nodes: [...m.nodes, waypoint], edges: [...m.edges, ...link] }));
+    setSelectedNodeIds(chained ? new Set([waypoint.id]) : new Set());
     setSelectedEdgeIds(new Set());
   }
 
@@ -794,7 +817,7 @@ export function StoreLayoutEditor({
     setDragGuides(guides);
   }
 
-  async function handleNodePointerUp(e: React.PointerEvent<SVGGElement>, node: MapNode) {
+  function handleNodePointerUp(e: React.PointerEvent<SVGGElement>, node: MapNode) {
     const start = dragStartRef.current;
     dragStartRef.current = null;
     if (!start || start.nodeId !== node.id) return;
@@ -804,7 +827,7 @@ export function StoreLayoutEditor({
       const { point } = placePoint(screenToNormalized(e.clientX, e.clientY), otherNodePositions(node.id), e.altKey);
       setDragState(null);
       setDragGuides(null);
-      await updateNodePosition(node.id, point.x, point.y);
+      moveNode(node.id, point);
     }
   }
 
@@ -824,7 +847,7 @@ export function StoreLayoutEditor({
     setVideoDrag({ videoId: video.id, x, y });
   }
 
-  async function handleVideoPointerUp(e: React.PointerEvent<SVGGElement>, video: StoreMapVideo) {
+  function handleVideoPointerUp(e: React.PointerEvent<SVGGElement>, video: StoreMapVideo) {
     const start = videoDragStartRef.current;
     videoDragStartRef.current = null;
     if (!start || start.videoId !== video.id) return;
@@ -833,8 +856,8 @@ export function StoreLayoutEditor({
       setPlayingVideoId(video.id);
       return;
     }
-    const { x, y } = screenToNormalized(e.clientX, e.clientY);
-    await updateMapVideoPosition(video.id, x, y);
+    const position = screenToNormalized(e.clientX, e.clientY);
+    change((m) => ({ ...m, videoPositions: { ...m.videoPositions, [video.id]: position } }));
     setVideoDrag(null);
   }
 
@@ -851,14 +874,12 @@ export function StoreLayoutEditor({
     setAreaCursor(null);
   }
 
-  async function saveArea(nodeId: string, area: Array<{ x: number; y: number }> | null) {
-    setSavingArea(true);
-    try {
-      await updateNodeArea(nodeId, area);
-      cancelAreaDrawing();
-    } finally {
-      setSavingArea(false);
-    }
+  function saveArea(nodeId: string, area: Array<{ x: number; y: number }> | null) {
+    change((m) => ({
+      ...m,
+      nodes: m.nodes.map((n) => (n.id === nodeId ? { ...n, area: area ?? undefined } : n)),
+    }));
+    cancelAreaDrawing();
   }
 
   /**
@@ -874,7 +895,7 @@ export function StoreLayoutEditor({
   }
 
   function handleAreaClick(e: React.MouseEvent) {
-    if (!areaDraft || savingArea) return;
+    if (!areaDraft || saving) return;
     const cursor = screenToNormalized(e.clientX, e.clientY);
     const first = areaDraft.points[0];
     // A click back on the first corner closes the shape and saves it.
@@ -883,7 +904,7 @@ export function StoreLayoutEditor({
       areaDraft.points.length >= 3 &&
       Math.hypot((cursor.x - first.x) * mapWidth, (cursor.y - first.y) * mapHeight) <= AREA_CLOSE_DISTANCE * mapWidth
     ) {
-      void saveArea(areaDraft.nodeId, areaDraft.points);
+      saveArea(areaDraft.nodeId, areaDraft.points);
       return;
     }
     const { point } = placeAreaCorner(cursor, e.shiftKey);
@@ -976,9 +997,9 @@ export function StoreLayoutEditor({
   }
 
   // A click starts a line or ends the one being stretched - on whatever resolveLineTarget finds.
-  // Nothing is saved until "create".
+  // Nothing joins the map until "create".
   function handleLineClick(e: React.MouseEvent) {
-    if (savingLine) return;
+    if (saving) return;
     // A second click on a department (or entrance/checkout) a line already joins unhooks it:
     // that end stays put as a plain new waypoint, not connected to the department.
     const under = nodeUnderCursor(e.clientX, e.clientY);
@@ -1018,39 +1039,93 @@ export function StoreLayoutEditor({
     }
     if (key === pendingFrom) return;
     const end = pointByKey(draft, key)!;
-    const count = suggestedCount(
-      pendingPoint,
-      end,
-      mapWidth,
-      mapHeight,
-      WAYPOINT_LINE_DEFAULT_SPACING,
-      WAYPOINT_LINE_MAX_POINTS,
-    );
+    const count = uniformCount(pendingPoint, end, mapWidth, mapHeight, WAYPOINT_LINE_SPACING);
     // Drawing goes on from the end just placed: the next click stretches the next line from it.
     setLineDraft({ ...connect(draft, pendingFrom, key, count), pendingFrom: key });
   }
 
-  /** The slider edits the line drawn last. */
-  function updateLastLine(patch: { count?: number }) {
-    if (lineDraft.segments.length === 0) return;
-    const segments = [...lineDraft.segments];
-    segments[segments.length - 1] = { ...segments[segments.length - 1], ...patch };
-    setLineDraft({ ...lineDraft, segments });
-  }
-
-  async function saveLines() {
-    if (lineDraft.segments.length === 0 || savingLine) return;
+  /** The map with the lines still in the line tool's draft drawn on it. */
+  function withDrawnLines(onto: MapState) {
+    if (lineDraft.segments.length === 0) return onto;
     const points: WaypointLinePoint[] = lineDraft.points.map((p) =>
       p.nodeId ? { key: p.key, nodeId: p.nodeId } : { key: p.key, x: p.x, y: p.y, edgeId: p.edgeId },
     );
-    setSavingLine(true);
-    try {
-      await createWaypointLines(points, lineDraft.segments);
-      setLineDraft(EMPTY_LINE_DRAFT);
-    } finally {
-      setSavingLine(false);
-    }
+    return addWaypointLines(onto, storeId, points, lineDraft.segments);
   }
+
+  function saveLines() {
+    if (lineDraft.segments.length === 0 || saving) return;
+    const next = withDrawnLines(map);
+    change(() => next);
+    setLineDraft(EMPTY_LINE_DRAFT);
+  }
+
+  function handleSave() {
+    const final = withDrawnLines(map);
+    setLineDraft(EMPTY_LINE_DRAFT);
+    save(final, saveMapChanges);
+  }
+
+  /** One step back: first whatever is being drawn right now, then the map's edits, newest first. */
+  function handleUndo() {
+    if (saving) return;
+    if (autoConnect) {
+      setAutoConnect(null);
+      return;
+    }
+    if (areaDraft) {
+      if (areaDraft.points.length > 0) undoAreaPoint();
+      else cancelAreaDrawing();
+      return;
+    }
+    if (lineDraft.points.length > 0) {
+      setLineDraft(undoLastLineStep(lineDraft));
+      return;
+    }
+    const previous = undo();
+    if (!previous) return;
+    const nodeIds = new Set(previous.nodes.map((n) => n.id));
+    const edgeIds = new Set(previous.edges.map((e) => e.id));
+    setSelectedNodeIds((ids) => new Set([...ids].filter((id) => nodeIds.has(id))));
+    setSelectedEdgeIds((ids) => new Set([...ids].filter((id) => edgeIds.has(id))));
+  }
+
+  // Ctrl+Z, by the physical key so it works on a Hebrew layout too. Inside a text field it stays
+  // the field's own undo.
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.code !== "KeyZ") return;
+      const target = e.target instanceof HTMLElement ? e.target : null;
+      if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+      e.preventDefault();
+      handleUndo();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  });
+
+  const hasUnsavedChanges = isDirty || lineDraft.segments.length > 0;
+  // Leaving the page drops the draft, so it asks first - on a reload or close, and on a link.
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      e.preventDefault();
+    }
+    function handleLinkClick(e: MouseEvent) {
+      const link = e.target instanceof Element ? e.target.closest("a[href]") : null;
+      if (!link || link.getAttribute("target") === "_blank") return;
+      if (!window.confirm("יש שינויים במפה שלא נשמרו. לצאת בלי לשמור?")) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("click", handleLinkClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("click", handleLinkClick, true);
+    };
+  }, [hasUnsavedChanges]);
 
   function startAutoConnect() {
     exitLineMode();
@@ -1076,9 +1151,9 @@ export function StoreLayoutEditor({
     setAutoConnect({ ...autoConnect, rejected });
   }
 
-  /** Saves the approved links: each department joined to its corridor (splitting that edge there). */
-  async function approveAutoConnect() {
-    if (!autoConnect || savingAutoConnect) return;
+  /** Drafts the approved links: each department joined to its corridor (splitting that edge there). */
+  function approveAutoConnect() {
+    if (!autoConnect || saving) return;
     const accepted = autoConnect.proposals.filter((p) => !autoConnect.rejected.has(p.nodeId));
     if (accepted.length === 0) {
       setAutoConnect(null);
@@ -1091,13 +1166,9 @@ export function StoreLayoutEditor({
         : { key: `t${i}`, x: p.target.x, y: p.target.y, edgeId: p.target.edgeId },
     ]);
     const segments = accepted.map((_, i) => ({ from: `d${i}`, to: `t${i}`, count: 0 }));
-    setSavingAutoConnect(true);
-    try {
-      await createWaypointLines(points, segments);
-      setAutoConnect(null);
-    } finally {
-      setSavingAutoConnect(false);
-    }
+    const next = addWaypointLines(map, storeId, points, segments);
+    change(() => next);
+    setAutoConnect(null);
   }
 
   function exitLineMode() {
@@ -1106,7 +1177,7 @@ export function StoreLayoutEditor({
     setLineCursor(null);
   }
 
-  async function handleResetWaypoints() {
+  function handleResetWaypoints() {
     const count = nodes.filter((n) => n.type === "waypoint").length;
     if (count === 0) {
       setResetMessage("אין נקודות הליכה למחיקה.");
@@ -1114,25 +1185,20 @@ export function StoreLayoutEditor({
     }
     if (
       !window.confirm(
-        `למחוק את כל ${count} נקודות ההליכה ואת החיבורים שלהן?\nמחלקות, כניסות וקופות לא יימחקו. אי אפשר לבטל את הפעולה.`,
+        `למחוק את כל ${count} נקודות ההליכה ואת החיבורים שלהן?\nמחלקות, כניסות וקופות לא יימחקו. אפשר לחזור אחורה עד שלוחצים על שמור שינויים.`,
       )
     ) {
       return;
     }
-    setResetting(true);
-    setResetMessage(null);
-    try {
-      exitLineMode();
-      setSelectedNodeIds(new Set());
-      setSelectedEdgeIds(new Set());
-      const { deleted, kept } = await resetWaypoints();
-      setResetMessage(
-        `נמחקו ${deleted} נקודות הליכה.` +
-          (kept > 0 ? ` ${kept} נקודות נשארו כי משויכים אליהן מוצרים או מבצעים.` : ""),
-      );
-    } finally {
-      setResetting(false);
-    }
+    exitLineMode();
+    setSelectedNodeIds(new Set());
+    setSelectedEdgeIds(new Set());
+    const result = removeWaypoints(map, new Set(referencedNodeIds));
+    change(() => result.map);
+    setResetMessage(
+      `${result.deleted} נקודות הליכה הוסרו מהטיוטה.` +
+        (result.kept > 0 ? ` ${result.kept} נקודות נשארו כי משויכים אליהן מוצרים או מבצעים.` : ""),
+    );
   }
 
   function handleEdgeClick(e: React.MouseEvent, edge: MapEdge) {
@@ -1152,13 +1218,8 @@ export function StoreLayoutEditor({
     setSelectedEdgeIds((prev) => (prev.size === 1 && prev.has(edge.id) ? new Set() : new Set([edge.id])));
   }
 
-  async function handleDeleteSelected() {
-    await Promise.all([
-      ...Array.from(selectedNodeIds).map((id) => deleteNode(storeId, id)),
-      ...Array.from(selectedEdgeIds).map((id) => deleteEdge(storeId, id)),
-    ]);
-    setSelectedNodeIds(new Set());
-    setSelectedEdgeIds(new Set());
+  function handleDeleteSelected() {
+    deleteFromMap(selectedNodeIds, selectedEdgeIds);
   }
 
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
@@ -1213,8 +1274,11 @@ export function StoreLayoutEditor({
         })
         .sort((a, b) => a.name.localeCompare(b.name, "he"))
     : [];
+  // Products can only be placed on a node the database already has.
+  const savedNodeIds = new Set(savedNodes.map((n) => n.id));
+  const isUnsavedNode = singleSelectedNode !== null && !savedNodeIds.has(singleSelectedNode.id);
   const departmentNodes = nodes
-    .filter((n) => n.type === "department")
+    .filter((n) => n.type === "department" && savedNodeIds.has(n.id))
     .map((n) => ({ id: n.id, label: n.label }))
     .sort((a, b) => a.label.localeCompare(b.label, "he"));
   // The aliases standing here that also stand elsewhere, and where else.
@@ -1277,11 +1341,11 @@ export function StoreLayoutEditor({
               </button>
               <button
                 type="button"
-                onClick={() => void handleResetWaypoints()}
-                disabled={resetting}
+                onClick={handleResetWaypoints}
+                disabled={saving}
                 className="rounded-full border border-red-300 bg-white px-3 py-1.5 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
               >
-                {resetting ? "מוחק…" : "ריסט"}
+                ריסט
               </button>
               <button
                 type="button"
@@ -1325,6 +1389,31 @@ export function StoreLayoutEditor({
             </button>
           </form>
         </div>
+      </div>
+      <div className="sticky top-2 z-20 flex flex-wrap items-center gap-2 rounded-xl border border-neutral-200 bg-white/95 p-2 shadow-sm">
+        <button
+          type="button"
+          onClick={handleUndo}
+          disabled={saving || !(canUndo || autoConnect || areaDraft || lineDraft.points.length > 0)}
+          title="חזרה אחורה (Ctrl+Z)"
+          className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-semibold text-neutral-700 hover:border-cyan-600 hover:text-cyan-700 disabled:opacity-40"
+        >
+          ↶ חזרה אחורה
+        </button>
+        {hasUnsavedChanges && (
+          <>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="rounded-lg bg-green-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+            >
+              {saving ? "שומר…" : "שמור שינויים"}
+            </button>
+            <span className="text-sm text-amber-700">יש שינויים שלא נשמרו - הלקוחות עדיין רואים את המפה השמורה</span>
+          </>
+        )}
+        {saveError && <span className="text-sm font-medium text-red-700">{saveError}</span>}
       </div>
       {(
         <>
@@ -1489,19 +1578,17 @@ export function StoreLayoutEditor({
                 {autoConnect.proposals.length > 0 && (
                   <button
                     type="button"
-                    onClick={() => void approveAutoConnect()}
-                    disabled={savingAutoConnect}
+                    onClick={approveAutoConnect}
+                    disabled={saving}
                     className="rounded-lg bg-green-600 px-3 py-1.5 font-semibold text-white disabled:opacity-50"
                   >
-                    {savingAutoConnect
-                      ? "מחבר…"
-                      : `אישור (${autoConnect.proposals.length - autoConnect.rejected.size})`}
+                    {`אישור (${autoConnect.proposals.length - autoConnect.rejected.size})`}
                   </button>
                 )}
                 <button
                   type="button"
                   onClick={() => setAutoConnect(null)}
-                  disabled={savingAutoConnect}
+                  disabled={saving}
                   className="text-green-800 hover:underline"
                 >
                   {autoConnect.proposals.length > 0 ? "ביטול" : "סגירה"}
@@ -1538,36 +1625,16 @@ export function StoreLayoutEditor({
                       : "לחצו על נקודה בקו כדי להמשיך ממנה, או על צור קו לסיום"}
                 </span>
                 {lastLine && (
-                  <>
-                    <label htmlFor="line-count" className="text-neutral-700">
-                      נקודות בקו האחרון
-                    </label>
-                    <input
-                      id="line-count"
-                      type="range"
-                      min={0}
-                      max={WAYPOINT_LINE_MAX_POINTS}
-                      step={1}
-                      value={lastLine.count}
-                      onChange={(e) => updateLastLine({ count: Number(e.target.value) })}
-                      className="w-48 accent-cyan-600"
-                    />
-                    <span className="w-6 font-semibold tabular-nums text-neutral-900">{lastLine.count}</span>
-                    <button
-                      type="button"
-                      onClick={() => void saveLines()}
-                      disabled={savingLine}
-                      className="rounded-lg bg-cyan-600 px-3 py-1.5 font-semibold text-white disabled:opacity-50"
-                    >
-                      {savingLine
-                        ? "יוצר…"
-                        : lineDraft.segments.length === 1
-                          ? "צור קו"
-                          : `צור ${lineDraft.segments.length} קווים`}
-                    </button>
-                  </>
+                  <button
+                    type="button"
+                    onClick={saveLines}
+                    disabled={saving}
+                    className="rounded-lg bg-cyan-600 px-3 py-1.5 font-semibold text-white disabled:opacity-50"
+                  >
+                    {lineDraft.segments.length === 1 ? "צור קו" : `צור ${lineDraft.segments.length} קווים`}
+                  </button>
                 )}
-                {lineDraft.points.length > 0 && !savingLine && (
+                {lineDraft.points.length > 0 && !saving && (
                   <button
                     type="button"
                     onClick={() => setLineDraft(EMPTY_LINE_DRAFT)}
@@ -1577,7 +1644,7 @@ export function StoreLayoutEditor({
                   </button>
                 )}
                 <span className="basis-full text-xs text-neutral-500">
-                  קו שקרוב לאופקי או לאנכי מתיישר לבד (Shift: זווית חופשית). הקצה נצמד לגובה/לרוחב של נקודות
+                  נקודות הביניים נוצרות אוטומטית במרווח אחיד לפי אורך הקו. קו שקרוב לאופקי או לאנכי מתיישר לבד (Shift: זווית חופשית). הקצה נצמד לגובה/לרוחב של נקודות
                   אחרות (קו עזר ורוד) או לרשת; Alt: מיקום חופשי. לחיצה על צומת קיים מחברת את הקו אליו; לחיצה על
                   שטח ריק יוצרת שם נקודה חדשה. כל לחיצה ממשיכה את הרצף; קליק ימני או Enter מסיימים אותו, ולחיצה על
                   נקודה של קו (קצה או נקודת ביניים) מתחילה ממנה רצף חדש. כל הקווים נוצרים יחד בלחיצה על צור. לחיצה
@@ -1724,7 +1791,7 @@ export function StoreLayoutEditor({
                       className="cursor-grab active:cursor-grabbing"
                       onPointerDown={(e) => handleNodePointerDown(e, node)}
                       onPointerMove={(e) => handleNodePointerMove(e, node)}
-                      onPointerUp={(e) => void handleNodePointerUp(e, node)}
+                      onPointerUp={(e) => handleNodePointerUp(e, node)}
                       onClick={(e) => handleNodeClick(e, node)}
                     >
                       {isDot ? (
@@ -1759,8 +1826,9 @@ export function StoreLayoutEditor({
 
                 {videos.map((video) => {
                   const isDragging = videoDrag?.videoId === video.id;
-                  const x = (isDragging ? videoDrag!.x : video.position.x) * mapWidth;
-                  const y = (isDragging ? videoDrag!.y : video.position.y) * mapHeight;
+                  const pin = videoPositions[video.id] ?? video.position;
+                  const x = (isDragging ? videoDrag!.x : pin.x) * mapWidth;
+                  const y = (isDragging ? videoDrag!.y : pin.y) * mapHeight;
                   const r = VIDEO_PIN_RADIUS;
                   return (
                     <g
@@ -1768,7 +1836,7 @@ export function StoreLayoutEditor({
                       className="cursor-pointer"
                       onPointerDown={(e) => handleVideoPointerDown(e, video)}
                       onPointerMove={(e) => handleVideoPointerMove(e, video)}
-                      onPointerUp={(e) => void handleVideoPointerUp(e, video)}
+                      onPointerUp={(e) => handleVideoPointerUp(e, video)}
                     >
                       <title>{video.title}</title>
                       <circle cx={x} cy={y} r={r} fill="#dc2626" stroke="#ffffff" strokeWidth={3} />
@@ -1994,7 +2062,7 @@ export function StoreLayoutEditor({
                       // or with none, the line drawn last.
                       onContextMenu={(e) => {
                         e.preventDefault();
-                        if (savingLine) return;
+                        if (saving) return;
                         setLineDraft(lineDraft.pendingFrom ? cancelPending(lineDraft) : removeLastSegment(lineDraft));
                       }}
                       onPointerDown={(e) => e.stopPropagation()}
@@ -2023,13 +2091,7 @@ export function StoreLayoutEditor({
                   style={{ left: addPopup.screenLeft, top: addPopup.screenTop }}
                   className="absolute z-10 flex w-56 -translate-x-1/2 flex-col gap-2 rounded-xl border border-neutral-200 bg-white p-3 shadow-lg"
                 >
-                  <form
-                    action={async (formData) => {
-                      await createNode(formData);
-                      closePopups();
-                    }}
-                    className="flex flex-col gap-2"
-                  >
+                  <form action={addNodeFromPopup} className="flex flex-col gap-2">
                     <input type="hidden" name="x" value={addPopup.normX} />
                     <input type="hidden" name="y" value={addPopup.normY} />
                     <input
@@ -2084,19 +2146,21 @@ export function StoreLayoutEditor({
               <span className="text-sm text-neutral-700">
                 נבחר: <strong>{singleSelectedNode.label}</strong> ({NODE_TYPE_LABELS[singleSelectedNode.type]})
               </span>
-              <form action={deleteNode.bind(null, storeId, singleSelectedNode.id)}>
-                <button type="submit" className="text-sm text-red-600 hover:underline">
-                  מחק צומת
-                </button>
-              </form>
+              <button
+                type="button"
+                onClick={() => deleteFromMap([singleSelectedNode.id], [])}
+                className="text-sm text-red-600 hover:underline"
+              >
+                מחק צומת
+              </button>
             </div>
           )}
 
           {singleSelectedNode && showsProductPanel && (
             <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4">
               <form
-                key={singleSelectedNode.id}
-                action={updateNodeLabel.bind(null, storeId, singleSelectedNode.id)}
+                key={`${singleSelectedNode.id}:${singleSelectedNode.label}`}
+                action={(formData) => renameNode(singleSelectedNode.id, formData)}
                 className="flex items-start gap-2"
               >
                 <textarea
@@ -2110,7 +2174,7 @@ export function StoreLayoutEditor({
                   type="submit"
                   className="rounded-lg bg-cyan-600 px-3 py-1.5 text-sm font-semibold text-white"
                 >
-                  שמור שם
+                  עדכן שם
                 </button>
                 <span className="text-xs text-neutral-400">{NODE_TYPE_LABELS[singleSelectedNode.type]}</span>
               </form>
@@ -2120,7 +2184,7 @@ export function StoreLayoutEditor({
                   <>
                     <p className="text-sky-900">
                       לחצו על המפה בפינות האזור, אחת אחרי השנייה. לסיום - לחצו שוב על הנקודה הראשונה או על
-                      &quot;סיום ושמירה&quot; · Esc לביטול ({activeAreaDraft.points.length} נקודות)
+                      &quot;סיום&quot; · Esc לביטול ({activeAreaDraft.points.length} נקודות)
                     </p>
                     <p className="text-xs text-sky-800">
                       הפינה נוצרת בדיוק במקום הלחיצה. צלע שקרובה מאוד לאופקי או לאנכי מתיישרת לבד (Shift: בלי
@@ -2129,15 +2193,15 @@ export function StoreLayoutEditor({
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        disabled={activeAreaDraft.points.length < 3 || savingArea}
-                        onClick={() => void saveArea(activeAreaDraft.nodeId, activeAreaDraft.points)}
+                        disabled={activeAreaDraft.points.length < 3 || saving}
+                        onClick={() => saveArea(activeAreaDraft.nodeId, activeAreaDraft.points)}
                         className="rounded-lg bg-sky-600 px-3 py-1 font-semibold text-white disabled:opacity-40"
                       >
-                        {savingArea ? "שומר..." : "סיום ושמירה"}
+                        סיום
                       </button>
                       <button
                         type="button"
-                        disabled={activeAreaDraft.points.length === 0 || savingArea}
+                        disabled={activeAreaDraft.points.length === 0 || saving}
                         onClick={undoAreaPoint}
                         className="rounded-lg border border-sky-300 bg-white px-3 py-1 text-sky-800 disabled:opacity-40"
                       >
@@ -2145,7 +2209,7 @@ export function StoreLayoutEditor({
                       </button>
                       <button
                         type="button"
-                        disabled={savingArea}
+                        disabled={saving}
                         onClick={cancelAreaDrawing}
                         className="rounded-lg border border-neutral-300 bg-white px-3 py-1 text-neutral-600"
                       >
@@ -2169,8 +2233,8 @@ export function StoreLayoutEditor({
                     {singleSelectedNode.area && (
                       <button
                         type="button"
-                        disabled={savingArea}
-                        onClick={() => void saveArea(singleSelectedNode.id, null)}
+                        disabled={saving}
+                        onClick={() => saveArea(singleSelectedNode.id, null)}
                         className="text-red-600 hover:underline disabled:opacity-40"
                       >
                         מחיקת אזור
@@ -2210,6 +2274,12 @@ export function StoreLayoutEditor({
                 </div>
               )}
 
+              {isUnsavedNode ? (
+                <p className="rounded-lg bg-amber-50 p-2 text-sm text-amber-800">
+                  המחלקה עדיין בטיוטה. לחצו על &quot;שמור שינויים&quot; כדי לשייך אליה מוצרים.
+                </p>
+              ) : (
+                <>
               <div className="flex flex-col gap-1">
                 <h3 className="text-sm font-semibold text-neutral-700">
                   מוצרים בנקודה זו ({productsAtNode.length})
@@ -2275,12 +2345,16 @@ export function StoreLayoutEditor({
                   moveProductsToNode={moveProductsToNode}
                 />
               )}
+                </>
+              )}
 
-              <form action={deleteNode.bind(null, storeId, singleSelectedNode.id)}>
-                <button type="submit" className="text-sm text-red-600 hover:underline">
-                  מחק צומת
-                </button>
-              </form>
+              <button
+                type="button"
+                onClick={() => deleteFromMap([singleSelectedNode.id], [])}
+                className="self-start text-sm text-red-600 hover:underline"
+              >
+                מחק צומת
+              </button>
             </div>
           )}
 
@@ -2297,11 +2371,13 @@ export function StoreLayoutEditor({
                 })()}
                 )
               </span>
-              <form action={deleteEdge.bind(null, storeId, singleSelectedEdge.id)}>
-                <button type="submit" className="text-sm text-red-600 hover:underline">
-                  מחק קשת
-                </button>
-              </form>
+              <button
+                type="button"
+                onClick={() => deleteFromMap([], [singleSelectedEdge.id])}
+                className="text-sm text-red-600 hover:underline"
+              >
+                מחק קשת
+              </button>
             </div>
           )}
 
@@ -2325,8 +2401,8 @@ export function StoreLayoutEditor({
                     <button
                       key={mode}
                       type="button"
-                      disabled={aligning || (mode === "distribute" && selectedNodeIds.size < 3)}
-                      onClick={() => void handleAlign(mode)}
+                      disabled={saving || (mode === "distribute" && selectedNodeIds.size < 3)}
+                      onClick={() => handleAlign(mode)}
                       className="rounded-lg border border-neutral-300 bg-white px-3 py-1 text-sm font-medium text-neutral-700 hover:border-cyan-600 hover:text-cyan-700 disabled:opacity-40"
                     >
                       {label}
@@ -2336,7 +2412,7 @@ export function StoreLayoutEditor({
               )}
               <button
                 type="button"
-                onClick={() => void handleDeleteSelected()}
+                onClick={handleDeleteSelected}
                 className="text-sm text-red-600 hover:underline"
               >
                 מחק את הנבחרים

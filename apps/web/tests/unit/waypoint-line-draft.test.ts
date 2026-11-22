@@ -13,6 +13,8 @@ import {
   removeLastSegment,
   splitAt,
   splitAtPosition,
+  uniformCount,
+  withUniformSpacing,
 } from "@/src/presentation/components/admin/waypoint-line-draft";
 
 const W = 1000;
@@ -27,6 +29,19 @@ function twoPointLine(count: number) {
 describe("waypoint line draft", () => {
   it("spaces in-between points evenly", () => {
     expect(innerPoints({ x: 0, y: 0 }, { x: 1, y: 0 }, 3).map((p) => p.x)).toEqual([0.25, 0.5, 0.75]);
+  });
+
+  it("gives every line points by its length alone, with no upper cap on a long line", () => {
+    expect(uniformCount({ x: 0, y: 0 }, { x: 0.5, y: 0 }, W, H, 0.1)).toBe(4);
+    expect(uniformCount({ x: 0, y: 0 }, { x: 0.01, y: 0 }, W, H, 0.1)).toBe(0);
+    expect(uniformCount({ x: 0, y: 0 }, { x: 0, y: 1 }, 100, 1000, 0.04)).toBe(249);
+  });
+
+  it("re-derives point counts after a line is moved or split", () => {
+    const d = twoPointLine(17);
+    expect(withUniformSpacing(d, W, H, 0.1).segments[0].count).toBe(9);
+    const split = splitAtPosition(d, 0, 0.3, "m").draft;
+    expect(withUniformSpacing(split, W, H, 0.1).segments.map((s) => s.count)).toEqual([2, 6]);
   });
 
   it("hits a line's ends before its in-between points", () => {

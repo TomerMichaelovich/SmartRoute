@@ -10,15 +10,13 @@ import {
   nodeRepository,
   priceRepository,
   productListingRepository,
+  promotionRepository,
   storeRepository,
 } from "@/src/infrastructure/container";
 import {
   addMapVideo,
   addProductToNode,
-  createEdge,
   createNode,
-  createWaypointLines,
-  deleteEdge,
   deleteMapVideo,
   deleteNode,
   deleteStore,
@@ -30,13 +28,8 @@ import {
   removeProductFromNode,
   removeProductsFromNode,
   removeShelfGroupFromNode,
-  resetWaypoints,
+  saveMapChanges,
   setStorePriceBranch,
-  updateMapVideoPosition,
-  updateNodeArea,
-  updateNodeLabel,
-  updateNodePosition,
-  updateNodePositions,
   updateStore,
   unmarkProductsNotSold,
   updateFootstepScale,
@@ -68,7 +61,7 @@ export default async function AdminStoreDetailPage({
 
   // Imported products (whole price files) are too many to send with the page: the editor
   // gets the hand-made ones, a per-shelf-group summary, and searches on demand.
-  const [nodes, edges, products, allListings, storeGroups, hasPriceBranch, excludedProducts, priceBranches, allStores, splitAliases, videos] = await Promise.all([
+  const [nodes, edges, products, allListings, storeGroups, hasPriceBranch, excludedProducts, priceBranches, allStores, splitAliases, videos, promotions] = await Promise.all([
     nodeRepository.findByStore(storeId),
     edgeRepository.findByStore(storeId),
     catalogAdminRepository.listedHandMadeProducts(storeId),
@@ -80,6 +73,7 @@ export default async function AdminStoreDetailPage({
     manages ? storeRepository.findAll() : [],
     catalogAdminRepository.splitAliases(storeId),
     mapVideoRepository.findByStore(storeId),
+    promotionRepository.findAll(),
   ]);
   const priceCityNames = new Map<number, string>();
   for (const b of priceBranches) {
@@ -113,8 +107,6 @@ export default async function AdminStoreDetailPage({
     );
   const boundUpdateStore = updateStore.bind(null, storeId);
   const boundCreateNode = createNode.bind(null, storeId);
-  const boundCreateEdge = createEdge.bind(null, storeId);
-  const boundUpdateNodePosition = updateNodePosition.bind(null, storeId);
   const boundUploadStoreImage = uploadStoreImage.bind(null, storeId);
   const mapImageUrl = store.mapImageUrl ? `${store.mapImageUrl}?v=${encodeURIComponent(store.updatedAt)}` : "";
 
@@ -170,14 +162,8 @@ export default async function AdminStoreDetailPage({
         splitAliases={splitAliases}
         hasPriceBranch={hasPriceBranch}
         canEditProducts={hasSection(principal, "products")}
-        createNode={boundCreateNode}
-        createEdge={boundCreateEdge}
-        deleteNode={deleteNode}
-        deleteEdge={deleteEdge}
-        updateNodePosition={boundUpdateNodePosition}
-        updateNodePositions={updateNodePositions.bind(null, storeId)}
-        updateNodeLabel={updateNodeLabel}
-        updateNodeArea={updateNodeArea.bind(null, storeId)}
+        saveMapChanges={saveMapChanges.bind(null, storeId)}
+        referencedNodeIds={[...new Set([...allListings.map((l) => l.nodeId), ...promotions.map((p) => p.attachedNodeId)])]}
         addProductToNode={addProductToNode}
         removeProductFromNode={removeProductFromNode}
         placeShelfGroupOnNode={placeShelfGroupOnNode}
@@ -189,11 +175,8 @@ export default async function AdminStoreDetailPage({
         markProductsNotSold={markProductsNotSold}
         setProductsShelfGroup={setProductsShelfGroup}
         uploadStoreImage={boundUploadStoreImage}
-        createWaypointLines={createWaypointLines.bind(null, storeId)}
-        resetWaypoints={resetWaypoints.bind(null, storeId)}
         videos={videos}
         addMapVideo={addMapVideo.bind(null, storeId)}
-        updateMapVideoPosition={updateMapVideoPosition.bind(null, storeId)}
         deleteMapVideo={deleteMapVideo.bind(null, storeId)}
       />
 
