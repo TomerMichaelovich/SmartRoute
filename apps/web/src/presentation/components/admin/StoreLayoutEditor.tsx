@@ -1105,6 +1105,7 @@ export function StoreLayoutEditor({
   });
 
   const hasUnsavedChanges = isDirty || lineDraft.segments.length > 0;
+  const hasUndoStep = canUndo || lineDraft.points.length > 0 || (areaDraft?.points.length ?? 0) > 0;
   // Leaving the page drops the draft, so it asks first - on a reload or close, and on a link.
   useEffect(() => {
     if (!hasUnsavedChanges) return;
@@ -1390,31 +1391,34 @@ export function StoreLayoutEditor({
           </form>
         </div>
       </div>
-      <div className="sticky top-2 z-20 flex flex-wrap items-center gap-2 rounded-xl border border-neutral-200 bg-white/95 p-2 shadow-sm">
-        <button
-          type="button"
-          onClick={handleUndo}
-          disabled={saving || !(canUndo || autoConnect || areaDraft || lineDraft.points.length > 0)}
-          title="חזרה אחורה (Ctrl+Z)"
-          className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-semibold text-neutral-700 hover:border-cyan-600 hover:text-cyan-700 disabled:opacity-40"
-        >
-          ↶ חזרה אחורה
-        </button>
-        {hasUnsavedChanges && (
-          <>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving}
-              className="rounded-lg bg-green-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
-            >
-              {saving ? "שומר…" : "שמור שינויים"}
-            </button>
-            <span className="text-sm text-amber-700">יש שינויים שלא נשמרו - הלקוחות עדיין רואים את המפה השמורה</span>
-          </>
-        )}
-        {saveError && <span className="text-sm font-medium text-red-700">{saveError}</span>}
-      </div>
+      {/* Floats over the page, so the map doesn't shift under the cursor when it appears. */}
+      {hasUndoStep && (
+        <div className="fixed bottom-4 left-1/2 z-30 flex w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white p-2 shadow-lg">
+          <button
+            type="button"
+            onClick={handleUndo}
+            disabled={saving}
+            title="חזרה אחורה (Ctrl+Z)"
+            className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-semibold text-neutral-700 hover:border-cyan-600 hover:text-cyan-700 disabled:opacity-40"
+          >
+            ↶ חזרה אחורה
+          </button>
+          {hasUnsavedChanges && (
+            <>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saving}
+                className="rounded-lg bg-green-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+              >
+                {saving ? "שומר…" : "שמור שינויים"}
+              </button>
+              <span className="text-sm text-amber-700">יש שינויים שלא נשמרו - הלקוחות עדיין רואים את המפה השמורה</span>
+            </>
+          )}
+          {saveError && <span className="text-sm font-medium text-red-700">{saveError}</span>}
+        </div>
+      )}
       {(
         <>
           <div className="flex flex-col gap-3">
@@ -1544,25 +1548,6 @@ export function StoreLayoutEditor({
                 ? "גררו צומת כדי להזיז אותו · לחצו על צומת כדי לבחור אותו (מחלקה: שיוך מוצרים) · גררו על שטח ריק כדי לסמן כמה צמתים · Ctrl+לחיצה לבחירה מרובה · Esc לביטול בחירה"
                 : "לחצו על המפה להוספת נקודת ציון · כשצומת נבחר, לחיצה על המפה מוסיפה נקודה ומחברת אליה (לחיצות ברצף = מסדרון) · לחצו על צומת ואז על צומת נוסף כדי לחבר ביניהם · \"הוספת מחלקה\" ואז לחיצה על המפה מוסיפה מחלקה/כניסה/קופה · Esc לביטול בחירה"}
             </p>
-
-            {!hasEntrance && nodes.length > 0 && (
-              <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">
-                אין כניסה במפה - בלי כניסה אי אפשר לבנות מסלול. הוסיפו צומת מסוג כניסה.
-              </p>
-            )}
-            {entranceCount > 1 && (
-              <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">
-                יש במפה {entranceCount} צמתים מסוג כניסה - מסלול יוצא רק מאחד מהם, אז השאירו כניסה אחת. ליציאה מהחנות
-                יש סוג משלה: &quot;יציאה&quot;.
-              </p>
-            )}
-            {disconnectedNodeIds.size > 0 && (
-              <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">
-                {disconnectedNodeIds.size === 1 ? "צומת אחד" : `${disconnectedNodeIds.size} צמתים`} שמסלול מהכניסה לא
-                יכול להגיע אליהם (מסלול לא ממשיך הלאה מקופה או מיציאה). הם מסומנים באדום - חברו אותם במצב &quot;הוספה
-                וחיבור&quot;.
-              </p>
-            )}
 
             {autoConnect && (
               <div className="flex flex-wrap items-center gap-3 rounded-xl border border-green-200 bg-green-50 p-3 text-sm">
@@ -2135,6 +2120,26 @@ export function StoreLayoutEditor({
                 </div>
               )}
             </div>
+
+            {/* Under the map: these come and go with each edit, and mustn't move it mid-drawing. */}
+            {!hasEntrance && nodes.length > 0 && (
+              <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">
+                אין כניסה במפה - בלי כניסה אי אפשר לבנות מסלול. הוסיפו צומת מסוג כניסה.
+              </p>
+            )}
+            {entranceCount > 1 && (
+              <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">
+                יש במפה {entranceCount} צמתים מסוג כניסה - מסלול יוצא רק מאחד מהם, אז השאירו כניסה אחת. ליציאה מהחנות
+                יש סוג משלה: &quot;יציאה&quot;.
+              </p>
+            )}
+            {disconnectedNodeIds.size > 0 && (
+              <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">
+                {disconnectedNodeIds.size === 1 ? "צומת אחד" : `${disconnectedNodeIds.size} צמתים`} שמסלול מהכניסה לא
+                יכול להגיע אליהם (מסלול לא ממשיך הלאה מקופה או מיציאה). הם מסומנים באדום - חברו אותם במצב &quot;הוספה
+                וחיבור&quot;.
+              </p>
+            )}
           </div>
 
           {playingVideo && (
